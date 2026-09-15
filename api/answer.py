@@ -1428,7 +1428,9 @@ class AI(Tiku):
             response = json.loads(remove_md_json_wrapper(completion.choices[0].message.content))
             sep = "\n"
             return sep.join(response['Answer']).strip()
-        except:
+        except Exception:
+            # 只吞掉"解析失败"这类普通异常；
+            # 用裸 except 会连 Ctrl+C / 系统退出一起吞掉，导致无法中断
             logger.error("无法解析大模型输出内容")
             return None
 
