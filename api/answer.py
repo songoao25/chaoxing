@@ -17,6 +17,7 @@ import requests
 from openai import OpenAI
 from urllib3 import disable_warnings, exceptions
 
+from api import paths as _paths
 from api.answer_check import check_answer
 from api.logger import logger
 
@@ -32,7 +33,8 @@ class CacheDAO:
     @Author: SocialSisterYi
     @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
     """
-    DEFAULT_CACHE_FILE = "cache.json"
+    # 答案缓存放在用户数据目录，升级代码不会丢失已积累的答案
+    DEFAULT_CACHE_FILE = _paths.cache_path()
 
     def __init__(self, file: str = DEFAULT_CACHE_FILE):
         self.cache_file = Path(file)
@@ -137,8 +139,46 @@ class CacheDAO:
             self._write_cache(data)
 
 
+# 这些错误"再试也没用"：出现一次就停止逐个题目重试
+FATAL_API_MARKERS = (
+    # 认证 / 余额
+    "401", "402", "unauthorized", "authentication",
+    "invalid_api_key", "invalid api key", "insufficient", "quota",
+    # 模型名写错 / 接口不存在 —— 重试多少次都一样
+    "404", "model_not_found", "model not found", "does not exist",
+    "no such model", "unknown model", "invalid model",
+)
+
+
+def is_fatal_api_error(err) -> bool:
+    """判断是否是"再试也没用"的错误（Key 失效、余额不足等）"""
+    text = str(err).lower()
+    return any(m in text for m in FATAL_API_MARKERS)
+
+
+def brief_error(err, limit=70) -> str:
+    """把冗长的 API 报错压成一句"""
+    text = str(err).strip()
+    low = text.lower()
+    if "404" in low or "model_not_found" in low or "model not found" in low \
+            or "does not exist" in low or "unknown model" in low or "invalid model" in low:
+        return "模型名不存在（检查配置里的 model）"
+    if "401" in low or "authentication" in low or "unauthorized" in low:
+        return "API Key 无效或已失效"
+    if "402" in low or "insufficient" in low or "quota" in low:
+        return "账户余额不足"
+    if "429" in low or "rate limit" in low:
+        return "请求过于频繁"
+    if "timeout" in low or "timed out" in low:
+        return "连接超时"
+    if "connection" in low:
+        return "网络连接失败"
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
 class Tiku(ABC):
-    CONFIG_PATH = os.path.join(os.getcwd(), "config.ini")
+    # 默认配置路径：用户数据目录（由 api.paths 统一管理）
+    CONFIG_PATH = _paths.config_path()
     DISABLE = False  # 停用标志
     SUBMIT = False  # 提交标志
     COVER_RATE = 0.8  # 覆盖率
@@ -158,6 +198,8 @@ class Tiku(ABC):
         self._config_path = config_path or self.CONFIG_PATH
         self.true_list = []
         self.false_list = []
+        # 熔断状态：一旦出现认证/余额类错误就不再逐个题目重试
+        self._fatal_error = None
 
     @property
     def name(self):
@@ -189,11 +231,16 @@ class Tiku(ABC):
         if not self._conf:
             self.config_set(self._get_conf())
         if not self.DISABLE:
-            # 设置提交模式
-            self.SUBMIT = True if self._conf['submit'] == 'true' else False
-            self.COVER_RATE = float(self._conf['cover_rate'])
-            self.true_list = self._conf['true_list'].split(',')
-            self.false_list = self._conf['false_list'].split(',')
+            # 设置提交模式。
+            # 用户手写的配置可能缺这些键，缺了就用安全默认值，
+            # 不要抛 KeyError 让整个程序崩掉。
+            self.SUBMIT = str(self._conf.get('submit', 'false')).strip().lower() == 'true'
+            try:
+                self.COVER_RATE = float(self._conf.get('cover_rate', 0.9))
+            except (TypeError, ValueError):
+                self.COVER_RATE = 0.9
+            self.true_list = (self._conf.get('true_list') or '正确,对,√,是').split(',')
+            self.false_list = (self._conf.get('false_list') or '错误,错,×,否,不对,不正确').split(',')
             # 调用自定义题库初始化
             self._init_tiku()
 
@@ -346,15 +393,77 @@ class Tiku(ABC):
         子类若有批量查询或交互需求（如手动模式），可重写此方法。
         """
         results = []
-        for q in q_list:
+        total = len(q_list)
+
+        # 答题进度显示：避免用户以为程序卡死
+        if total > 1:
+            print()
+            print(f"  开始答题，共 {total} 题（每题之间会限流等待，请耐心等待）")
+
+        skipped_by_breaker = 0
+        for i, q in enumerate(q_list, 1):
+            if self._fatal_error:
+                # 已经确认答题服务不可用 -> 不再调用 API，也不再重复报错
+                results.append(None)
+                skipped_by_breaker += 1
+                continue
+
+            if total > 1:
+                # 估算剩余时间：平均每题耗时
+                self._print_answer_progress(i - 1, total)
             if query_delay > 0:
                 time.sleep(query_delay)
             try:
                 results.append(self._query(q))
             except Exception as e:
-                logger.error(f"{self.name} 查询单个题目发生异常: {e}")
+                if is_fatal_api_error(e):
+                    # 熔断：只说明这一次，后面的题直接跳过，不再反复报错
+                    self._fatal_error = brief_error(e)
+                    logger.error(
+                        "答题服务不可用：{}\n"
+                        "    本套测验无法作答，剩余题目已跳过。\n"
+                        "    修复后重新运行即可，已完成的任务点不会重复。",
+                        self._fatal_error,
+                    )
+                else:
+                    logger.error(f"{self.name} 查询单个题目发生异常: {brief_error(e)}")
                 results.append(None)
+
+        if total > 1:
+            self._print_answer_progress(total, total)
+            if skipped_by_breaker:
+                logger.warning(
+                    "本套 {} 道题中有 {} 道因答题服务不可用被跳过", total, skipped_by_breaker
+                )
+
         return results
+
+    def _print_answer_progress(self, done, total):
+        """打印答题进度条（原地刷新）"""
+        try:
+            bar_len = 28
+            filled = int(bar_len * done / total) if total else 0
+            bar = "#" * filled + "-" * (bar_len - filled)
+            percent = int(done * 100 / total) if total else 0
+            elapsed_note = ""
+            now = time.time()
+            start = getattr(self, "_answer_start_time", None)
+            if start is None:
+                self._answer_start_time = now
+                start = now
+            if done > 0:
+                avg = (now - start) / done
+                remain = avg * (total - done)
+                if remain >= 60:
+                    elapsed_note = f"  预计还需 {int(remain // 60)} 分 {int(remain % 60)} 秒"
+                else:
+                    elapsed_note = f"  预计还需 {int(remain)} 秒"
+            print(f"\r  答题进度: [{bar}] {done}/{total} {percent}%{elapsed_note}   ", end="", flush=True)
+            if done >= total:
+                print()
+                self._answer_start_time = None
+        except Exception:
+            pass
 
     @staticmethod
     def get_tiku_from_config(config: Optional[dict] = None, config_path: Optional[str] = None):
@@ -594,7 +703,7 @@ class TikuYanxi(Tiku):
             if not res_json['code']:
                 # 如果是因为TOKEN次数到期, 则更换token
                 if self._times == 0 or '次数不足' in res_json['data']['answer']:
-                    logger.info(f'TOKEN查询次数不足, 将会更换并重新搜题')
+                    logger.info('TOKEN查询次数不足, 将会更换并重新搜题')
                     self._token_index += 1
                     self.load_token()
                     # 重新查询
@@ -609,7 +718,7 @@ class TikuYanxi(Tiku):
         return None
 
     def load_token(self):
-        token_list = self._conf['tokens'].split(',')
+        token_list = (self._conf.get('tokens') or '').split(',')
         if self._token_index == len(token_list):
             # TOKEN 用完
             logger.error('TOKEN用完, 请自行更换再重启脚本')
@@ -1160,7 +1269,7 @@ class TikuAdapter(Tiku):
 
     def _init_tiku(self):
         # self.load_token()
-        self.api = self._conf['url']
+        self.api = self._conf.get('url', '')
 
 
 class AI(Tiku):
@@ -1197,15 +1306,21 @@ class AI(Tiku):
             lines.append(str(item))
         return "\n".join(lines)
 
-    def _is_deepseek_v4(self) -> bool:
-        return (
-                'api.deepseek.com' in (self.endpoint or '').lower()
-                and (self.model or '').lower().startswith('deepseek-v4')
-        )
+    DEEPSEEK_MODEL = 'deepseek-flash'
+
+    def _is_deepseek_flash(self) -> bool:
+        """
+        是否为 DeepSeek flash 模型。
+
+        该模型默认开启 thinking 模式，会导致 message.content 为空，
+        需要显式关闭 thinking，否则答题拿不到内容。
+        """
+        if 'api.deepseek.com' not in (self.endpoint or '').lower():
+            return False
+        return (self.model or '').strip().lower() == self.DEEPSEEK_MODEL
 
     def _completion_kwargs(self, **kwargs):
-        if self._is_deepseek_v4():
-            # DeepSeek V4 defaults to thinking mode, which can leave message.content empty.
+        if self._is_deepseek_flash():
             kwargs['extra_body'] = {'thinking': {'type': 'disabled'}}
         return kwargs
 
@@ -1318,11 +1433,15 @@ class AI(Tiku):
             return None
 
     def _init_tiku(self):
-        self.endpoint = self._conf['endpoint']
-        self.key = self._conf['key']
-        self.model = self._conf['model']
-        self.http_proxy = self._conf['http_proxy']
-        self.min_interval_seconds = int(self._conf['min_interval_seconds'])
+        # 手写配置可能缺项，用安全默认值兜底，避免 KeyError
+        self.endpoint = self._conf.get('endpoint', '')
+        self.key = self._conf.get('key', '')
+        self.model = self._conf.get('model', '')
+        self.http_proxy = self._conf.get('http_proxy', '')
+        try:
+            self.min_interval_seconds = int(float(self._conf.get('min_interval_seconds', 3)))
+        except (TypeError, ValueError):
+            self.min_interval_seconds = 3
 
     def check_llm_connection(self) -> bool:
         """
@@ -1463,11 +1582,14 @@ class SiliconFlow(Tiku):
     def _init_tiku(self):
         # 从配置文件读取参数
         self.api_endpoint = self._conf.get('siliconflow_endpoint', 'https://api.siliconflow.cn/v1/chat/completions')
-        self.api_key = self._conf['siliconflow_key']
+        self.api_key = self._conf.get('siliconflow_key', '')
 
         self.model_name = self._conf.get('siliconflow_model', 'deepseek-ai/DeepSeek-V3')
 
-        self.min_interval = int(self._conf.get('min_interval_seconds', 3))
+        try:
+            self.min_interval = int(float(self._conf.get('min_interval_seconds', 3)))
+        except (TypeError, ValueError):
+            self.min_interval = 3
 
     def check_llm_connection(self) -> bool:
         """
@@ -1832,7 +1954,7 @@ class TikuManual(Tiku):
                 print("\033[31m检测到存在不合规的答案，已拒绝确认，请重新输入！\033[0m")
                 continue
 
-            confirm = input("确认使用上述答案？[Y/n]: ").strip().lower()
+            confirm = input("确认使用上述答案？[y/n]: ").strip().lower()
             if confirm in ['', 'y', 'yes']:
                 return temp_answers
             elif confirm == 'switch':

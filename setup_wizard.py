@@ -1,0 +1,1113 @@
+# -*- coding: utf-8 -*-
+"""
+超星刷课 · 统一多用户入口
+
+启动流程：
+  1. 检查/配置 DeepSeek API Key（实时验证有效性）
+  2. 显示用户列表：选一个直接开始，或加入新账号，或管理账号
+  3. 登录（用保存的账密，不用重输）
+  4. 选课（每次都手动选，不沿用上次）
+  5. 逐门课程设置要刷几个任务点（每次都手动填）
+  6. 开始刷课
+
+安全设计：
+  任何时候输入 q / quit / exit 都能立即退出，防止刷错课。
+  Ctrl+C 同样安全退出。
+
+每个用户的账号、cookie 都互相隔离，不会串号。
+"""
+
+import configparser
+import os
+import sys
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE)
+
+from api import accounts, interrupt, paths
+from api.configfile import read_config_file
+
+# 模板在项目目录；用户配置在数据目录（~/.chaoxing/config.ini），
+# 这样升级代码不会影响用户的配置。
+TEMPLATE = os.path.join(BASE, "config_template.ini")
+paths.init()          # 确保数据目录存在，并完成一次旧数据迁移
+CONFIG = paths.config_path()
+
+DEEPSEEK_ENDPOINT = "https://api.deepseek.com/v1"
+DEEPSEEK_MODEL = "deepseek-flash"
+
+# 视觉规范：
+#   title() 用一条细横线做小标题，只在关键节点使用
+#   正文缩进 2 空格；说明文字尽量一行说完，不堆叠空行
+#   输入提示保持在单行，避免每次都占两行
+RULE = "─" * 46
+
+# 输入这些字符 = 立即退出
+QUIT_WORDS = {"q", "quit", "exit", "退出", "取消"}
+
+
+class UserQuit(Exception):
+    """用户主动一键退出"""
+    pass
+
+
+def quit_now(reason="用户主动退出"):
+    """统一的安全退出：清理后终止进程"""
+    raise UserQuit(reason)
+
+
+def _pad(text, width):
+    """按终端显示宽度右侧补空格（中文占 2 列）"""
+    try:
+        import unicodedata
+        cur = 0
+        for ch in str(text):
+            cur += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    except Exception:
+        cur = len(str(text))
+    gap = width - cur
+    return str(text) + (" " * gap if gap > 0 else "")
+
+
+def title(text):
+    """小标题：空行 + 标题 + 细横线"""
+    print()
+    print("  " + text)
+    print("  " + RULE)
+
+
+def _read_line(prompt, tip):
+    """
+    读一行输入（提示和输入在同一行，省掉多余的空行）。
+    q/exit 立即退出，Ctrl+C 安全退出。
+    """
+    try:
+        return input("▶ " + prompt + tip + " > ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        print("  已退出。")
+        raise UserQuit("cancelled")
+
+
+def ask(prompt, default=None, allow_empty=False):
+    """
+    读取必填项。留空会一直追问。
+    输入 q / quit / exit 立即退出。
+    """
+    while True:
+        if default is not None:
+            tip = "  [回车=" + str(default) + "，q 退出]"
+        elif allow_empty:
+            tip = "  [回车跳过，q 退出]"
+        else:
+            tip = "  （q 退出）"
+        val = _read_line(prompt, tip)
+
+        if val.lower() in QUIT_WORDS:
+            print()
+            print("  已退出，不会执行任何刷课操作。")
+            raise UserQuit("user quit")
+
+        if val:
+            return val
+        if default is not None:
+            return str(default)
+        if allow_empty:
+            return ""
+        print("  ✘ 这一项必须填写，不能跳过。")
+
+
+def ask_yes_no(prompt, default_no=True):
+    tip = "  [y/n，q 退出]"
+    ans = _read_line(prompt, tip).lower()
+
+    if ans in QUIT_WORDS:
+        print()
+        print("  已退出，不会执行任何刷课操作。")
+        raise UserQuit("user quit")
+
+    if not ans:
+        return not default_no
+    return ans in ("y", "yes", "是", "1")
+
+
+def replace_value(content, section, key, value):
+    """在 ini 文本里替换 key=value，保留注释"""
+    out = []
+    cur = None
+    done = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            cur = stripped[1:-1]
+        if cur == section and not done:
+            core = stripped.split(";")[0].strip()
+            if "=" in core and core.split("=")[0].strip() == key:
+                out.append(key + " = " + value)
+                done = True
+                continue
+        out.append(line)
+    if done:
+        return chr(10).join(out)
+    res = []
+    inserted = False
+    cur = None
+    for line in out:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if cur == section and not inserted:
+                res.append(key + " = " + value)
+                inserted = True
+            cur = stripped[1:-1]
+        res.append(line)
+    if cur == section and not inserted:
+        res.append(key + " = " + value)
+        inserted = True
+
+    # 整个文件里都没有这个节 -> 直接追加一个新节
+    if not inserted:
+        res.append("")
+        res.append("[" + section + "]")
+        res.append(key + " = " + value)
+    return chr(10).join(res)
+
+
+# ==================== DeepSeek API Key ====================
+
+def short_err(err, limit=60):
+    """
+    把冗长的 API 报错压缩成一句人话。
+    例如：Error code: 401 - {'error': {'message': 'Authentication Fails...'}}
+      ->  认证失败：API Key 无效
+    """
+    text = str(err)
+    try:
+        import re as _re
+        # 兼容单引号和双引号的 message 字段
+        m = _re.search(r"['\"]message['\"]\s*:\s*['\"]([^'\"]+)['\"]", text)
+        if m:
+            text = m.group(1)
+    except Exception:
+        pass
+
+    # 用【原始】报错判断类型（精简后的文本可能已经不含 401 等关键字）
+    low = str(err).lower()
+    if "401" in low or "authentication" in low or "invalid" in low or "unauthorized" in low:
+        return "API Key 无效或已失效"
+    if "402" in low or "insufficient" in low or "balance" in low or "quota" in low:
+        return "账户余额不足"
+    if "429" in low or "rate limit" in low:
+        return "请求过于频繁，请稍后再试"
+    if "timeout" in low or "timed out" in low:
+        return "连接超时，请检查网络"
+    if "connection" in low or "unreachable" in low:
+        return "网络连接失败"
+
+    text = text.strip()
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def verify_deepseek_key(api_key):
+    """联网验证 Key 是否真的可用"""
+    try:
+        from openai import OpenAI
+        client = OpenAI(base_url=DEEPSEEK_ENDPOINT, api_key=api_key)
+        resp = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[{"role": "user", "content": "回复：ok"}],
+            max_tokens=10,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        if resp.choices:
+            return True, ""
+        return False, "没有收到有效响应"
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+def read_config():
+    """读取 config.ini（不存在则返回空；内容损坏时尽量沿用其余设置）"""
+    if not os.path.exists(CONFIG):
+        return configparser.ConfigParser()
+    cfg, broken = read_config_file(CONFIG)
+    if broken:
+        print(f"  ⚠ 配置文件内容有损坏，已跳过异常行并尽量沿用其余设置：{CONFIG}")
+    return cfg
+
+
+def _read_config_text():
+    """读取 config.ini 原文（还没配置过就用模板），保留注释和排版"""
+    path = CONFIG if os.path.exists(CONFIG) else TEMPLATE
+    if not os.path.exists(path):
+        raise UserQuit(f"找不到配置文件模板：{path}")
+    with open(path, encoding="utf8", errors="replace") as f:
+        return f.read()
+
+
+def update_config(mapping):
+    """
+    更新 config.ini 的若干项，保留注释。
+    mapping: {(section, key): value}
+
+    写入前会自动备份，误覆盖也能恢复（见 ~/.chaoxing/backups/）。
+    """
+    paths.backup_config()
+
+    text = _read_config_text()
+
+    for (section, key), value in mapping.items():
+        text = replace_value(text, section, key, str(value))
+
+    with open(CONFIG, "w", encoding="utf8") as f:
+        f.write(text)
+    return CONFIG
+
+
+
+
+
+# 通知服务说明
+NOTIFY_SERVICES = {
+    "1": ("Bark", "https://api.day.app/你的key/", "iPhone 推送到 Bark App，最简单"),
+    "2": ("ServerChan", "https://sctapi.ftqq.com/你的key.send", "Server酱，微信推送"),
+    "3": ("Telegram", "https://api.telegram.org/bot<token>/sendMessage", "需要额外填 chat_id"),
+    "4": ("Qmsg", "https://qmsg.zendee.cn/send/你的key", "QQ 推送"),
+}
+
+
+def setup_notification(existing=None):
+    """配置完成通知（可跳过）；返回 (provider, url, tg_chat_id)"""
+    if existing is None:
+        existing = read_config()
+
+    cur_provider = ""
+    cur_url = ""
+    cur_tg = ""
+    if existing.has_section("notification"):
+        cur_provider = (existing.get("notification", "provider", fallback="") or "").strip()
+        cur_url = (existing.get("notification", "url", fallback="") or "").strip()
+        cur_tg = (existing.get("notification", "tg_chat_id", fallback="") or "").strip()
+
+    title("完成通知（可选）")
+    print("  刷课开始 / 完成 / 被中断 / 出错时，推送到手机。")
+    if cur_provider and cur_url:
+        print("  当前已配置：" + cur_provider)
+    print()
+    print("   1. Bark        iPhone，最简单")
+    print("   2. Server酱    微信")
+    print("   3. Telegram    需额外填 chat_id")
+    print("   4. Qmsg酱      QQ")
+    print("   0. 不用通知")
+    print()
+
+    choice = ask("请选择", allow_empty=True)
+    if not choice or choice == "0":
+        return cur_provider, cur_url, cur_tg
+
+    if choice not in NOTIFY_SERVICES:
+        print("  ✘ 没有这个选项，本次跳过。")
+        return cur_provider, cur_url, cur_tg
+
+    provider, example, _desc = NOTIFY_SERVICES[choice]
+    print("  格式参考：" + example)
+    url = ask("推送地址")
+    tg_chat_id = ""
+    if provider == "Telegram":
+        tg_chat_id = ask("chat_id")
+
+    print("  发送测试通知...")
+    ok, err = test_notification(provider, url, tg_chat_id)
+    if ok:
+        print("  ✔ 已发送，请检查手机是否收到")
+    else:
+        print("  ✘ 发送失败：" + err + "（可能是地址填错）")
+        if not ask_yes_no("  仍然保存吗？", default_no=True):
+            return cur_provider, cur_url, cur_tg
+
+    return provider, url, tg_chat_id
+
+
+def test_notification(provider, url, tg_chat_id=""):
+    """发一条测试通知，返回 (是否成功, 错误信息)"""
+    try:
+        import requests
+        msg = "超星刷课：这是一条测试通知，收到说明配置成功。"
+        if provider == "Bark":
+            r = requests.post(url.rstrip("/") + "/" + requests.utils.quote(msg), timeout=10)
+        elif provider == "ServerChan":
+            r = requests.post(url, data={"title": "超星刷课", "desp": msg}, timeout=10)
+        elif provider == "Qmsg":
+            r = requests.post(url, data={"msg": msg}, timeout=10)
+        elif provider == "Telegram":
+            r = requests.post(url, data={"chat_id": tg_chat_id, "text": msg}, timeout=10)
+        else:
+            return False, "未知的通知服务"
+        if r.status_code == 200:
+            return True, ""
+        return False, "HTTP " + str(r.status_code) + " " + r.text[:120]
+    except Exception as e:
+        return False, str(e)[:150]
+
+
+def ask_deepseek_key(existing_key=""):
+    """让用户填一个可用的 DeepSeek Key（会联网验证）"""
+    print("  地址与模型已预设（" + DEEPSEEK_MODEL + "），只需粘贴 Key。")
+    print("  获取：https://platform.deepseek.com/ → API Keys")
+    print()
+
+    while True:
+        key = ask("DeepSeek API Key")
+        print("  验证中...")
+        ok, err = verify_deepseek_key(key)
+        if ok:
+            print("  ✔ 验证通过")
+            return key
+
+        # 验证失败：当场给出两条路，不必退出重走 setup
+        print("  ✘ " + short_err(err))
+        print()
+        print("   1. 重新粘贴 Key")
+        print("   2. 不做测验，只刷视频 / 文档等部分")
+        print()
+        choice = ask("请选择")
+        if choice == "2":
+            return ""      # 空字符串 = 用户放弃答题，转为降级模式
+        # 选 1 或其它 -> 继续循环重新粘贴
+
+
+# 每种答题方式在 config 里必须存在的字段
+ANSWER_MODE_REQUIREMENTS = {
+    "AI": "key",
+    "SiliconFlow": "siliconflow_key",
+    "TikuYanxi": "tokens",
+    "TikuAdapter": "url",
+}
+
+# 答题方式选项（顺序即展示顺序）
+ANSWER_MODES = [
+    ("1", "AI", "DeepSeek AI", "推荐 · 什么题都能答，无需额外购买", True),
+    ("2", "TikuYanxi", "言溪题库", "答案准 · 需 token（tk.enncy.cn）", False),
+    ("3", "TikuGo", "GO 题", "答案准 · 可选 authorization", False),
+    ("4", "TikuYanxi,AI", "言溪 + AI 兜底", "更准 · 需言溪 token", True),
+    ("5", "TikuGo,AI", "GO题 + AI 兜底", "更准 · 可选 authorization", True),
+    ("6", "TikuManual", "手动答题", "每题手动输入，最慢", False),
+    ("0", "", "不答题", "跳过测验 · 解锁章节会卡住", False),
+]
+
+
+def is_answer_mode_configured(cfg):
+    """
+    答题方式是否已经配置过（且必要字段齐全）。
+
+    两种判定，任一成立即视为已配置：
+      1. 有 [cx] answer_mode_done = yes 标记（新配置走这条路）
+      2. 没有标记，但 [tiku] 里的字段是齐全的（兼容旧配置）
+
+    这样升级后不会让用户重新填一遍。
+    """
+    if not cfg.has_section("tiku"):
+        return False
+
+    provider = (cfg.get("tiku", "provider", fallback="") or "").strip()
+    providers = [p.strip() for p in provider.split(",") if p.strip()]
+
+    if providers:
+        # 检查每种答题方式需要的字段是否都有值
+        for name in providers:
+            need = ANSWER_MODE_REQUIREMENTS.get(name)
+            if need and not (cfg.get("tiku", need, fallback="") or "").strip():
+                return False
+        return True
+
+    # provider 为空 = "不答题"，这种需要显式标记才算配置过
+    if not cfg.has_section("cx"):
+        return False
+    return (cfg.get("cx", "answer_mode_done", fallback="") or "").strip() == "yes"
+
+
+def setup_answer_mode(force=False):
+    """
+    选择答题方式。返回 (provider字符串, 需要的配置字典)。
+
+    已经配置过且字段齐全时，直接沿用，不再打扰用户。
+    需要重新配置请用 cx setup（force=True）。
+    """
+    cfg = read_config()
+
+    # 已配置 -> 直接沿用（_ran=False 表示没有重新配置，不要覆盖已有标记）
+    if not force and is_answer_mode_configured(cfg):
+        provider = (cfg.get("tiku", "provider", fallback="") or "").strip()
+        existing = {"provider": provider, "_ran": False}
+        cur_degraded = (cfg.get("cx", "quiz_degraded", fallback="") or "").strip()             if cfg.has_section("cx") else ""
+        existing["_degraded"] = (cur_degraded == "yes")
+        for name in [p.strip() for p in provider.split(",") if p.strip()]:
+            need = ANSWER_MODE_REQUIREMENTS.get(name)
+            if need:
+                existing[need] = (cfg.get("tiku", need, fallback="") or "").strip()
+        label = "、".join(
+            m[2] for m in ANSWER_MODES
+            if m[1] == provider
+        ) or (provider or "不答题")
+        print(f"  答题方式：{label}  （已配置，如需修改请运行 cx setup）")
+        return provider, existing
+
+    cur_key = cfg.get("tiku", "key", fallback="") if cfg.has_section("tiku") else ""
+
+    title("选择答题方式")
+    print("  章节测验需要答题才能解锁，选一种答题方式：")
+    print()
+    for num, _p, label, desc, _need_ai in ANSWER_MODES:
+        print("   " + num + ". " + _pad(label, 16) + desc)
+    print()
+
+    while True:
+        choice = ask("请填序号")
+        hit = [m for m in ANSWER_MODES if m[0] == choice]
+        if hit:
+            break
+        print("  ✘ 没有这个序号，请重新填。")
+
+    _num, provider, label, need_ai, _desc = hit[0]
+
+    result = {"provider": provider}
+
+    # 不需要任何东西
+    if not provider:
+        print()
+        print("  已选择：不答题（章节测验会被跳过）")
+        return provider, result
+
+    # 手动模式
+    if provider == "TikuManual":
+        print()
+        print("  已选择：手动答题（每条题目都会停下来让你输入答案）")
+        return provider, result
+
+    # 需要 token 的题库
+    if "TikuYanxi" in provider:
+        print()
+        print("  言溪题库需要 token（登录 https://tk.enncy.cn/ 获取）")
+        print("  有多个 token 可以用英文逗号分隔。")
+        print()
+        tokens = ask("言溪 token")
+        result["tokens"] = tokens
+
+    if "TikuGo" in provider:
+        print()
+        print("  GO 题可不填 authorization 直接使用（可能限流）。")
+        print("  如需解除限流，可在公众号「一之哥哥」申请后填入。")
+        print()
+        go_auth = ask("GO题 authorization（可留空）", allow_empty=True)
+        result["go_authorization"] = go_auth
+
+    # 需要 AI 兜底
+    if need_ai:
+        if cur_key:
+            print("  检测到已保存的 Key，正在验证...")
+            ok, err = verify_deepseek_key(cur_key)
+            if ok:
+                print("  ✔ 已保存的 Key 有效，无需重新填写")
+                result["key"] = cur_key
+            else:
+                print("  ✘ 已保存的 Key 失效了：" + short_err(err))
+                result["key"] = ask_deepseek_key()
+        else:
+            result["key"] = ask_deepseek_key()
+
+        # 用户在填 Key 时选择了"不做测验" -> 转为不答题，并标记已降级
+        if not result.get("key"):
+            print("  已切换为「不做测验」模式。")
+            return "", {"provider": "", "degraded": True, "_ran": True}
+
+    result["_ran"] = True
+    return provider, result
+
+
+def _provider_needs_ai(provider):
+    """这个答题方式是否需要 DeepSeek"""
+    names = [p.strip() for p in (provider or "").split(",") if p.strip()]
+    return any(n in ("AI", "SiliconFlow") for n in names)
+
+
+def resolve_invalid_api_key(provider, current_key):
+    """
+    API Key 失效时的处理：当场让用户重填，而不是把他踢出去重走 setup。
+
+    返回 (处理结果, 新key)：
+      ("fixed",   新key)   -> 用户重新填了有效的 Key
+      ("degraded", "")     -> 用户确认：不做测验，只刷视频/文档
+      ("abort",    "")     -> 用户放弃
+    """
+    while True:
+        title("DeepSeek API Key 无法使用")
+        print("  可能原因：填错了、已失效、或账户余额不足。")
+        print("  没有可用的 Key，章节测验就无法作答。")
+        print()
+        print("   1. 重新填写 API Key")
+        print("   2. 不做测验，只刷视频 / 文档等部分")
+        print()
+
+        choice = ask("请选择")
+
+        if choice == "1":
+            new_key = ask_deepseek_key()
+            if new_key:
+                return "fixed", new_key
+            # 用户在重填过程中选择了"不做测验"
+            return "degraded", ""
+
+        if choice == "2":
+            print("  确认：只刷「视频 / 文档 / 阅读」等部分，所有测验都会跳过。")
+            print("  需要答题才能解锁的章节会卡住，刷不下去。")
+            if ask_yes_no("  确认这样做吗？", default_no=True):
+                return "degraded", ""
+            continue
+
+        return "abort", ""
+
+
+def ensure_api_key(force=False):
+    """
+    确保答题方式已配置好，并验证 Key 是否真的可用。
+
+    已配置时不再重复询问；但会验证 Key —— 失效时当场让用户重填，
+    或确认降级为"只刷非测验部分"，不需要重走整个 setup。
+    """
+    provider, conf = setup_answer_mode(force=force)
+
+    degraded = False
+
+    # ---- 验证 AI Key ----
+    if conf.get("degraded"):
+        # setup_answer_mode 里已经确认过不做测验，不要再问
+        degraded = True
+        provider = ""
+        conf = {"provider": ""}
+    elif _provider_needs_ai(provider):
+        key = (conf.get("key") or "").strip()
+
+        if key:
+            # 已有保存的 Key -> 验证；失效时当场处理，不必重走 setup
+            print()
+            print("  正在验证 API Key...")
+            while True:
+                ok, err = verify_deepseek_key(key)
+                if ok:
+                    print("  ✔ 有效")
+                    break
+
+                print("  ✘ " + short_err(err))
+                action, new_key = resolve_invalid_api_key(provider, key)
+                if action == "fixed":
+                    key = new_key
+                    continue
+                if action == "degraded":
+                    degraded = True
+                    provider = ""
+                    conf = {"provider": ""}
+                    print("  已切换为「不做测验」模式。")
+                    break
+                raise UserQuit("API Key 不可用，用户选择退出")
+
+            # 【关键】把最终生效的 Key 写回 conf。
+            # 之前漏了这一步：重填的新 Key 只存在局部变量里，
+            # 保存时用的还是 conf["key"]（旧值），导致"校验通过但保存的是旧 Key"。
+            if not degraded:
+                conf["key"] = key
+        else:
+            # 没有 Key -> 让用户填（ask_deepseek_key 内部已验证，不用重复验证）
+            key = ask_deepseek_key()
+            if not key:
+                degraded = True
+                provider = ""
+                conf = {"provider": ""}
+                print("  已切换为「不做测验」模式。")
+            else:
+                conf["key"] = key
+
+    mapping = {
+        ("tiku", "provider"): provider,
+        ("tiku", "endpoint"): DEEPSEEK_ENDPOINT,
+        ("tiku", "model"): DEEPSEEK_MODEL,
+        ("tiku", "submit"): "true",
+        ("tiku", "cover_rate"): "0.9",
+    }
+    if "key" in conf:
+        mapping[("tiku", "key")] = conf["key"]
+    if "tokens" in conf:
+        mapping[("tiku", "tokens")] = conf["tokens"]
+    if "go_authorization" in conf:
+        mapping[("tiku", "go_authorization")] = conf["go_authorization"]
+
+    # 记下"答题方式已配置过"，下次直接沿用
+    mapping[("cx", "answer_mode_done")] = "yes"
+
+    # 是否"已确认不做测验"：只在真正走过配置流程时才更新，
+    # 否则普通启动会把上次的 yes 覆盖成 no（导致每次都被重新询问）。
+    if conf.get("_ran", True):
+        mapping[("cx", "quiz_degraded")] = "yes" if degraded else "no"
+
+    update_config(mapping)
+    return conf.get("key", "")
+
+
+# ==================== 全局偏好 ====================
+
+def ensure_global_prefs(force=False):
+    """
+    全局设置：通知 + 刷课参数。
+    只在"还没配过"时问一次，之后存进 config.ini，不再打扰。
+    force=True（cx setup）时才重新询问。
+    """
+    cfg = read_config()
+    if not force:
+        done = cfg.get("cx", "prefs_done", fallback="") if cfg.has_section("cx") else ""
+        if done == "yes":
+            return
+
+    # ---- 通知 ----
+    provider, url, tg = setup_notification(cfg)
+
+    # ---- 刷课参数 ----
+    title("刷课偏好")
+    print("  只问这一次，之后可用 cx setup 修改。")
+    print()
+    print("   ① 视频倍速        1 = 1倍   2 = 2倍 ✓推荐")
+    print("   ② 并发章节数      2   3   4 ✓推荐   6")
+    print("   ③ 未开放章节      1 = 跳过 ✓推荐   2 = 重试")
+    print("   ④ 答错重做次数    0 = 不重做  1  3 ✓推荐  5")
+    print("   ⑤ 章节学习次数    1 = 开启   2 = 不开启 ✓推荐")
+    print()
+
+    def ask_choice(label, valid, hint):
+        """统一的选项输入：非法就重问，不啰嗦"""
+        while True:
+            val = ask(label)
+            if val in valid:
+                return val
+            print("  ✘ " + hint)
+
+    speed = ask_choice("① 视频倍速", ("1", "2"), "只能填 1 或 2。")
+    jobs = ask_choice("② 并发章节数", ("2", "3", "4", "6"), "只能填 2 / 3 / 4 / 6。")
+    nopen = ask_choice("③ 未开放章节", ("1", "2"), "只能填 1 或 2。")
+    notopen = "continue" if nopen == "1" else "retry"
+    retries = ask_choice("④ 答错重做次数", ("0", "1", "3", "5"), "只能填 0 / 1 / 3 / 5。")
+    lc_choice = ask_choice("⑤ 章节学习次数", ("1", "2"), "只能填 1 或 2。")
+    lc = lc_choice == "1"
+    target = "100"
+    if lc:
+        while True:
+            target = ask("   目标次数（1~9999）")
+            if target.isdigit() and 1 <= int(target) <= 9999:
+                break
+            print("  ✘ 只能填 1~9999。")
+
+    # ---- 保存 ----
+    update_config({
+        ("tiku", "check_llm_connection"): "true",
+        ("common", "speed"): speed,
+        ("common", "jobs"): jobs,
+        ("common", "notopen_action"): notopen,
+        ("common", "work_max_retries"): retries,
+        ("common", "add_learning_count"): "true" if lc else "false",
+        ("common", "target_count"): target,
+        ("cx", "prefs_done"): "yes",
+        ("notification", "provider"): provider or "",
+        ("notification", "url"): url or "",
+        ("notification", "tg_chat_id"): tg or "XXXXXX",
+    })
+
+    title("全局设置已保存")
+    print("  通知   : " + (provider if (provider and url) else "未配置"))
+    print("  倍速   : " + speed)
+    print("  并发   : " + jobs)
+    print("  未开放 : " + ("跳过" if notopen == "continue" else "重试"))
+    print("  答错重做: " + retries + " 次")
+    print("  学习次数: " + ("开启，目标 " + target if lc else "未开启"))
+    print()
+
+
+# ==================== 登录 ====================
+
+def do_login(username, password):
+    """登录；返回 (chaoxing实例, 昵称) 或 (None, 错误信息)"""
+    print()
+    print("  正在登录 " + username + "...")
+    try:
+        from api.base import Chaoxing, Account
+        from api import cookies
+        cookies.set_current_account(username)
+        account = Account(username, password)
+        cx = Chaoxing(account=account)
+        result = cx.login(login_with_cookies=False)
+    except Exception as e:
+        return None, str(e)[:150]
+
+    if not result.get("status"):
+        return None, str(result.get("msg", "未知原因"))
+
+    name = ""
+    try:
+        name = cx.get_name()
+    except Exception:
+        pass
+    return cx, name
+
+
+def add_new_account():
+    """加入新账号：登录成功后保存"""
+    title("加入新账号")
+    print("  输入手机号和密码，登录成功后自动保存，下次可直接选用。")
+    print()
+
+    while True:
+        username = ask("手机号")
+        password = ask("密码")
+        cx, name = do_login(username, password)
+        if cx:
+            print("  ✔ 登录成功" + ("，欢迎 " + name if name else ""))
+            accounts.save_account(username, password, name)
+            print("  ✔ 已保存，下次可直接选用")
+            return username, password, cx, name
+        print("  ✘ 登录失败：" + name)
+        print()
+        if not ask_yes_no("  重新输入吗？", default_no=False):
+            sys.exit(1)
+
+
+def use_existing(acc):
+    """用已保存的账号登录（不重输密码，除非失败）"""
+    label = acc.get("name") or acc["username"]
+    title("登录 " + label)
+    print("  账号：" + acc["username"])
+    if acc.get("name"):
+        print("  姓名：" + acc["name"])
+    print("  （已保存密码，无需重新输入）")
+
+    username = acc["username"]
+    password = acc["password"]
+
+    while True:
+        cx, name = do_login(username, password)
+        if cx:
+            print("  ✔ 登录成功" + ("，欢迎 " + name if name else ""))
+            accounts.save_account(username, password, name or acc.get("name", ""))
+            return username, password, cx, name
+        print("  ✘ 登录失败：" + name)
+        print("    可能是密码改了，或账号被冻结。")
+        print()
+        if not ask_yes_no("  重新输入密码吗？", default_no=False):
+            sys.exit(1)
+        password = ask("密码")
+
+
+# ==================== 账号管理 ====================
+
+def manage_accounts():
+    """删除账号等管理操作"""
+    while True:
+        saved = accounts.list_accounts()
+        title("管理账号")
+        if not saved:
+            print("  没有已保存的账号")
+            return
+        for i, a in enumerate(saved, 1):
+            print("    [" + str(i) + "] " + (a.get("name") or "(昵称未知)") + "   " + a["username"])
+        print()
+        print("    [0] 返回")
+        print()
+        raw = ask("要删除哪个账号的序号", default="0")
+        if raw == "0":
+            return
+        if not raw.isdigit() or not (1 <= int(raw) <= len(saved)):
+            print("  ✘ 没有这个序号")
+            continue
+        target = saved[int(raw) - 1]
+        print()
+        if not ask_yes_no("  确定删除 " + (target.get("name") or target["username"]) + " 吗？", default_no=True):
+            continue
+        accounts.delete_account(target["username"])
+        from api import cookies
+        cookies.clear_cookies(target["username"])
+        print("  ✔ 已删除该账号（含其 cookie）")
+
+
+# ==================== 选课 / 选任务点 ====================
+
+def choose_courses(cx):
+    title("选择课程")
+    print("  正在读取课程列表...")
+
+    try:
+        all_course = cx.get_course_list()
+    except Exception as e:
+        print("  ✘ 读取失败：" + short_err(e))
+        sys.exit(1)
+
+    if not all_course:
+        print("  ✘ 这个账号下没有课程")
+        sys.exit(1)
+
+    seen, courses = set(), []
+    for c in all_course:
+        key = (str(c["courseId"]), str(c["clazzId"]))
+        if key not in seen:
+            seen.add(key)
+            courses.append(c)
+
+    print()
+    for i, c in enumerate(courses, 1):
+        print("   " + str(i).rjust(2) + ". " + c["title"])
+    print()
+
+    chosen = None
+    while chosen is None:
+        raw = ask("要刷哪几门？填序号，如 1,3")
+        parts = [p.strip() for p in raw.replace("，", ",").replace("、", ",").split(",") if p.strip()]
+        picked, bad = [], []
+        for p in parts:
+            if p.isdigit() and 1 <= int(p) <= len(courses):
+                picked.append(courses[int(p) - 1])
+            else:
+                hit = [c for c in courses if str(c["courseId"]) == p]
+                if hit:
+                    picked.append(hit[0])
+                else:
+                    bad.append(p)
+        if bad:
+            print("  ✘ 没认出来：" + ", ".join(bad))
+            continue
+        uniq, seen2 = [], set()
+        for c in picked:
+            if c["courseId"] not in seen2:
+                seen2.add(c["courseId"])
+                uniq.append(c)
+        chosen = uniq
+
+    print("  已选：" + "、".join(c["title"] for c in chosen))
+    print()
+
+    # 逐门课程分别问（每次都必须明确输入，不沿用上次）
+    title("每门课刷几个任务点")
+    print("  填数字 = 只刷前几个未完成章节    填 all = 全部刷完")
+    print()
+
+    plan = []
+    for c in chosen:
+        while True:
+            raw = ask(_pad(c["title"], 24))
+            low = raw.strip().lower()
+            if low in ("all", "全部", "0"):
+                n = 0
+                break
+            try:
+                n = int(low)
+                if n < 0:
+                    raise ValueError
+                break
+            except ValueError:
+                print("  ✘ 请填数字（如 3），或填 all 表示全部。")
+        print("     " + ("→ 全部刷完" if n == 0 else ("→ 刷前 " + str(n) + " 个")))
+        plan.append((c, n))
+
+    return plan
+
+
+# ==================== 主流程 ====================
+
+def build_config(username, password, plan):
+    """写出本次要用的配置（用账号专属文件，不污染全局配置）"""
+    paths.backup_config()
+    text = _read_config_text()
+
+    course_ids = ",".join(str(c["courseId"]) for c, _ in plan)
+    mp = ",".join(str(c["courseId"]) + ":" + str(n) for c, n in plan)
+
+    text = replace_value(text, "common", "username", username)
+    text = replace_value(text, "common", "password", password)
+    text = replace_value(text, "common", "course_list", course_ids)
+    text = replace_value(text, "common", "notopen_action", "continue")
+    text = replace_value(text, "common", "max_points_per_course", mp)
+    text = replace_value(text, "common", "use_cookies", "false")
+    # 保留 check_llm_connection=true：main.py 启动时会再验证一次 Key。
+    # 本流程虽然刚验证过，但保持这道兜底更安全 —— 万一是旧配置/Key 中途失效，
+    # 也能在"开始刷课之前"就拦住，而不是刷到测验时才发现（那样会一堆报错）。
+    text = replace_value(text, "tiku", "check_llm_connection", "true")
+    # 注意：通知配置必须原样保留，不能清空（之前这里会覆盖掉用户配好的通知）
+
+    # 每个用户一份独立配置，避免多用户互相覆盖
+    os.makedirs(accounts.ACCOUNTS_DIR, exist_ok=True)
+    user_config = os.path.join(accounts.ACCOUNTS_DIR, "run_" + accounts._safe_name(username) + ".ini")
+    with open(user_config, "w", encoding="utf8") as f:
+        f.write(text)
+    try:
+        os.chmod(user_config, 0o600)
+    except Exception:
+        pass
+    return user_config
+
+
+def pick_user():
+    """
+    选择用户：返回 (username, password, cx, name)。
+    没有账号时会引导加入新账号。
+    """
+    saved = accounts.list_accounts()
+
+    if not saved:
+        print("  还没有保存过用户，先加入一个账号。")
+        return add_new_account()
+
+    title("选择用户")
+    for i, a in enumerate(saved, 1):
+        label = a.get("name") or "(昵称未知)"
+        when = (a.get("last_used") or "")[5:16]   # 只留 月-日 时:分
+        print("   " + str(i) + ". " + _pad(label, 12) + _pad(a["username"], 13) + when)
+    print()
+    print("   " + str(len(saved) + 1) + ". 加入新账号")
+    print("   " + str(len(saved) + 2) + ". 管理账号（删除）")
+    print()
+
+    idx_add = len(saved) + 1
+    idx_mgr = len(saved) + 2
+
+    while True:
+        raw = ask("请选择")
+        if raw.isdigit() and 1 <= int(raw) <= idx_mgr:
+            break
+        print("  ✘ 没有这个选项，请重新填。")
+
+    idx = int(raw)
+    if idx == idx_mgr:
+        manage_accounts()
+        return pick_user()
+    if idx == idx_add:
+        return add_new_account()
+    return use_existing(saved[idx - 1])
+
+
+def ask_after_run(label, cancelled=False):
+    """
+    一轮结束后问用户下一步做什么。
+    返回 "again"（同账号继续）/ "switch"（换账号）/ "exit"（退出）
+
+    cancelled=True 表示用户在上一步取消了刷课（此时不能说"刷课结束"）。
+    """
+    title("接下来做什么")
+    if cancelled:
+        print("  本次没有刷课（你在确认时取消了）。")
+    else:
+        print("  刚刷完的账号：" + label)
+    print()
+    print("   1. 继续刷这个账号的其他课程")
+    print("   2. 换个账号刷")
+    print("   3. 退出程序")
+    print()
+
+    while True:
+        choice = ask("请选择")
+        if choice == "1":
+            return "again"
+        if choice == "2":
+            return "switch"
+        if choice == "3":
+            return "exit"
+        print("  ✘ 只能填 1 / 2 / 3。")
+
+
+def _main_inner(force_setup=False):
+    title("超星刷课")
+    print()
+    print("  提示：任何时候输入 q 并回车，可以立即退出，不会刷任何课。")
+
+    # 1. 答题方式：已配置则静默沿用，只有 cx setup 才会重新询问
+    ensure_api_key(force=force_setup)
+
+    # 1.5 首次使用或还没配过通知/偏好时，问一次全局设置（存到 config.ini，以后不再问）
+    ensure_global_prefs(force=force_setup)
+
+    # 2. 选用户 -> 选课 -> 刷课；刷完再问下一步
+    from main import main as run_main
+
+    current = None          # 当前登录的 (username, password, cx, name)
+    round_no = 0            # 第几轮
+
+    while True:
+        # ---- 选用户（换了账号或第一轮时） ----
+        if current is None:
+            current = pick_user()
+        username, password, cx, name = current
+        label = name or username
+
+        # 同一账号继续刷时，明确告诉用户当前是谁
+        if round_no > 0:
+            title("继续刷课")
+            print("  当前账号：" + label + "（" + username + "）")
+
+        # ---- 选课 + 逐门设置任务点数 ----
+        plan = choose_courses(cx)
+
+        # ---- 写该用户专属配置 ----
+        user_config = build_config(username, password, plan)
+
+        # ---- 最终确认 ----
+        title("请确认")
+        print("  用户  " + label + "（" + username + "）")
+        print("  课程")
+        for c, n in plan:
+            detail = "全部刷完" if n == 0 else ("刷前 " + str(n) + " 个任务点")
+            print("        " + _pad(c["title"], 24) + detail)
+        print()
+        if not ask_yes_no("确认开始刷课吗？", default_no=False):
+            print("  已取消，本次不会刷任何课。")
+            # 取消了不直接退出，问用户下一步
+            action = ask_after_run(label, cancelled=True)
+            if action == "again":
+                round_no += 1
+                continue
+            if action == "switch":
+                current = None
+                round_no += 1
+                continue
+            break
+
+        # ---- 开刷 ----
+        # 关键：清掉上一轮可能残留的终止标志，否则新一轮会立刻停止
+        interrupt.reset()
+        sys.argv = ["main.py", "-c", user_config]
+        run_main()
+
+        # ---- 刷完问下一步 ----
+        round_no += 1
+        action = ask_after_run(label)
+        if action == "again":
+            continue
+        if action == "switch":
+            current = None
+            continue
+        break
+
+    return 0
+
+
+def main(force_setup=False):
+    """统一入口：把一键退出/中断处理成干净退出"""
+    try:
+        return _main_inner(force_setup=force_setup)
+    except UserQuit:
+        print()
+        print("  已安全退出。")
+        print()
+        return 0
+    except KeyboardInterrupt:
+        print()
+        print()
+        print("  已安全退出（Ctrl+C）。")
+        print()
+        return 0
+
+
+if __name__ == "__main__":
+    # cx setup -> 重新配置；cx -> 已配置则直接开始
+    _force = "--setup" in sys.argv or "setup" in sys.argv
+    sys.exit(main(force_setup=_force))

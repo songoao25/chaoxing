@@ -46,6 +46,14 @@ class SessionManager:
         return cls._instance
 
     def __init__(self):
+        # 单例只需初始化一次。
+        # 注意：__new__ 返回单例后 __init__ 仍会被调用，若不拦截，
+        # 每次 get_session() 都会重建 Session 并从 cookie 文件重新加载登录态，
+        # 导致「cookie 文件丢失 = 登录态丢失 = 抛 Cannot get uid 崩溃」。
+        if getattr(self, "_initialized", False):
+            return
+        self._initialized = True
+
         self._session = requests.Session()
         self._session.mount("https://", HTTPAdapter(max_retries=10))
         self._session.mount("http://", HTTPAdapter(max_retries=10))
@@ -62,12 +70,21 @@ class SessionManager:
 
     @classmethod
     def get_session(cls) -> requests.Session:
+        """返回同一个 Session 实例（不会重建）"""
         instance = cls.get_instance()
         return instance._session
 
     @classmethod
     def update_cookies(cls):
+        """把磁盘上的 cookie 合并进当前 session（不清空已有的）"""
         cls.get_instance()._session.cookies.update(use_cookies())
+
+    @classmethod
+    def reset(cls):
+        """显式重置会话（仅在确实需要全新会话时调用）"""
+        inst = cls.get_instance()
+        inst._initialized = False
+        inst.__init__()
 
     @classmethod
     def relogin_if_needed(cls, chaoxing_instance) -> bool:
@@ -355,6 +372,12 @@ class Chaoxing:
         self.video_log_limiter = RateLimiter(2)  # 上报进度极其容易卡验证码，限制2s一次
 
     def login(self, login_with_cookies=False):
+        # 关键：把当前账号告诉 cookie 模块，之后 cookie 读写都落到该账号专属文件，
+        # 避免多账号之间互相覆盖（串号）。
+        if self.account and self.account.username:
+            from api.cookies import set_current_account
+            set_current_account(self.account.username)
+
         if login_with_cookies:
             logger.info("Logging in with cookies")
             SessionManager.update_cookies()
@@ -830,9 +853,6 @@ class Chaoxing:
 
         _dtoken = _video_info["dtoken"]
 
-        _crc = _video_info["crc"]
-        _key = _video_info["key"]
-
         # Time in the real world: last_iter, gc.THRESHOLD
         # Time in the video (can be scaled with the speed factor): duration, play_time, last_log_time, wait_time
 
@@ -958,6 +978,11 @@ class Chaoxing:
 
     def study_work(self, _course, _job, _job_info) -> StudyResult:
         if self.tiku.DISABLE or not self.tiku:
+            # 没题库时不再静默假装"成功"，明确记录被跳过，便于用户识别未真正作答的测验
+            logger.warning(
+                "章节测验 [{} - {}] 因未配置题库被跳过（未作答）。",
+                _course.get("title", "?"), _job.get("name", "?")
+            )
             return StudyResult.SUCCESS
 
         _session = SessionManager.get_session()

@@ -146,6 +146,8 @@ cookies.txt
 .config.ini
 config.ini
 chaoxing.log
+# 多用户模式保存的账号（含明文密码，绝不能提交）
+accounts/
 config*.ini
 .chaoxing.log
 ./config.ini
