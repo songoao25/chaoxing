@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import argparse
 import enum
+import os
 import re
 import sys
 import threading
@@ -15,6 +16,7 @@ from api.exceptions import LoginError, InputFormatError
 from api.configfile import read_config_file
 from api.guard import check_before_run, hard_stop, UserAbort
 from api import interrupt
+from api import paths
 from api.display import ChapterProgress, course_plan_summary, safe_console
 from api.logger import set_quiet as set_console_quiet
 from api.logger import log_file_only, logger
@@ -257,6 +259,28 @@ def load_config_from_file(config_path):
     return common_config, tiku_config, notification_config
 
 
+def _load_default_tiku_and_notification():
+    """
+    命令行模式（不带 -c）下，题库和通知设置仍然从用户配置里读。
+
+    运行时 Tiku 本来就会去读 ~/.chaoxing/config.ini 的 [tiku] 段，
+    如果启动检查看不到它，就会出现"参数都填了却被拦下来问答题方式"的矛盾。
+    只取题库和通知两段：账号 / 课程 / 刷课参数一律以命令行参数为准。
+    """
+    try:
+        default_config = paths.config_path()
+    except Exception:
+        return {}, {}
+    if not os.path.exists(default_config):
+        return {}, {}
+    try:
+        _common, tiku_config, notification_config = load_config_from_file(default_config)
+        return tiku_config, notification_config
+    except Exception as e:
+        logger.warning(f"读取默认配置 {default_config} 失败，将忽略其中的题库/通知设置: {e}")
+        return {}, {}
+
+
 def build_config_from_args(args):
     """从命令行参数构建配置"""
     common_config = {
@@ -272,7 +296,8 @@ def build_config_from_args(args):
         "target_count": args.target_count,
         "max_points_per_course": getattr(args, "max_points", 0) or 0,
     }
-    return common_config, {}, {}
+    tiku_config, notification_config = _load_default_tiku_and_notification()
+    return common_config, tiku_config, notification_config
 
 
 def init_config():

@@ -27,6 +27,7 @@ os.environ.setdefault("CX_DATA_HOME", tempfile.mkdtemp(prefix="cx-test-"))
 import main  # noqa: E402
 from api import answer as answer_mod  # noqa: E402
 from api import guard  # noqa: E402
+from api import paths  # noqa: E402
 from api.answer import CacheDAO  # noqa: E402
 from api.base import (  # noqa: E402
     Account,
@@ -405,6 +406,31 @@ class StartupGuardTestCase(unittest.TestCase):
         missing = os.path.join(tempfile.mkdtemp(prefix="cx-cfg-"), "not-exist.ini")
         with self.assertRaises(guard.UserAbort):
             guard.check_before_run(dict(self.CONFIG), self.TIKU, {}, missing, skip_confirm=True)
+
+
+class CliModeConfigTestCase(unittest.TestCase):
+    """命令行模式（不带 -c）也要能读到用户配置里的题库设置，否则会被误拦"""
+
+    def test_reads_tiku_from_default_config(self):
+        config_path = paths.config_path()
+        original = None
+        if os.path.exists(config_path):
+            with open(config_path, encoding="utf8") as fp:
+                original = fp.read()
+        try:
+            with open(config_path, "w", encoding="utf8") as fp:
+                fp.write("[common]\nusername = 13800000000\n\n"
+                         "[tiku]\nprovider = TikuManual\ncheck_llm_connection = false\n")
+            tiku_config, notification_config = main._load_default_tiku_and_notification()
+            self.assertEqual(tiku_config.get("provider"), "TikuManual")
+            self.assertIsInstance(notification_config, dict)
+        finally:
+            if original is None:
+                if os.path.exists(config_path):
+                    os.remove(config_path)
+            else:
+                with open(config_path, "w", encoding="utf8") as fp:
+                    fp.write(original)
 
 
 class NetworkRetryTestCase(unittest.TestCase):
