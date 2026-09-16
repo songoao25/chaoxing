@@ -367,8 +367,10 @@ def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, spe
         video_result = chaoxing.study_video(
             course, job, job_info, _speed=speed, _type="Video"
         )
-        if video_result.is_failure():
-            # 音频任务在超星接口里也标记为 video，这是常见的正常回退
+        if video_result == StudyResult.ERROR:
+            # 只有"读不到视频信息"（多半其实是音频任务）才回退音频。
+            # 403 风控时不能立刻再跑一遍音频 —— 那等于连续撞风控，
+            # 而且会把剩余时长整段再"播放"一次，反而更容易被判定异常（#445 #473 #488）。
             logger.info("当前任务非视频任务, 正在尝试音频任务解码")
             video_result = chaoxing.study_video(
                 course, job, job_info, _speed=speed, _type="Audio")
@@ -603,6 +605,13 @@ def process_chapter(chaoxing: Chaoxing, course: dict[str, Any], point: dict[str,
     # 获取当前章节的所有任务点
     job_info = None
     jobs, job_info = chaoxing.get_job_list(course, point)
+
+    # jobs 为 None = 任务点没读到（登录失效 / 风控 / 页面结构变化）。
+    # 这时绝不能返回 SUCCESS：那会让这一章在进度里被打勾，
+    # 整门课都这样时还会报"全部完成"，其实一个任务点都没做（#223 / #357）。
+    if jobs is None:
+        logger.error("章节任务点读取失败，稍后重试: {}", point.get("title", ""))
+        return ChapterResult.ERROR
 
     # 发现未开放章节, 根据配置处理
     if job_info.get("notOpen", False):

@@ -246,7 +246,11 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
     # 提取mArg参数
     temp = re.findall(r"mArg=\{(.*?)\};", html_text.replace(" ", ""))
     if not temp:
-        return [], {}
+        # 正常的学习页面一定带 mArg；取不到说明拿到的是登录页/验证码页/
+        # 改版页面。标记 parseError，让上层按"读取失败"重试，
+        # 绝不能当成"这个章节没有任务点"直接打勾（#223 / #357）。
+        logger.warning("任务点页面里找不到 mArg（可能是登录页、验证码页或页面结构变化）")
+        return [], {"parseError": True}
 
     # 解析JSON数据
     cards_data = json.loads("{" + temp[0] + "}")

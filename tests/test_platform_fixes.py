@@ -32,6 +32,7 @@ from api.base import (  # noqa: E402
     Account,
     Chaoxing,
     StudyResult,
+    _parse_progress_passed,
     answers_equal,
     build_completion_fields,
     split_completion_answer,
@@ -125,11 +126,19 @@ class DecodeRobustnessTestCase(unittest.TestCase):
     def test_course_point_empty_html(self):
         self.assertEqual(decode_course_point("")["points"], [])
 
-    def test_course_card_malformed_pages(self):
-        for html in ("", "<html>登录页</html>", "mArg={};"):
+    def test_course_card_without_marg_marks_parse_error(self):
+        # 登录页 / 空页面取不到 mArg，必须标记 parseError，
+        # 让上层按"读取失败"重试，而不是当成"这个章节没有任务点"（#223 / #357）
+        for html in ("", "<html>登录页</html>", "<html><body>403</body></html>"):
             jobs, info = decode_course_card(html)
             self.assertEqual(jobs, [])
-            self.assertEqual(info, {})
+            self.assertTrue(info.get("parseError"), info)
+
+    def test_course_card_with_empty_marg_is_empty_chapter(self):
+        # mArg 存在但为空 = 这一章确实没有卡片，走正常的"空章节"流程
+        jobs, info = decode_course_card("mArg={};")
+        self.assertEqual(jobs, [])
+        self.assertFalse(info.get("parseError"), info)
 
     def test_quiz_page_without_form(self):
         # 接口返回登录页 / 空页面时不能抛 NoneType 异常（#593）
@@ -262,6 +271,56 @@ class _FakeResponse:
 
     def json(self):
         return self._payload
+
+
+class VideoProgressParseTestCase(unittest.TestCase):
+    """#175 #298：视频进度上报接口返回非 JSON 时不能抛异常打断整章"""
+
+    class _Resp:
+        def __init__(self, payload=None, raw=False):
+            self._payload = payload
+            self._raw = raw
+
+        def json(self):
+            if self._raw:
+                raise ValueError("Expecting value: line 1 column 1")
+            return self._payload
+
+    def test_is_passed_variants(self):
+        self.assertTrue(_parse_progress_passed(self._Resp({"isPassed": True})))
+        self.assertFalse(_parse_progress_passed(self._Resp({"isPassed": False})))
+        self.assertFalse(_parse_progress_passed(self._Resp({"other": 1})))
+        self.assertFalse(_parse_progress_passed(self._Resp(raw=True)))
+        self.assertFalse(_parse_progress_passed(self._Resp([1, 2])))
+
+
+class ChapterReadFailureTestCase(unittest.TestCase):
+    """#223 #357：任务点读取失败不能被当成"章节已完成"静默打勾"""
+
+    class _Cx:
+        class _Limiter:
+            @staticmethod
+            def limit_rate(**kwargs):
+                return None
+
+        rate_limiter = _Limiter()
+
+        def get_job_list(self, course, point):
+            return None, {}
+
+    class _CxEmpty(_Cx):
+        def get_job_list(self, course, point):
+            return [], {"notOpen": False}
+
+    POINT = {"title": "1.1 章节", "has_finished": False}
+
+    def test_read_failure_returns_error(self):
+        result = main.process_chapter(self._Cx(), {"title": "课"}, self.POINT, 1.0)
+        self.assertEqual(result, main.ChapterResult.ERROR)
+
+    def test_empty_chapter_still_succeeds(self):
+        result = main.process_chapter(self._CxEmpty(), {"title": "课"}, self.POINT, 1.0)
+        self.assertEqual(result, main.ChapterResult.SUCCESS)
 
 
 class LlmConnectionTestCase(unittest.TestCase):

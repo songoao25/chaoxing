@@ -452,6 +452,25 @@ _FULLWIDTH_MAP = str.maketrans(
 )
 
 
+def _parse_progress_passed(resp) -> bool:
+    """
+    解析视频进度上报响应里的 isPassed。
+
+    上报接口被风控时可能返回 200 + 登录页/验证码页（不是 JSON），
+    或者 JSON 里没有 isPassed；以前直接取下标会抛异常把整个章节中断（#175 / #298），
+    这里统一按"还没通过"处理。
+    """
+    try:
+        payload = resp.json()
+    except ValueError:
+        logger.warning("视频进度上报返回的不是 JSON（可能被风控或需要验证码），按未通过处理")
+        return False
+    if not isinstance(payload, dict):
+        logger.warning("视频进度上报返回格式异常，按未通过处理")
+        return False
+    return bool(payload.get("isPassed", False))
+
+
 def _clean_answer_text(text) -> str:
     """去掉答案里的 HTML 标签、实体和特殊空白"""
     value = re.sub(r"<[^>]+>", "", str(text or ""))
@@ -785,23 +804,29 @@ class Chaoxing:
             cards_params.update({"num": _possible_num})
             _resp = _session.get("https://mooc1.chaoxing.com/mooc-ans/knowledge/cards", params=cards_params)
             if _resp.status_code != 200:
-                logger.error(f"未知错误: {_resp.status_code} 正在跳过")
-                logger.error(_resp.text)
-                return [], {}
+                # 返回 None 表示"没读到"，和"这一章本来就空"是两回事
+                logger.error(f"章节任务点读取失败: HTTP {_resp.status_code}")
+                logger.debug(_resp.text[:500])
+                return None, {}
 
             _job_list, _job_info = decode_course_card(_resp.text)
             if _job_info.get("notOpen", False):
                 # 直接返回, 节省一次请求
                 logger.info("该章节未开放")
                 return [], _job_info
+            if _job_info.get("parseError"):
+                return None, _job_info
 
             job_list += _job_list
             job_info.update(_job_info)
 
         if not job_list:
-            self.study_emptypage(course, point)
+            # 空章节也要把"访问"这一步做成功才算完成；失败同样按读取失败处理
+            empty_result = self.study_emptypage(course, point)
+            if empty_result is not None and empty_result.is_failure():
+                logger.error("空页面任务未完成，按读取失败处理: {}", point.get("title", ""))
+                return None, job_info
 
-        logger.trace(f"原始任务点列表内容:\n{_resp.text}")
         logger.trace("章节任务点读取成功...")
 
         return job_list, job_info
@@ -922,7 +947,7 @@ class Chaoxing:
                 resp = perform_request(rt)
                 if resp.status_code == 200:
                     logger.trace(resp.text)
-                    return resp.json()["isPassed"], 200
+                    return _parse_progress_passed(resp), 200
                 elif resp.status_code == 403:
                     logger.warning("出现403报错, 正常尝试切换rt")
                 else:
@@ -934,7 +959,7 @@ class Chaoxing:
 
         if resp.status_code == 200:
             logger.trace(resp.text)
-            return resp.json()["isPassed"], 200
+            return _parse_progress_passed(resp), 200
 
         elif resp.status_code == 403:
             logger.debug(
@@ -1078,8 +1103,18 @@ class Chaoxing:
             return StudyResult.SUCCESS
 
         pbar = None
+        # 服务器一直返回"200 但未通过"时不能无限循环（#358 / #451）：
+        # 正常播放需要的理论时间 + 5 分钟缓冲，超了就当作失败交给上层重试。
+        play_deadline = time.time() + duration / max(_speed, 0.1) + 300
         try:
             while not passed:
+                if time.time() > play_deadline:
+                    logger.error(
+                        "任务 {} 进度上报一直未被通过（已超过预计时间），先跳过，稍后重试",
+                        _job.get("name", "?"),
+                    )
+                    return StudyResult.ERROR
+
                 # Sometimes the last request needs to be sent several times to complete the task
                 if play_time - last_log_time >= wait_time or play_time == duration:
 
