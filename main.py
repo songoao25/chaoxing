@@ -856,12 +856,20 @@ def main():
 
         # 任务点数量已在启动检查时解析并校验（见上面的 max_points_map / max_points_default）
         tasks = []
+        # 一个章节都没读到的课程：不能当成"已经刷完"，否则解析出问题时会误报"无需刷课"
+        unreadable_courses = []
         for course in course_task:
             logger.trace(f"正在读取课程章节: {course['title']}")
             point_list = chaoxing.get_course_point(
                 course["courseId"], course["clazzId"], course["cpi"]
             )
-            all_points = point_list["points"]
+            all_points = point_list.get("points") or []
+
+            if not all_points:
+                unreadable_courses.append(course["title"])
+                logger.error("课程[{}] 没有读到任何章节", course["title"])
+                print("  ⚠ " + course["title"] + "：没有读到任何章节（可能是页面结构变化或网络异常）")
+                continue
 
             # 已经刷完的章节不再排进任务队列：整段跳过，只给一行汇总说明
             cid = str(course["courseId"])
@@ -882,6 +890,18 @@ def main():
         if not tasks:
             tqdm.format_sizeof = _old_format_sizeof
             print()
+            if unreadable_courses:
+                # 读不到章节 ≠ 刷完了。宁可报错让人来看，也不能骗用户说"已全部完成"
+                print("  ✘ 有课程没能读到章节，无法判断是否已刷完：" + "、".join(unreadable_courses))
+                print("  可能是平台页面结构变化或网络异常，请稍后重试；如果一直这样请反馈。")
+                print()
+                try:
+                    notification.send(
+                        "超星刷课：读取失败\n以下课程没有读到章节：" + "、".join(unreadable_courses)
+                    )
+                except Exception:
+                    pass
+                sys.exit(4)
             print("  ✔ 所有课程的任务点都已刷完，没有需要重刷的内容")
             print()
             try:
@@ -950,16 +970,21 @@ def main():
         # 有任务点没刷成功就不能说"全部完成"：否则用户以为已经刷完，
         # 实际上还差几节（#618）。这里按实际失败数量分开报。
         failed_points = getattr(progress, "failed", 0) or 0
-        if failed_points:
+        if failed_points or unreadable_courses:
             logger.warning(f"有 {failed_points} 个任务点未能完成")
             print()
-            print(f"  ⚠ 有 {failed_points} 个任务点未能完成（下次运行会自动重试）")
+            if failed_points:
+                print(f"  ⚠ 有 {failed_points} 个任务点未能完成（下次运行会自动重试）")
+            if unreadable_courses:
+                print("  ⚠ 有课程没能读到章节：" + "、".join(unreadable_courses))
             print(flush=True)
+            unreadable_text = ("\n读不到章节的课程：" + "、".join(unreadable_courses)) if unreadable_courses else ""
             notification.send(
                 "超星刷课：部分完成（有失败）\n"
                 f"课程（{len(course_task)} 门）：{course_names}\n"
                 f"任务点：成功 {max(0, total_points - failed_points)} 个 · 失败 {failed_points} 个\n"
                 f"耗时：{used_text}"
+                f"{unreadable_text}"
             )
         else:
             logger.info("所有课程学习任务已完成")

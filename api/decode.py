@@ -29,6 +29,37 @@ _EXOTIC_CHARS = {
 }
 
 
+def _sel_text(node, selector, default="") -> str:
+    """安全取选择器命中的文本：页面结构变了也只是取到空，不会抛 NoneType.text"""
+    try:
+        found = node.select_one(selector)
+    except Exception:
+        return default
+    if not found:
+        return default
+    try:
+        return found.text
+    except Exception:
+        return default
+
+
+def _sel_attr(node, selector, attr, default="") -> str:
+    """安全取选择器命中的属性值（同上，不会抛 NoneType.attrs）"""
+    try:
+        found = node.select_one(selector)
+    except Exception:
+        return default
+    if not found:
+        return default
+    try:
+        value = found.attrs.get(attr, default)
+    except Exception:
+        return default
+    if isinstance(value, list):
+        value = value[0] if value else default
+    return default if value is None else value
+
+
 def clean_text(text) -> str:
     """清理平台返回文本里的特殊空白字符，并把连续空格压成一个"""
     if text is None:
@@ -60,16 +91,27 @@ def decode_course_list(html_text: str) -> List[Dict[str, str]]:
         if course.select_one("a.not-open-tip") or course.select_one("div.not-open-tip"):
             continue
 
+        # 平台改版时字段可能缺失，缺了就当这条有问题跳过并记一条日志，
+        # 不能让整个课程列表直接崩掉（#58 / #392 这类 KeyError / AttributeError）
+        clazz_id = _sel_attr(course, "input.clazzId", "value")
+        course_id = _sel_attr(course, "input.courseId", "value")
+        cpi_match = re.findall(r"cpi=(.*?)&", _sel_attr(course, "a", "href"))
+        title = clean_text(_sel_attr(course, "span.course-name", "title")) or clean_text(
+            _sel_text(course, "span.course-name"))
+        if not (clazz_id and course_id and cpi_match and title):
+            logger.warning("课程条目缺少必要字段，已跳过: {}", str(course.attrs)[:200])
+            continue
+
         course_detail = {
-            "id": course.attrs["id"],
-            "info": course.attrs["info"],
-            "roleid": course.attrs["roleid"],
-            "clazzId": course.select_one("input.clazzId").attrs["value"],
-            "courseId": course.select_one("input.courseId").attrs["value"],
-            "cpi": re.findall(r"cpi=(.*?)&", course.select_one("a").attrs["href"])[0],
-            "title": clean_text(course.select_one("span.course-name").attrs["title"]),
-            "desc": clean_text(course.select_one("p.margint10").attrs["title"]) if course.select_one("p.margint10") else "",
-            "teacher": clean_text(course.select_one("p.color3").attrs["title"])
+            "id": course.attrs.get("id", ""),
+            "info": course.attrs.get("info", ""),
+            "roleid": course.attrs.get("roleid", ""),
+            "clazzId": clazz_id,
+            "courseId": course_id,
+            "cpi": cpi_match[0],
+            "title": title,
+            "desc": clean_text(_sel_attr(course, "p.margint10", "title")),
+            "teacher": clean_text(_sel_attr(course, "p.color3", "title"))
         }
         course_list.append(course_detail)
 
@@ -148,24 +190,30 @@ def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
 
     for raw_point in raw_points:
         point = raw_point.div
-        if "id" not in point.attrs:
+        if point is None or "id" not in point.attrs:
             continue
 
-        point_id = re.findall(r"^cur(\d{1,20})$", point.attrs["id"])[0]
-        point_title = clean_text(point.select_one("a.clicktitle").text.replace("\n", ""))
+        # id 解析不出来就跳过这一条，别用 [0] 直接 IndexError（#22 / #374）
+        id_match = re.findall(r"^cur(\d{1,20})$", str(point.attrs.get("id", "")))
+        if not id_match:
+            logger.warning("章节点 id 异常，已跳过: {}", str(point.attrs)[:120])
+            continue
+        point_id = id_match[0]
+
+        point_title = clean_text(_sel_text(point, "a.clicktitle").replace("\n", "")) or "未命名章节"
 
         # 提取任务数量
         job_count = 1  # 默认为1
         need_unlock = False
-        if point.select_one("input.knowledgeJobCount"):
-            job_count = point.select_one("input.knowledgeJobCount").attrs["value"]
-        elif point.select_one("span.bntHoverTips") and "解锁" in point.select_one("span.bntHoverTips").text:
+        hover_tips = _sel_text(point, "span.bntHoverTips")
+        job_count_attr = _sel_attr(point, "input.knowledgeJobCount", "value")
+        if job_count_attr:
+            job_count = job_count_attr
+        elif "解锁" in hover_tips:
             need_unlock = True
 
         # 判断是否已完成
-        is_finished = False
-        if point.select_one("span.bntHoverTips") and "已完成" in point.select_one("span.bntHoverTips").text:
-            is_finished = True
+        is_finished = "已完成" in hover_tips
 
         point_detail = {
             "id": point_id,
@@ -428,7 +476,16 @@ def decode_questions_info(html_content: str) -> Dict[str, Any]:
 
     # 处理所有问题
     questions = []
-    for div_tag in soup.find("form").find_all("div", class_="singleQuesId"):
+    form_tag = soup.find("form")
+    if form_tag is None:
+        # 页面结构异常（最常见的是接口返回了登录页），交给上层按"无效响应"重试，
+        # 不要在这里抛 NoneType.find_all 把任务打挂（#593）
+        logger.warning("题目页面没有找到 form 表单，可能是登录页或页面结构变化")
+        form_data["questions"] = []
+        form_data["answerwqbid"] = ""
+        return form_data
+
+    for div_tag in form_tag.find_all("div", class_="singleQuesId"):
         question = _process_question(div_tag, font_decoder)
         if question:
             questions.append(question)
@@ -477,7 +534,8 @@ def _process_question(div_tag, font_decoder=None) -> Dict[str, Any]:
     """处理单个问题"""
     # 提取问题ID和题目类型
     question_id = div_tag.attrs.get("data", "")
-    q_type_code = div_tag.find("div", class_="TiMu").attrs.get("data", "")
+    timu_tag = div_tag.find("div", class_="TiMu")
+    q_type_code = timu_tag.attrs.get("data", "") if timu_tag is not None else ""
     q_type = _get_question_type(q_type_code)
 
     # 提取题目内容和选项

@@ -25,10 +25,18 @@ from api import answer as answer_mod  # noqa: E402
 from api.base import (  # noqa: E402
     Chaoxing,
     StudyResult,
+    answers_equal,
     build_completion_fields,
     split_completion_answer,
 )
-from api.decode import _get_question_type, clean_text, decode_course_list  # noqa: E402
+from api.decode import (  # noqa: E402
+    _get_question_type,
+    clean_text,
+    decode_course_card,
+    decode_course_list,
+    decode_course_point,
+    decode_questions_info,
+)
 
 
 class CleanTextTestCase(unittest.TestCase):
@@ -58,6 +66,110 @@ class CleanTextTestCase(unittest.TestCase):
         )
         courses = decode_course_list(html)
         self.assertEqual(courses[0]["title"], "数据结构 与算法")
+
+
+class DecodeRobustnessTestCase(unittest.TestCase):
+    """平台改版导致字段缺失时不能直接崩（#58 / #293 / #392 / #593 这类报错）"""
+
+    GOOD_COURSE = (
+        '<div class="course" id="1" info="i" roleid="2">'
+        '<input class="clazzId" value="9"><input class="courseId" value="8">'
+        '<a href="x?cpi=123&y=1"></a>'
+        '<span class="course-name" title="数据结构"></span>'
+        '<p class="margint10" title="描述"></p><p class="color3" title="张老师"></p></div>'
+    )
+
+    def test_course_list_skips_broken_entries(self):
+        broken = [
+            # 缺 input
+            '<div class="course" id="1"><a href="x?cpi=1&y=1"></a><span class="course-name" title="A"></span></div>',
+            # 缺 cpi
+            '<div class="course" id="2"><input class="clazzId" value="9"><input class="courseId" value="8">'
+            '<a href="x"></a><span class="course-name" title="B"></span></div>',
+            # 缺标题
+            '<div class="course" id="3"><input class="clazzId" value="9"><input class="courseId" value="8">'
+            '<a href="x?cpi=1&y=1"></a><span class="course-name"></span></div>',
+        ]
+        courses = decode_course_list(self.GOOD_COURSE + "".join(broken))
+        self.assertEqual(len(courses), 1)
+        self.assertEqual(courses[0]["courseId"], "8")
+
+    def test_course_list_empty_html(self):
+        self.assertEqual(decode_course_list(""), [])
+
+    def test_course_point_keeps_valid_and_skips_broken(self):
+        html = (
+            '<div class="chapter_unit"><ul>'
+            '<li><div id="cur111"><a class="clicktitle">1.1 绪论</a>'
+            '<input class="knowledgeJobCount" value="2"></div></li>'
+            '<li><div id="cur222"><a></a></div></li>'
+            '<li><div id="badid"><a class="clicktitle">没有数字 id</a></div></li>'
+            '<li><div><a class="clicktitle">完全没有 id</a></div></li>'
+            '</ul></div>'
+        )
+        points = decode_course_point(html)["points"]
+        self.assertEqual(len(points), 2)
+        self.assertEqual(points[0]["title"], "1.1 绪论")
+        self.assertEqual(points[0]["jobCount"], "2")
+        # 标题缺失时用占位名字，不能是 None
+        self.assertEqual(points[1]["title"], "未命名章节")
+
+    def test_course_point_empty_html(self):
+        self.assertEqual(decode_course_point("")["points"], [])
+
+    def test_course_card_malformed_pages(self):
+        for html in ("", "<html>登录页</html>", "mArg={};"):
+            jobs, info = decode_course_card(html)
+            self.assertEqual(jobs, [])
+            self.assertEqual(info, {})
+
+    def test_quiz_page_without_form(self):
+        # 接口返回登录页 / 空页面时不能抛 NoneType 异常（#593）
+        for html in ("", "<html><body>请登录</body></html>", "<html><div>题目</div></html>"):
+            result = decode_questions_info(html)
+            self.assertEqual(result.get("questions"), [])
+
+    def test_question_block_without_timu(self):
+        html = ('<html><form><div class="singleQuesId" data="1">'
+                '<div class="Zy_TItle">题目</div></div></form></html>')
+        result = decode_questions_info(html)
+        self.assertIsInstance(result.get("questions"), list)
+
+
+class AnswerEqualityTestCase(unittest.TestCase):
+    """#627：判断题/多选题/填空题的答案写法不同，不能被判成答错"""
+
+    def test_identical(self):
+        self.assertTrue(answers_equal("A", "A"))
+
+    def test_judgement_variants(self):
+        for mine, right in (("对", "正确"), ("对", "√"), ("√", "正确"), ("错", "×"), ("错误", "不正确")):
+            self.assertTrue(answers_equal(mine, right, "判断题"), f"{mine} vs {right}")
+        self.assertFalse(answers_equal("对", "错", "判断题"))
+
+    def test_multiple_choice_order_and_separators(self):
+        self.assertTrue(answers_equal("ABD", "A,B,D", "多选题"))
+        self.assertTrue(answers_equal("ABD", "b,a,d", "多选题"))
+        self.assertFalse(answers_equal("AB", "A", "多选题"))
+        self.assertFalse(answers_equal("AB", "ABD", "多选题"))
+
+    def test_completion_separators(self):
+        self.assertTrue(answers_equal("并发#线程", "并发；线程", "填空题"))
+        self.assertTrue(answers_equal("并发#线程", "并发 线程", "填空题"))
+        self.assertFalse(answers_equal("并发", "并发 线程", "填空题"))
+
+    def test_hash_is_not_dropped(self):
+        # 分隔符不能直接删掉，否则 "C#" 和 "C" 会被判成一样
+        self.assertFalse(answers_equal("C#", "C", "填空题"))
+
+    def test_fullwidth_and_html(self):
+        self.assertTrue(answers_equal("Ａ", "A"))
+        self.assertTrue(answers_equal("A&nbsp;B", "A B"))
+        self.assertTrue(answers_equal("<span>A</span>", "A"))
+
+    def test_empty_values(self):
+        self.assertTrue(answers_equal("", ""))
+        self.assertFalse(answers_equal("", "A"))
 
 
 class CompletionAnswerTestCase(unittest.TestCase):

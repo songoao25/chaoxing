@@ -3,6 +3,7 @@ import functools
 import random
 import secrets
 import re
+from html import unescape
 import threading
 import time
 from difflib import SequenceMatcher
@@ -439,6 +440,73 @@ def _parse_work_record_detail(html_text: str) -> list[dict]:
             "correct_answer": correct_answer,
         })
     return questions
+
+
+# 判断题的各种写法
+_TRUE_WORDS = {"对", "正确", "是", "√", "✓", "true", "t", "yes", "y", "1", "a", "ture"}
+_FALSE_WORDS = {"错", "错误", "否", "×", "✗", "x", "false", "f", "no", "n", "0", "不对", "不正确", "b"}
+
+_FULLWIDTH_MAP = str.maketrans(
+    "ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ０１２３４５６７８９",
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+)
+
+
+def _clean_answer_text(text) -> str:
+    """去掉答案里的 HTML 标签、实体和特殊空白"""
+    value = re.sub(r"<[^>]+>", "", str(text or ""))
+    value = unescape(value)
+    value = value.replace("\u00a0", " ").replace("\u3000", " ")
+    return value.translate(_FULLWIDTH_MAP).strip()
+
+
+def _letters_key(text) -> str:
+    """多选答案只比较字母集合：ABD / A,B,D / b,a,d 都算一样"""
+    return "".join(sorted(set(re.findall(r"[A-Za-z]", str(text or "").upper()))))
+
+
+def _judge_key(text) -> str:
+    """判断题归一化成 对/错"""
+    squeezed = re.sub(r"[\s。.、,，;；:：]", "", _clean_answer_text(text)).lower()
+    if squeezed in _TRUE_WORDS:
+        return "T"
+    if squeezed in _FALSE_WORDS:
+        return "F"
+    return squeezed
+
+
+def answers_equal(my_answer, correct_answer, type_label="") -> bool:
+    """
+    判断"我的答案"和"正确答案"是否一致。
+
+    页面上这两种写法的格式经常不一样（判断题 对/√、多选 ABD/A,B,D、
+    填空里空格和分号混用），直接做字符串比较会把答对的判成答错，
+    导致明明通过了还要重做，最后甚至被记成失败（#627）。
+    """
+    mine = _clean_answer_text(my_answer)
+    right = _clean_answer_text(correct_answer)
+    if not mine or not right:
+        return mine == right
+    if mine == right:
+        return True
+
+    label = str(type_label or "")
+    if "判断" in label:
+        return _judge_key(mine) == _judge_key(right)
+    if "多选" in label:
+        key_mine = _letters_key(mine)
+        return bool(key_mine) and key_mine == _letters_key(right)
+
+    # 其它题型：把各种分隔符统一成 |，忽略句读和全半角差异。
+    # 注意不能直接把分隔符删掉："C#" 和 "C" 删完就一样了，会误判成答对。
+    def squeeze(value):
+        value = re.sub(r"""[\s#|｜，,、;；:：]+""", "|", value)
+        value = re.sub(r"""[。.！!？?（）()【】\[\]"“”'’]+""", "", value)
+        # 不把首尾分隔符删掉："C#" 和 "C" 删完会变成同一个字符串，那就把错的判成对了
+        return value.lower()
+
+    squeezed_mine = squeeze(mine)
+    return bool(squeezed_mine) and squeezed_mine == squeeze(right)
 
 
 class Chaoxing:
@@ -944,18 +1012,38 @@ class Chaoxing:
 
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
         _info_url = f"https://mooc1.chaoxing.com/ananas/status/{_job['objectid']}?k={self.get_fid()}&flag=normal"
-        _video_info = _session.get(_info_url, headers=headers).json()
-
-        if _video_info["status"] != "success":
-            logger.error(f"Unknown status: {_video_info['status']}")
+        # 视频信息接口偶尔会返回非 JSON（登录页 / 错误页），或者 status=failed 时
+        # 干脆不带 dtoken、duration 这些字段。以前直接取键会抛 KeyError 把整个任务
+        # 打挂（#290），这里统一按"这个任务读不到信息"处理，交给上层重试。
+        try:
+            _video_info = _session.get(_info_url, headers=headers).json()
+        except Exception as e:
+            logger.error(f"读取视频信息失败（{type(e).__name__}），跳过该任务点: {e}")
             return StudyResult.ERROR
 
-        _dtoken = _video_info["dtoken"]
+        if not isinstance(_video_info, dict):
+            logger.error("视频信息格式异常（不是 JSON 对象），跳过该任务点")
+            return StudyResult.ERROR
+
+        if _video_info.get("status") != "success":
+            logger.error(f"视频信息状态异常（status={_video_info.get('status', '缺失')}），跳过该任务点")
+            return StudyResult.ERROR
+
+        _dtoken = _video_info.get("dtoken")
+        if not _dtoken:
+            logger.error("视频信息缺少 dtoken，跳过该任务点")
+            return StudyResult.ERROR
 
         # Time in the real world: last_iter, gc.THRESHOLD
         # Time in the video (can be scaled with the speed factor): duration, play_time, last_log_time, wait_time
 
-        duration = int(_video_info["duration"])
+        try:
+            duration = int(_video_info.get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0
+        if duration <= 0:
+            logger.error("视频信息缺少时长（视频可能还没转码完成），跳过该任务点")
+            return StudyResult.ERROR
         play_time = int(_job["playTime"]) // 1000
         last_log_time = 0
         last_iter = time.time()
@@ -1068,7 +1156,15 @@ class Chaoxing:
             - re module for regular expression matching
         """
         _session = SessionManager.get_session()
-        _url = f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job['jobid']}&knowledgeid={re.findall(r'nodeId_(.*?)-', _job['otherinfo'])[0]}&courseid={_course['courseId']}&clazzid={_course['clazzId']}&jtoken={_job['jtoken']}&_dc={get_timestamp()}"
+        # otherinfo 里没有 nodeId 时不能直接 [0] 取（#22 / #374 这类 IndexError）
+        node_ids = re.findall(r"nodeId_(.*?)-", str(_job.get("otherinfo", "")))
+        if not node_ids:
+            logger.error("文档任务缺少 nodeId 信息，跳过该任务点: {}", str(_job)[:200])
+            return StudyResult.ERROR
+        _url = (f"https://mooc1.chaoxing.com/ananas/job/document?jobid={_job.get('jobid', '')}"
+                f"&knowledgeid={node_ids[0]}&courseid={_course.get('courseId', '')}"
+                f"&clazzid={_course.get('clazzId', '')}&jtoken={_job.get('jtoken', '')}"
+                f"&_dc={get_timestamp()}")
         _resp = _session.get(_url)
         if _resp.status_code != 200:
             return StudyResult.ERROR
@@ -1441,7 +1537,7 @@ class Chaoxing:
                         for q in detail:
                             my_ans = (q.get("my_answer") or "").strip()
                             correct_ans = (q.get("correct_answer") or "").strip()
-                            if my_ans != correct_ans:
+                            if not answers_equal(my_ans, correct_ans, q.get("type_label")):
                                 all_correct = False
                                 feedback.append(
                                     f"- 题目：{q.get('title', '')}\n"
@@ -1502,7 +1598,7 @@ class Chaoxing:
         for q in detail:
             my_ans = (q.get("my_answer") or "").strip()
             correct_ans = (q.get("correct_answer") or "").strip()
-            if my_ans != correct_ans:
+            if not answers_equal(my_ans, correct_ans, q.get("type_label")):
                 all_correct = False
                 feedback.append(
                     f"- 题目：{q.get('title', '')}\n"
