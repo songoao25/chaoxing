@@ -558,8 +558,25 @@ class Chaoxing:
             "independentId": 0,
         }
         logger.trace("正在尝试登录...")
-        resp = _session.post(_url, headers=gc.HEADERS, data=_data)
-        if resp and resp.json()["status"] == True:
+        # 登录接口一定要带超时：以前没带，服务器卡住时表现为
+        # "输入完密码后没反应"，进程会一直挂着（#163 / #220）
+        try:
+            resp = _session.post(_url, headers=gc.HEADERS, data=_data, timeout=15)
+        except RequestException as e:
+            return {"status": False, "msg": f"连接登录服务器失败（{type(e).__name__}），请检查网络后重试"}
+
+        # 风控/验证码情况下返回的可能不是 JSON，或者 JSON 里没有 status/msg2，
+        # 以前直接取下标会抛 JSONDecodeError / KeyError（#164），这里统一兜底
+        try:
+            payload = resp.json()
+        except ValueError:
+            logger.warning("登录接口返回的不是 JSON（可能被风控或需要验证码），状态码: {}", resp.status_code)
+            return {"status": False, "msg": "登录接口返回异常（可能需要验证码或触发了风控），请稍后重试"}
+
+        if not isinstance(payload, dict):
+            return {"status": False, "msg": "登录接口返回格式异常，请稍后重试"}
+
+        if payload.get("status") is True:
             save_cookies(_session)
             SessionManager.update_cookies()
             logger.info("登录成功...")
@@ -570,8 +587,8 @@ class Chaoxing:
             except Exception as e:
                 logger.debug(f"获取当前登录用户名失败: {e}")
             return {"status": True, "msg": "登录成功"}
-        else:
-            return {"status": False, "msg": str(resp.json()["msg2"])}
+
+        return {"status": False, "msg": str(payload.get("msg2") or "登录失败，请检查手机号 / 密码")}
 
     @staticmethod
     def get_name() -> str:

@@ -180,11 +180,14 @@ def check_before_run(common_config, tiku_config, notification_config, config_pat
         })
 
     # ---- 3. 配置文件不存在 ----
-    if not config_path or not os.path.exists(config_path or ""):
+    # 只有"明确指定了 -c 配置文件但文件不在"才算致命。
+    # 纯命令行模式（python main.py -u 手机号 -p 密码 -l 课程ID）本来就不需要配置文件，
+    # 不能因为没传 -c 就拦死（#567）。
+    if config_path and not os.path.exists(config_path):
         hard.append({
-            "title": "没有找到配置文件 config.ini",
-            "details": "  账号、课程、API Key 等设置都保存在 config.ini 里。",
-            "fix": "  运行 cx setup 生成",
+            "title": "没有找到配置文件 " + str(config_path),
+            "details": "  你指定了 -c 参数，但这个文件不存在，账号/课程设置读不到。",
+            "fix": "  运行 cx setup 生成，或去掉 -c 用命令行参数运行",
         })
 
     # ---- 4. 答题方式检查（可继续，但需确认） ----

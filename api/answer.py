@@ -36,9 +36,13 @@ class CacheDAO:
     # 答案缓存放在用户数据目录，升级代码不会丢失已积累的答案
     DEFAULT_CACHE_FILE = _paths.cache_path()
 
+    # 锁必须是"类级"的：每次查询都会新建一个 CacheDAO 实例，
+    # 实例锁等于没锁 —— 两个章节同时答题时会各自读-改-写，
+    # 后写的把先写的覆盖掉，缓存里的题就丢了（#552）。
+    _lock = threading.RLock()
+
     def __init__(self, file: str = DEFAULT_CACHE_FILE):
         self.cache_file = Path(file)
-        self._lock = threading.RLock()
         if not self.cache_file.is_file():
             self._write_cache({})
 
@@ -50,7 +54,11 @@ class CacheDAO:
                     return {}
                 try:
                     with self.cache_file.open("r", encoding="utf8") as fp:
-                        return json.load(fp)
+                        data = json.load(fp)
+                    if not isinstance(data, dict):
+                        logger.warning("缓存文件内容不是对象（{}），已忽略", type(data).__name__)
+                        return {}
+                    return data
                 except json.JSONDecodeError as e:
                     logger.error(f"缓存文件 JSON 解析失败: {e}, 尝试恢复...")
                     # 尝试从原始二进制中以 utf-8 忽略错误地恢复有效 JSON 段
@@ -129,6 +137,10 @@ class CacheDAO:
 
     def get_cache(self, question: str) -> Optional[str]:
         data = self._read_cache()
+        # 缓存文件是合法 JSON 但不是对象时（例如被改成 [] 或 null）不能直接 .get
+        if not isinstance(data, dict):
+            logger.warning("缓存文件内容不是对象，已忽略并重新建立缓存")
+            return None
         return data.get(question)
 
     def add_cache(self, question: str, answer: str) -> None:
@@ -1764,7 +1776,12 @@ class TikuManual(Tiku):
             print(f"\n【{type_str}】 {q['title']}")
 
         while True:
-            ans = input("请输入答案 (直接回车表示跳过/无答案): ").strip()
+            try:
+                ans = input("请输入答案 (直接回车表示跳过/无答案): ").strip()
+            except EOFError:
+                # 非交互环境（定时任务/管道）读不到输入，按"跳过"处理，不要抛异常
+                print("  [提示] 当前环境读不到键盘输入，本题按跳过处理")
+                return None
             if not ans:
                 print(f"  [已记录] 题目: {q['title']} ---> 答案: [跳过/随机]")
                 return None
@@ -1955,7 +1972,12 @@ class TikuManual(Tiku):
                         ans = ""
                     answers.append(ans)
             else:
-                raw_input = input(f"\n请一次性输入所有题目的答案 (使用 '{sep_desc}' 分割): ").strip()
+                try:
+                    raw_input = input(f"\n请一次性输入所有题目的答案 (使用 '{sep_desc}' 分割): ").strip()
+                except EOFError:
+                    # 非交互环境读不到输入：按"全部跳过"处理（与直接回车一致），不要死循环
+                    print("  [提示] 当前环境读不到键盘输入，本次测验按未作答处理")
+                    return [None] * len(q_list)
                 answers = self._split_batch_answers(raw_input, len(q_list))
 
             has_error, temp_answers = self._parse_and_validate_batch(q_list, answers)
@@ -1964,7 +1986,12 @@ class TikuManual(Tiku):
                 print("\033[31m检测到存在不合规的答案，已拒绝确认，请重新输入！\033[0m")
                 continue
 
-            confirm = input("确认使用上述答案？[y/n]: ").strip().lower()
+            try:
+                confirm = input("确认使用上述答案？[y/n]: ").strip().lower()
+            except EOFError:
+                # 同上：读不到确认就按已校验通过的答案继续，避免死循环
+                print("  [提示] 当前环境读不到键盘输入，已直接采用上述答案")
+                return temp_answers
             if confirm in ['', 'y', 'yes']:
                 return temp_answers
             elif confirm == 'switch':

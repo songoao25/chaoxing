@@ -9,6 +9,7 @@
   #588 视频并发导致进度回退（提供串行开关）
 全部测试不联网、不读写用户真实数据。
 """
+import json
 import os
 import sys
 import tempfile
@@ -16,19 +17,26 @@ import threading
 import time
 import unittest
 
+import requests
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 必须在导入 api 之前指定数据目录，避免碰到用户真实配置
 os.environ.setdefault("CX_DATA_HOME", tempfile.mkdtemp(prefix="cx-test-"))
 
+import main  # noqa: E402
 from api import answer as answer_mod  # noqa: E402
+from api import guard  # noqa: E402
+from api.answer import CacheDAO  # noqa: E402
 from api.base import (  # noqa: E402
+    Account,
     Chaoxing,
     StudyResult,
     answers_equal,
     build_completion_fields,
     split_completion_answer,
 )
+from requests import RequestException  # noqa: E402
 from api.decode import (  # noqa: E402
     _get_question_type,
     clean_text,
@@ -289,6 +297,126 @@ class LlmConnectionTestCase(unittest.TestCase):
     def test_400_has_readable_message(self):
         message = answer_mod.brief_error(Exception("Error code: 400 - bad request"))
         self.assertIn("400", message)
+
+
+class CacheDAOTestCase(unittest.TestCase):
+    """#552：CacheDAO 每次查询都新建实例，锁必须是类级的，否则并发写会互相覆盖"""
+
+    def setUp(self):
+        self.path = os.path.join(tempfile.mkdtemp(prefix="cx-cache-"), "cache.json")
+        CacheDAO(self.path)
+
+    def test_concurrent_writes_do_not_lose_entries(self):
+        threads = [
+            threading.Thread(target=lambda i=i: CacheDAO(self.path).add_cache(f"q_{i}", f"a_{i}"))
+            for i in range(40)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        with open(self.path, encoding="utf8") as fp:
+            data = json.load(fp)
+        self.assertEqual(len(data), 40)
+
+    def test_non_dict_cache_is_ignored(self):
+        with open(self.path, "w", encoding="utf8") as fp:
+            fp.write("[1, 2, 3]")
+        dao = CacheDAO(self.path)
+        self.assertIsNone(dao.get_cache("q_1"))
+        dao.add_cache("q_new", "a")
+        self.assertEqual(CacheDAO(self.path).get_cache("q_new"), "a")
+
+    def test_null_cache_does_not_crash(self):
+        with open(self.path, "w", encoding="utf8") as fp:
+            fp.write("null")
+        self.assertIsNone(CacheDAO(self.path).get_cache("x"))
+
+
+class StartupGuardTestCase(unittest.TestCase):
+    """#567：纯命令行模式没有 -c 配置文件，不能被启动检查拦死"""
+
+    CONFIG = {"username": "13800000000", "password": "pw", "course_list": ["111"]}
+    TIKU = {"provider": "TikuManual"}
+
+    def test_cli_mode_without_config_file_is_allowed(self):
+        guard.check_before_run(dict(self.CONFIG), self.TIKU, {}, None, skip_confirm=True)
+
+    def test_explicit_missing_config_file_still_stops(self):
+        missing = os.path.join(tempfile.mkdtemp(prefix="cx-cfg-"), "not-exist.ini")
+        with self.assertRaises(guard.UserAbort):
+            guard.check_before_run(dict(self.CONFIG), self.TIKU, {}, missing, skip_confirm=True)
+
+
+class NetworkRetryTestCase(unittest.TestCase):
+    """#124 #166 #192 #226：主流程网络抖动要重试，重试耗尽给友好提示"""
+
+    def test_retries_then_succeeds(self):
+        state = {"n": 0}
+
+        def flaky():
+            state["n"] += 1
+            if state["n"] < 3:
+                raise RequestException("网络抖动")
+            return "ok"
+
+        self.assertEqual(main.with_network_retry(flaky, what="测试", delay=0), "ok")
+        self.assertEqual(state["n"], 3)
+
+    def test_exhausted_retries_raise_friendly_error(self):
+        def always_fail():
+            raise RequestException("一直失败")
+
+        with self.assertRaises(main.NetworkRetryFailed):
+            main.with_network_retry(always_fail, what="测试", times=2, delay=0)
+
+
+class LoginRobustnessTestCase(unittest.TestCase):
+    """#163 #164 #220：登录接口没超时 / 返回非 JSON 时不能崩或挂死"""
+
+    class _FakeResponse:
+        status_code = 200
+        text = "blocked"
+
+        def __init__(self, payload=None, raw=False):
+            self._payload = payload
+            self._raw = raw
+
+        def json(self):
+            if self._raw:
+                raise ValueError("Expecting value: line 1 column 1")
+            return self._payload
+
+    def setUp(self):
+        self._orig_post = requests.Session.post
+        self.cx = Chaoxing(account=Account("13800000000", "pw"), tiku=None)
+
+    def tearDown(self):
+        requests.Session.post = self._orig_post
+
+    def test_non_json_response(self):
+        # 注意：第一个参数是 Session 实例，别用 self 命名（会遮住测试用例的 self）
+        fake = self._FakeResponse
+        requests.Session.post = lambda session, *a, **kw: fake(raw=True)
+        result = self.cx.login()
+        self.assertFalse(result["status"])
+        self.assertTrue(result["msg"])
+
+    def test_missing_msg2(self):
+        fake = self._FakeResponse
+        requests.Session.post = lambda session, *a, **kw: fake({"status": False})
+        result = self.cx.login()
+        self.assertFalse(result["status"])
+        self.assertTrue(result["msg"])
+
+    def test_network_timeout(self):
+        def boom(self, *a, **kw):
+            raise RequestException("连接超时")
+
+        requests.Session.post = boom
+        result = self.cx.login()
+        self.assertFalse(result["status"])
+        self.assertIn("网络", result["msg"])
 
 
 class VideoSerialTestCase(unittest.TestCase):

@@ -18,6 +18,7 @@ from api import interrupt
 from api.display import ChapterProgress, course_plan_summary, safe_console
 from api.logger import set_quiet as set_console_quiet
 from api.logger import log_file_only, logger
+from requests import RequestException
 from api.notification import Notification
 from api.live import Live
 from api.live_process import LiveProcessor
@@ -50,6 +51,30 @@ def log_error(func):
             raise
 
     return wrapper
+
+
+class NetworkRetryFailed(Exception):
+    """网络问题重试多次仍然失败（不是用户配置错误）"""
+
+
+def with_network_retry(func, *args, what="请求", times=3, delay=2.0, **kwargs):
+    """
+    主流程的网络请求重试。
+
+    登录 / 取课表 / 取章节这几步以前一次网络抖动就整轮崩掉（#124 #166 #192 #226 #228），
+    这里对连接类异常重试几次；仍然失败就抛 NetworkRetryFailed，
+    由 main() 统一给一句人话提示，而不是甩一堆 traceback。
+    """
+    last_error = None
+    for attempt in range(1, times + 1):
+        try:
+            return func(*args, **kwargs)
+        except RequestException as e:
+            last_error = e
+            if attempt < times:
+                logger.warning(f"{what}失败（第 {attempt}/{times} 次）：{e}，{int(delay)} 秒后重试")
+                time.sleep(delay)
+    raise NetworkRetryFailed(f"{what}失败：{last_error}")
 
 
 def str_to_bool(value):
@@ -837,13 +862,17 @@ def main():
         notification = notification.get_notification_from_config()
         notification.init_notification()
 
-        # 检查当前登录状态
-        _login_state = chaoxing.login(login_with_cookies=common_config.get("use_cookies", False))
+        # 检查当前登录状态（网络抖动自动重试，不再一次就整轮崩）
+        _login_state = with_network_retry(
+            chaoxing.login,
+            login_with_cookies=common_config.get("use_cookies", False),
+            what="登录",
+        )
         if not _login_state["status"]:
             raise LoginError(_login_state["msg"])
 
         # 获取所有的课程列表
-        all_course = chaoxing.get_course_list()
+        all_course = with_network_retry(chaoxing.get_course_list, what="读取课程列表")
 
         # 过滤要学习的课程
         course_task = filter_courses(all_course, common_config.get("course_list"))
@@ -860,8 +889,10 @@ def main():
         unreadable_courses = []
         for course in course_task:
             logger.trace(f"正在读取课程章节: {course['title']}")
-            point_list = chaoxing.get_course_point(
-                course["courseId"], course["clazzId"], course["cpi"]
+            point_list = with_network_retry(
+                chaoxing.get_course_point,
+                course["courseId"], course["clazzId"], course["cpi"],
+                what=f"读取《{course['title']}》的章节",
             )
             all_points = point_list.get("points") or []
 
@@ -1014,13 +1045,16 @@ def main():
         sys.exit(e.code)
     except KeyboardInterrupt as e:
         logger.error(f"错误: 程序被用户手动中断, {e}")
-    except (LoginError, InputFormatError) as e:
-        # 登录失败 / 输入格式错，都是用户自己改一下就能解决的问题。
+    except (LoginError, InputFormatError, NetworkRetryFailed) as e:
+        # 登录失败 / 网络不稳 / 输入格式错，都是用户自己处理一下就能解决的问题。
         # 只给一行清晰提示 + 处理办法，不打印一堆 traceback 吓人。
         log_file_only(str(e))
         print()
         print("  ✘ " + str(e))
-        print("  请检查手机号 / 密码是否正确，或运行 cx setup 重新配置。")
+        if isinstance(e, NetworkRetryFailed):
+            print("  网络不太稳定，请检查网络 / 代理后重试。")
+        else:
+            print("  请检查手机号 / 密码是否正确，或运行 cx setup 重新配置。")
         print(flush=True)
         try:
             notification.send(f"超星刷课：启动失败\n{e}")
