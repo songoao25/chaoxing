@@ -134,14 +134,21 @@ def decode_course_folder(html_text: str) -> List[Dict[str, str]]:
     course_folder_list = []
 
     for course in raw_courses:
-        if not course.attrs.get("fileid"):
+        folder_id = course.attrs.get("fileid")
+        if not folder_id:
             continue
 
-        course_folder_detail = {
-            "id": course.attrs["fileid"],
-            "rename": clean_text(course.select_one("input.rename-input").attrs["value"])
-        }
-        course_folder_list.append(course_folder_detail)
+        # 目录条目缺 rename-input 时跳过这一条并告警，
+        # 不能让一个目录把整个课程列表读取打断
+        folder_name = _sel_attr(course, "input.rename-input", "value")
+        if not folder_name:
+            logger.warning("课程目录条目缺少名称，已跳过: {}", str(course.attrs)[:150])
+            continue
+
+        course_folder_list.append({
+            "id": folder_id,
+            "rename": clean_text(folder_name),
+        })
 
     return course_folder_list
 
@@ -252,8 +259,13 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
         logger.warning("任务点页面里找不到 mArg（可能是登录页、验证码页或页面结构变化）")
         return [], {"parseError": True}
 
-    # 解析JSON数据
-    cards_data = json.loads("{" + temp[0] + "}")
+    # 解析JSON数据。mArg 片段可能因为平台改版/截断而不是合法 JSON，
+    # 这里必须兜住：抛出去会让整个章节失败，兜住后按"读取失败"重试更靠谱
+    try:
+        cards_data = json.loads("{" + temp[0] + "}")
+    except (ValueError, TypeError) as e:
+        logger.warning("任务点数据解析失败（mArg 不是合法 JSON）: {}", e)
+        return [], {"parseError": True}
 
     if not cards_data:
         return [], {}

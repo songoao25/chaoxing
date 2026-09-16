@@ -43,6 +43,7 @@ from api.decode import (  # noqa: E402
     _get_question_type,
     clean_text,
     decode_course_card,
+    decode_course_folder,
     decode_course_list,
     decode_course_point,
     decode_questions_info,
@@ -126,6 +127,24 @@ class DecodeRobustnessTestCase(unittest.TestCase):
 
     def test_course_point_empty_html(self):
         self.assertEqual(decode_course_point("")["points"], [])
+
+    def test_course_folder_skips_broken_entries(self):
+        html = ('<ul class="file-list">'
+                '<li fileid="111"><input class="rename-input" value="我的文件夹"></li>'
+                '<li fileid="222"><b>缺 rename-input</b></li>'
+                '<li><input class="rename-input" value="缺 fileid"></li>'
+                '</ul>')
+        folders = decode_course_folder(html)
+        self.assertEqual([f["id"] for f in folders], ["111"])
+        self.assertEqual(folders[0]["rename"], "我的文件夹")
+        self.assertEqual(decode_course_folder(""), [])
+
+    def test_course_card_invalid_marg_json(self):
+        # mArg 片段不是合法 JSON 时按读取失败处理，不能抛异常（#313 / #417 附带项）
+        for html in ("mArg={bad json;", 'mArg={{"x":1};'):
+            jobs, info = decode_course_card(html)
+            self.assertEqual(jobs, [])
+            self.assertTrue(info.get("parseError"), info)
 
     def test_course_card_without_marg_marks_parse_error(self):
         # 登录页 / 空页面取不到 mArg，必须标记 parseError，

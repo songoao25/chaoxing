@@ -687,8 +687,14 @@ class Chaoxing:
                 "query": "",
                 "superstarClass": 0,
             }
-            _resp = _session.post(_url, data=_data)
-            course_list += decode_course_list(_resp.text)
+            # 和上面首个请求一样带上 Referer，否则接口容易返回非课程列表页，
+            # 目录里的课程会被静默漏掉（#313 / #417）
+            _resp = _session.post(_url, headers=_headers, data=_data)
+            folder_courses = decode_course_list(_resp.text)
+            if not folder_courses:
+                logger.warning("课程目录《{}》里没有解析到任何课程（可能被风控或页面变化）",
+                               folder.get("rename", folder.get("id", "")))
+            course_list += folder_courses
         return course_list
 
     def get_activity_list(self, course: dict) -> list[dict]:
@@ -1106,6 +1112,8 @@ class Chaoxing:
         # 服务器一直返回"200 但未通过"时不能无限循环（#358 / #451）：
         # 正常播放需要的理论时间 + 5 分钟缓冲，超了就当作失败交给上层重试。
         play_deadline = time.time() + duration / max(_speed, 0.1) + 300
+        stuck_reports = 0
+        max_stuck_reports = 30
         try:
             while not passed:
                 if time.time() > play_deadline:
@@ -1149,6 +1157,17 @@ class Chaoxing:
 
                     elif not passed and state != 200:
                         return StudyResult.ERROR
+
+                    # 已经播到结尾、平台却一直不确认"通过"时，重报几次就放弃，
+                    # 否则会在这里无限重报（#358 / #451）
+                    if not passed and play_time >= duration:
+                        stuck_reports += 1
+                        if stuck_reports >= max_stuck_reports:
+                            logger.error(
+                                "任务 {} 已播放到结尾，但平台连续 {} 次未确认通过，先跳过稍后重试",
+                                _job.get("name", "?"), stuck_reports,
+                            )
+                            return StudyResult.ERROR
 
                     wait_time = int(random.uniform(30, 90))
                     last_log_time = play_time
