@@ -262,10 +262,55 @@ def clean_res(res):
     if isinstance(res, str):
         res = [res]
     for c in res:
+        text = str(c).strip()
+        if re.fullmatch(r"[A-Za-z]{2,}", text):
+            # 纯字母串（"AC" / "ABD"）是"多个选项字母"，不是"A. 选项内容"这种前缀。
+            # 以前会把首字母当编号删掉，导致漏选（"AC"->"C"）
+            # 或者整题匹配失败转随机（"ABD"->"BD"）（#427 / #502）
+            cleaned_res.append(text)
+            continue
         # 仅在字符串长度大于1时才尝试去除开头的字母编号，防止误删单个字母答案
         cleaned = re.sub(r'^[A-Za-z]\s*[.、:：)?）]?\s*|[.,!?;:，。！？；：]', '', c) if len(c) > 1 else c
         cleaned_res.append(cleaned.strip())
     return cleaned_res
+
+
+def build_multiple_answer(res, options, origin_html_content="") -> str:
+    """
+    把题库返回的多选答案转成"要提交的选项字母串"。
+
+    题库返回的形式很杂：
+      "ABD"                 -> 直接就是字母
+      "A,B,D" / "A、B、D"    -> 带分隔符的字母
+      "选项一的文字#选项二"    -> 只能按文字匹配回字母
+    返回空串表示一个都没匹配上（调用方会退化成随机作答）。
+    """
+    options_list = multi_cut(options, origin_html_content)
+    res_list = multi_cut(res, origin_html_content)
+    if res_list is None or options_list is None:
+        return ""
+
+    answer = ""
+    for item in clean_res(res_list):
+        # 纯字母串（"AC" / "ABD"）就是选项字母，逐个采用（#427 / #502）
+        if re.fullmatch(r"[A-Za-z]{2,}", item):
+            answer += item.upper()
+            continue
+
+        matched = False
+        for option in options_list:
+            if is_subsequence(item, option):
+                # 去掉各种符号和前面ABCD之后，答案应当是选项的子序列
+                answer += option[:1]
+                matched = True
+                break  # 找到匹配项后立即停止，防止重复添加
+        if not matched:
+            best_letter = best_option_by_similarity(item, options_list, threshold=0.8)
+            if best_letter:
+                answer += best_letter
+
+    # 对答案进行排序, 否则会提交失败
+    return "".join(sorted(set(answer)))
 
 
 def normalize_text(text: str) -> str:
@@ -526,6 +571,44 @@ def answers_equal(my_answer, correct_answer, type_label="") -> bool:
 
     squeezed_mine = squeeze(mine)
     return bool(squeezed_mine) and squeezed_mine == squeeze(right)
+
+
+def evaluate_work_detail(detail) -> dict:
+    """
+    逐题比较"我的答案"和"正确答案"（写法差异由 answers_equal 归一化）。
+
+    返回 {"all_correct": bool, "feedback": [...], "unjudgeable": bool}
+
+    unjudgeable=True 表示所有"不一致"的题目里，我们这边的答案是空的 ——
+    也就是页面根本没渲染出"我的答案"（可能只给了图标）。这种情况判定不可信，
+    调用方要按"拿不到成绩"处理，不能当成答错去重做（#627）。
+    """
+    feedback = []
+    all_correct = True
+    mismatched = 0
+    empty_mine = 0
+
+    for q in detail:
+        my_ans = (q.get("my_answer") or "").strip()
+        correct_ans = (q.get("correct_answer") or "").strip()
+        if answers_equal(my_ans, correct_ans, q.get("type_label")):
+            continue
+        all_correct = False
+        mismatched += 1
+        if not my_ans:
+            empty_mine += 1
+        feedback.append(
+            f"- 题目：{q.get('title', '')}\n"
+            f"  题型：{q.get('type_label', '')}\n"
+            f"  你的上次答案：{my_ans or '(空)'}\n"
+            f"  正确答案：{correct_ans or '(空)'}"
+        )
+
+    return {
+        "all_correct": all_correct,
+        "feedback": feedback,
+        "unjudgeable": bool(mismatched) and empty_mine == mismatched,
+    }
 
 
 class Chaoxing:
@@ -1358,26 +1441,9 @@ class Chaoxing:
                 else:
                     # 根据响应结果选择答案
                     if q["type"] == "multiple":
-                        # 多选处理
-                        options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
-                        res_list = multi_cut(res, _ORIGIN_HTML_CONTENT)
-                        if res_list is not None and options_list is not None:
-                            for _a in clean_res(res_list):
-                                matched = False
-                                for o in options_list:
-                                    if (
-                                            is_subsequence(_a, o)  # 去掉各种符号和前面ABCD的答案应当是选项的子序列
-                                    ):
-                                        answer += o[:1]
-                                        matched = True
-                                        break  # 找到匹配项后立即停止，防止重复添加
-                                if not matched:
-                                    best_letter = best_option_by_similarity(_a, options_list, threshold=0.8)
-                                    if best_letter:
-                                        answer += best_letter
-                            # 对答案进行排序, 否则会提交失败
-                            answer = "".join(sorted(set(answer)))
-                        # else 如果分割失败那么就直接到下面去随机选
+                        # 多选处理（拆分 + 匹配逻辑见 build_multiple_answer）
+                        answer = build_multiple_answer(res, q["options"], _ORIGIN_HTML_CONTENT)
+                        # 匹配不到就往下走，由统一的"答案为空的兜底"改为随机作答
                     elif q["type"] == "single":
                         # 单选也进行切割，主要是防止返回的答案有异常字符
                         options_list = multi_cut(q["options"], _ORIGIN_HTML_CONTENT)
@@ -1603,24 +1669,15 @@ class Chaoxing:
                     # 已提交详情页：解析成绩与对错
                     detail = _parse_work_record_detail(html)
                     if detail:
-                        feedback = []
-                        all_correct = True
-                        for q in detail:
-                            my_ans = (q.get("my_answer") or "").strip()
-                            correct_ans = (q.get("correct_answer") or "").strip()
-                            if not answers_equal(my_ans, correct_ans, q.get("type_label")):
-                                all_correct = False
-                                feedback.append(
-                                    f"- 题目：{q.get('title', '')}\n"
-                                    f"  题型：{q.get('type_label', '')}\n"
-                                    f"  你的上次答案：{my_ans or '(空)'}\n"
-                                    f"  正确答案：{correct_ans or '(空)'}"
-                                )
+                        evaluated = evaluate_work_detail(detail)
+                        if evaluated["unjudgeable"]:
+                            logger.warning("页面没有渲染出「我的答案」，无法判断对错，按已通过处理")
+                            return None
                         m = re.search(r'本次成绩<i>([\d.]+)</i>分', html)
                         score = float(m.group(1)) if m else 0.0
                         return {
-                            "all_correct": all_correct,
-                            "feedback": feedback,
+                            "all_correct": evaluated["all_correct"],
+                            "feedback": evaluated["feedback"],
                             "score": score,
                             "times": 0,
                         }
@@ -1664,24 +1721,19 @@ class Chaoxing:
             return None
 
         # 3. 逐题判断对错，收集错误反馈
-        feedback = []
-        all_correct = True
-        for q in detail:
-            my_ans = (q.get("my_answer") or "").strip()
-            correct_ans = (q.get("correct_answer") or "").strip()
-            if not answers_equal(my_ans, correct_ans, q.get("type_label")):
-                all_correct = False
-                feedback.append(
-                    f"- 题目：{q.get('title', '')}\n"
-                    f"  题型：{q.get('type_label', '')}\n"
-                    f"  你的上次答案：{my_ans or '(空)'}\n"
-                    f"  正确答案：{correct_ans or '(空)'}"
-                )
+        evaluated = evaluate_work_detail(detail)
+        if evaluated["unjudgeable"]:
+            # 页面没给出"我的答案"（只渲染了图标之类），判定不可信
+            logger.warning("作答详情里没有「我的答案」，无法判断对错，按已通过处理")
+            return None
 
-        logger.debug(f"章节检测成绩: {latest_score} 分, 全部正确: {all_correct}, 错题数: {len(feedback)}")
+        logger.debug(
+            "章节检测成绩: {} 分, 全部正确: {}, 错题数: {}",
+            latest_score, evaluated["all_correct"], len(evaluated["feedback"]),
+        )
         return {
-            "all_correct": all_correct,
-            "feedback": feedback,
+            "all_correct": evaluated["all_correct"],
+            "feedback": evaluated["feedback"],
             "score": latest_score,
             "times": latest_times,
         }

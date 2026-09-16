@@ -627,17 +627,26 @@ def _extract_choices(element, font_decoder=None) -> str:
         return ""
 
     # 提取aria-label属性值作为选项，解决#474
-    choice = element.get("aria-label") or element.get_text()
-    if not choice:
-        return ""
+    choice = element.get("aria-label") or element.get_text() or ""
 
     cleaned_content = re.sub(r"[\r\t\n]", "", choice)
 
-    if font_decoder:
+    if font_decoder and cleaned_content:
         cleaned_content = font_decoder.decode(cleaned_content)
 
     cleaned_content = clean_text(cleaned_content)
     if cleaned_content.endswith("选择"):
         cleaned_content = cleaned_content[:-2].rstrip()
+
+    # 选项本身可能就是一张图片（电路图 / 公式图 / 结构图）：
+    # 这时 aria-label 往往只有选项字母，真正的题目内容在 <img> 里。
+    # 不把图片地址带上，传给题库的选项就退化成一串字母，图片题只能随机作答（#457）。
+    # 只有"除了选项字母没有别的文字"时才追加，避免给普通文字选项加噪音。
+    img_urls = [img.get("src", "") for img in element.find_all("img") if img.get("src")]
+    if img_urls:
+        bare = re.sub(r"^[A-Za-z]\s*[.、:：]?\s*", "", cleaned_content).strip()
+        if not bare:
+            images = " ".join(f'<img src="{url}">' for url in img_urls)
+            cleaned_content = (cleaned_content + " " + images).strip()
 
     return cleaned_content

@@ -18,6 +18,7 @@ import time
 import unittest
 
 import requests
+from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -36,6 +37,9 @@ from api.base import (  # noqa: E402
     _parse_progress_passed,
     answers_equal,
     build_completion_fields,
+    build_multiple_answer,
+    clean_res,
+    evaluate_work_detail,
     split_completion_answer,
 )
 from requests import RequestException  # noqa: E402
@@ -47,6 +51,7 @@ from api.decode import (  # noqa: E402
     decode_course_list,
     decode_course_point,
     decode_questions_info,
+    _extract_choices,
 )
 
 
@@ -207,6 +212,88 @@ class AnswerEqualityTestCase(unittest.TestCase):
     def test_empty_values(self):
         self.assertTrue(answers_equal("", ""))
         self.assertFalse(answers_equal("", "A"))
+
+
+class MultipleChoiceAnswerTestCase(unittest.TestCase):
+    """#427 #502：题库返回字母串（"AC"/"ABD"）时不能漏选或退化成随机"""
+
+    OPTIONS = "A 甲选项\nB 乙选项\nC 丙选项\nD 丁选项"
+
+    def test_letter_run_is_kept_whole(self):
+        self.assertEqual(clean_res("AC"), ["AC"])
+        self.assertEqual(clean_res("ABD"), ["ABD"])
+        self.assertEqual(clean_res("A"), ["A"])
+        # "B. 选项内容" 这种前缀仍然要去掉（单个字母的答案不受影响）
+        self.assertEqual(clean_res("B. 某个选项"), ["某个选项"])
+        self.assertEqual(clean_res("B"), ["B"])
+
+    def test_build_multiple_answer(self):
+        cases = [
+            ("AC", "AC"),
+            ("ABD", "ABD"),
+            ("A,B,D", "ABD"),
+            ("A、B、D", "ABD"),
+            ("b,a,d", "ABD"),
+            ("C", "C"),
+            ("甲选项#丙选项", "AC"),
+            ("完全无关的答案", ""),
+        ]
+        for raw, expected in cases:
+            self.assertEqual(build_multiple_answer(raw, self.OPTIONS), expected, raw)
+
+
+class OptionImageTestCase(unittest.TestCase):
+    """#457：选项本身是图片时要把图片地址带上，否则题库只看到一串字母"""
+
+    def test_image_option_keeps_url(self):
+        element = BeautifulSoup('<li aria-label="A"><img src="https://x/a.png"></li>', "lxml").li
+        result = _extract_choices(element)
+        self.assertTrue(result.startswith("A"))
+        self.assertIn("<img src=", result)
+
+    def test_image_only_option(self):
+        element = BeautifulSoup('<li><img src="https://x/b.png"></li>', "lxml").li
+        self.assertIn("<img src=", _extract_choices(element))
+
+    def test_text_option_has_no_noise(self):
+        element = BeautifulSoup('<li aria-label="B 某个文字选项"></li>', "lxml").li
+        self.assertEqual(_extract_choices(element), "B 某个文字选项")
+
+    def test_mixed_option_keeps_text(self):
+        element = BeautifulSoup('<li aria-label="C 看图作答"><img src="https://x/c.png"></li>', "lxml").li
+        self.assertEqual(_extract_choices(element), "C 看图作答")
+
+
+class WorkDetailEvaluationTestCase(unittest.TestCase):
+    """#627：页面没渲染出「我的答案」时判定不可信，不能当成答错去重做"""
+
+    def test_empty_my_answer_is_unjudgeable(self):
+        detail = [{"title": "题1", "type_label": "判断题", "my_answer": "", "correct_answer": "√"}]
+        result = evaluate_work_detail(detail)
+        self.assertFalse(result["all_correct"])
+        self.assertTrue(result["unjudgeable"])
+
+    def test_same_meaning_counts_as_correct(self):
+        detail = [{"title": "题1", "type_label": "判断题", "my_answer": "对", "correct_answer": "√"}]
+        result = evaluate_work_detail(detail)
+        self.assertTrue(result["all_correct"])
+        self.assertFalse(result["unjudgeable"])
+
+    def test_real_wrong_answer_is_judged(self):
+        detail = [{"title": "题1", "type_label": "判断题", "my_answer": "错", "correct_answer": "√"}]
+        result = evaluate_work_detail(detail)
+        self.assertFalse(result["all_correct"])
+        self.assertFalse(result["unjudgeable"])
+        self.assertEqual(len(result["feedback"]), 1)
+
+    def test_partial_wrong_still_judged(self):
+        detail = [
+            {"title": "题1", "type_label": "判断题", "my_answer": "错", "correct_answer": "√"},
+            {"title": "题2", "type_label": "判断题", "my_answer": "", "correct_answer": "√"},
+        ]
+        result = evaluate_work_detail(detail)
+        self.assertFalse(result["all_correct"])
+        self.assertFalse(result["unjudgeable"])
 
 
 class CompletionAnswerTestCase(unittest.TestCase):
