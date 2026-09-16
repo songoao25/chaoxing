@@ -14,12 +14,30 @@
 通过 tqdm.write 输出，与视频进度条共存不会互相破坏。
 """
 
+import re
 import sys
 import threading
 import time
 import unicodedata
 
 from tqdm import tqdm
+
+
+def safe_console():
+    """
+    让控制台输出永远不会因为编码问题崩溃。
+
+    Windows 中文版控制台默认是 GBK 编码，课程名 / 题干里只要出现一个
+    &nbsp;(\xa0) 之类的字符，print 就会抛 UnicodeEncodeError 直接结束程序（#602）。
+    这里只放宽错误处理（errors="replace"），不改编码 ——
+    改编码会让中文在旧控制台上变成乱码。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:
+            # 被重定向 / 打包成窗口程序时没有 reconfigure，忽略即可
+            pass
 
 
 def _disp_width(text) -> int:
@@ -85,6 +103,86 @@ def _fmt_bar(done, total, width=20):
     filled = int(width * done / total)
     filled = max(0, min(width, filled))
     return "█" * filled + "░" * (width - filled)
+
+
+# 章节标题开头的编号，例如 "1.2 什么是马克思主义" -> "1.2"
+_LABEL_RE = re.compile(r"^\s*(\d+(?:[.\-]\d+)*)")
+
+
+def chapter_label(point, max_width=20) -> str:
+    """
+    章节简称：优先用编号（1.2 / 1.2.3），没有编号就退回标题本身。
+    point 可以是章节字典，也可以直接是标题字符串。
+    """
+    if isinstance(point, dict):
+        title = str(point.get("title") or "").strip()
+    else:
+        title = str(point or "").strip()
+    if not title:
+        return "未命名章节"
+    matched = _LABEL_RE.match(title)
+    if matched:
+        return matched.group(1)
+    return _truncate(title, max_width)
+
+
+def compress_labels(labels, max_groups=3) -> str:
+    """
+    把连续的编号压成区间：
+      ['1.1', '1.2', '1.3', '2.1'] -> '1.1~1.3、2.1'
+    传入顺序必须和章节顺序一致。
+    """
+    labels = [str(x) for x in labels]
+    if not labels:
+        return ""
+
+    groups = []
+    first = last = 0
+    for i in range(1, len(labels)):
+        if i == last + 1:
+            last = i
+        else:
+            groups.append((first, last))
+            first = last = i
+    groups.append((first, last))
+
+    parts = []
+    for start, end in groups:
+        parts.append(labels[start] if start == end else labels[start] + "~" + labels[end])
+
+    if len(parts) > max_groups:
+        return "、".join(parts[:max_groups]) + " 等 " + str(len(parts)) + " 段"
+    return "、".join(parts)
+
+
+def course_plan_summary(finished_points, pending_points, planned_count=None) -> str:
+    """
+    一门课开刷前的一句话说明，让用户一眼看清"哪些已经刷过、从哪儿接着刷"：
+
+      共 30 节待刷
+      共 12 节已完成（1.1 ~ 3.4），从 4.1 开始
+      共 12 节已完成（1.1 ~ 3.4），从 4.1 开始，本次刷 3 节
+      共 30 节全部已完成
+    """
+    finished_points = list(finished_points or [])
+    pending_points = list(pending_points or [])
+    done = len(finished_points)
+    total = done + len(pending_points)
+
+    if total == 0:
+        return "没有读到章节"
+    if done == 0:
+        return "共 " + str(total) + " 节待刷"
+
+    ranges = compress_labels([chapter_label(p) for p in finished_points])
+    if not pending_points:
+        return "共 " + str(done) + " 节全部已完成"
+
+    text = ("共 " + str(done) + " 节已完成（" + ranges + "），从 "
+            + chapter_label(pending_points[0]) + " 开始")
+    if planned_count is not None and planned_count < len(pending_points):
+        text += "，本次刷 " + str(planned_count) + " 节"
+    return text
 
 
 class ChapterProgress:

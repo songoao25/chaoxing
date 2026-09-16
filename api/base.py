@@ -9,7 +9,6 @@ from difflib import SequenceMatcher
 from enum import Enum, IntEnum
 from hashlib import md5
 from typing import Optional, Literal
-from typing_extensions import Self
 
 import requests
 from loguru import logger
@@ -65,7 +64,7 @@ class SessionManager:
         self._session.cookies.update(use_cookies())
 
     @classmethod
-    def get_instance(cls) -> Self:
+    def get_instance(cls) -> "SessionManager":
         return cls()
 
     @classmethod
@@ -159,6 +158,87 @@ class ActivityStatus(IntEnum):
 
 class ActivityType(IntEnum):
     SIGNIN = 2
+
+
+# 填空题的题型代码（2 = 普通填空，10 = 新版填空）
+_COMPLETION_TYPE_CODES = frozenset({"2", "10"})
+
+
+def _positive_int(value, default=0) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def split_completion_answer(answer, expected_count=0) -> list:
+    """
+    把填空题答案拆成"每个空一个值"。
+
+    题库返回的多个空一般用 # 或换行分隔，但答案本身也可能含 # （比如 C#），
+    所以：
+      · 网页明确写了空数时，只按这个数量切（1 个空就整段不切）
+      · 没写空数时才按 # / 换行切
+    """
+    if answer is None:
+        return []
+
+    if isinstance(answer, (list, tuple)):
+        items = [str(item).strip() for item in answer if str(item).strip()]
+        if expected_count == 1:
+            return ["\n".join(items)] if items else []
+        if expected_count > 1 and len(items) > expected_count:
+            return items[:expected_count - 1] + ["\n".join(items[expected_count - 1:])]
+        return items
+
+    text = str(answer).replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return []
+    if expected_count == 1:
+        # 网页只有一个空：整段都是这一空的答案，不能按 # 拆（例如 "C# 语言"）
+        return [text]
+
+    if expected_count > 1:
+        # 网页写了空数：按空数切，多的部分并进最后一空
+        max_split = expected_count - 1
+        pattern = r"[\n#]"
+    else:
+        # 网页没写空数：按换行 / # 切，能切出几段就当几个空
+        max_split = 0
+        pattern = r"[\n#]"
+
+    return [piece.strip() for piece in re.split(pattern, text, maxsplit=max_split) if piece.strip()]
+
+
+def build_completion_fields(form: dict, question: dict):
+    """
+    填空题按空提交（#615 / #575）。
+
+    学习通要求填空题提交 answerEditor{题目id}{第几空}（从 1 开始），
+    并用 tiankongsize{题目id} 声明空数；只发 answer{题目id} 的话，
+    网页端会显示"答案为空"，测验永远不及格。
+    非填空题原样返回，不做任何改动。
+    """
+    question_id = str(question.get("id") or "")
+    if not question_id:
+        return
+
+    answer_field = question.get("answerField") or {}
+    answer_type = str(answer_field.get(f"answertype{question_id}", ""))
+    if question.get("type") != "completion" and answer_type not in _COMPLETION_TYPE_CODES:
+        return
+
+    # 已经在上面按 cover/随机 的规则算好了该提交什么，直接取用
+    answer = form.get(f"answer{question_id}", "")
+    declared = _positive_int(form.get(f"tiankongsize{question_id}"))
+    parts = split_completion_answer(answer, expected_count=declared)
+    blank_count = declared or max(len(parts), 1)
+
+    form.pop(f"answer{question_id}", None)
+    form[f"tiankongsize{question_id}"] = blank_count
+    for index in range(1, blank_count + 1):
+        form[f"answerEditor{question_id}{index}"] = parts[index - 1] if index <= len(parts) else ""
 
 
 def multi_cut(answer: str, origin_html_content="", logger=logger):
@@ -593,7 +673,8 @@ class Chaoxing:
         _resp = _session.get(_url)
 
         logger.trace(f"原始章节列表内容:\n{_resp.text}")
-        logger.info("课程章节读取成功...")
+        # 章节读取成功的提示交给 main.py 统一输出（一行汇总，避免刷屏）
+        logger.trace("课程章节读取成功...")
         return decode_course_point(_resp.text)
 
     def get_job_list(self, course: dict, point: dict) -> tuple[list[dict], dict]:
@@ -636,7 +717,7 @@ class Chaoxing:
             self.study_emptypage(course, point)
 
         logger.trace(f"原始任务点列表内容:\n{_resp.text}")
-        logger.info("章节任务点读取成功...")
+        logger.trace("章节任务点读取成功...")
 
         return job_list, job_info
 
@@ -839,8 +920,26 @@ class Chaoxing:
                 logger.trace(f"关闭进度条失败: {e}")
         return None
 
+    # 视频串行开关的进程级锁（见 study_video 说明）
+    _video_lock = threading.Lock()
+
     def study_video(self, _course, _job, _job_info, _speed: float = 1.0,
                     _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
+        """
+        播放视频 / 音频任务。
+
+        serial_video = true 时，同一个进程里一次只播一个视频。
+        超星现在有心跳检测，多个视频同时播放容易被判定异常、把已刷的进度回退（#588），
+        所以遇到"刷完又变回没刷"的用户可以打开它换取稳定；
+        默认仍是并发（保持原来的速度），需要时在 config.ini 里设 serial_video = true。
+        """
+        if not self.kwargs.get("serial_video", False):
+            return self._study_video(_course, _job, _job_info, _speed, _type)
+        with Chaoxing._video_lock:
+            return self._study_video(_course, _job, _job_info, _speed, _type)
+
+    def _study_video(self, _course, _job, _job_info, _speed: float = 1.0,
+                     _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
         _session = SessionManager.get_session()
 
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
@@ -1127,7 +1226,8 @@ class Chaoxing:
                         answer = "true" if self.tiku.judgement_select(res) else "false"
                     elif q["type"] == "completion":
                         if isinstance(res, list):
-                            answer = "".join(res)
+                            # 多个空必须用 # 隔开，否则会被当成一个空的答案
+                            answer = "#".join(str(x).strip() for x in res if str(x).strip())
                         elif isinstance(res, str):
                             answer = res
                     else:
@@ -1180,6 +1280,12 @@ class Chaoxing:
                             f'answertype{q["id"]}': q["answerField"][f'answertype{q["id"]}'],
                         }
                     )
+
+            # 填空题必须按空提交：answerEditor{id}1、answerEditor{id}2 … + tiankongsize{id}。
+            # 只发 answer{id} 的话网页端会显示答案为空（#615 / #575）。
+            for _q in questions["questions"]:
+                if isinstance(_q, dict):
+                    build_completion_fields(questions, _q)
 
             del questions["questions"]
 

@@ -15,6 +15,31 @@ from api.font_decoder import FontDecoder
 from api.logger import logger
 
 
+# 平台上常见的"特殊空白"字符。&nbsp;( ) 在 GBK 控制台里无法编码，
+# print 时会直接抛 UnicodeEncodeError 把程序打崩（#602），统一换成普通空格。
+_EXOTIC_CHARS = {
+    " ": " ",   # &nbsp; 不间断空格
+    " ": " ",   # 图形空格
+    " ": " ",   # 窄不换行空格
+    "　": " ",   # 全角空格
+    "​": "",    # 零宽空格
+    "‌": "",
+    "‍": "",
+    "﻿": "",    # BOM
+}
+
+
+def clean_text(text) -> str:
+    """清理平台返回文本里的特殊空白字符，并把连续空格压成一个"""
+    if text is None:
+        return ""
+    text = str(text)
+    for src, dst in _EXOTIC_CHARS.items():
+        if src in text:
+            text = text.replace(src, dst)
+    return re.sub(r"[ \t\u00a0]{2,}", " ", text).strip()
+
+
 def decode_course_list(html_text: str) -> List[Dict[str, str]]:
     """
     解析课程列表页面，提取课程信息
@@ -42,9 +67,9 @@ def decode_course_list(html_text: str) -> List[Dict[str, str]]:
             "clazzId": course.select_one("input.clazzId").attrs["value"],
             "courseId": course.select_one("input.courseId").attrs["value"],
             "cpi": re.findall(r"cpi=(.*?)&", course.select_one("a").attrs["href"])[0],
-            "title": course.select_one("span.course-name").attrs["title"],
-            "desc": course.select_one("p.margint10").attrs["title"] if course.select_one("p.margint10") else "",
-            "teacher": course.select_one("p.color3").attrs["title"]
+            "title": clean_text(course.select_one("span.course-name").attrs["title"]),
+            "desc": clean_text(course.select_one("p.margint10").attrs["title"]) if course.select_one("p.margint10") else "",
+            "teacher": clean_text(course.select_one("p.color3").attrs["title"])
         }
         course_list.append(course_detail)
 
@@ -72,7 +97,7 @@ def decode_course_folder(html_text: str) -> List[Dict[str, str]]:
 
         course_folder_detail = {
             "id": course.attrs["fileid"],
-            "rename": course.select_one("input.rename-input").attrs["value"]
+            "rename": clean_text(course.select_one("input.rename-input").attrs["value"])
         }
         course_folder_list.append(course_folder_detail)
 
@@ -127,7 +152,7 @@ def _extract_points_from_chapter(chapter_unit) -> List[Dict[str, Any]]:
             continue
 
         point_id = re.findall(r"^cur(\d{1,20})$", point.attrs["id"])[0]
-        point_title = point.select_one("a.clicktitle").text.replace("\n", "").strip()
+        point_title = clean_text(point.select_one("a.clicktitle").text.replace("\n", ""))
 
         # 提取任务数量
         job_count = 1  # 默认为1
@@ -486,6 +511,7 @@ def _get_question_type(type_code: str) -> str:
         "0": "single",  # 单选题
         "1": "multiple",  # 多选题
         "2": "completion",  # 填空题
+        "10": "completion",  # 新版填空题
         "3": "judgement",  # 判断题
         "4": "shortanswer",  # 简答题
     }
@@ -516,9 +542,9 @@ def _extract_title(element, font_decoder=None) -> str:
 
     # 如果有字体解码器，进行解码
     if font_decoder:
-        return font_decoder.decode(cleaned_content)
+        return clean_text(font_decoder.decode(cleaned_content))
 
-    return cleaned_content
+    return clean_text(cleaned_content)
 
 
 def _extract_choices(element, font_decoder=None) -> str:
@@ -536,7 +562,7 @@ def _extract_choices(element, font_decoder=None) -> str:
     if font_decoder:
         cleaned_content = font_decoder.decode(cleaned_content)
 
-    cleaned_content = cleaned_content.strip()
+    cleaned_content = clean_text(cleaned_content)
     if cleaned_content.endswith("选择"):
         cleaned_content = cleaned_content[:-2].rstrip()
 

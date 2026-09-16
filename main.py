@@ -15,7 +15,7 @@ from api.exceptions import LoginError, InputFormatError
 from api.configfile import read_config_file
 from api.guard import check_before_run, hard_stop, UserAbort
 from api import interrupt
-from api.display import ChapterProgress
+from api.display import ChapterProgress, course_plan_summary, safe_console
 from api.logger import set_quiet as set_console_quiet
 from api.logger import log_file_only, logger
 from api.notification import Notification
@@ -318,12 +318,16 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
     # 章节检测答错后允许的最大重做次数（答错时反馈给AI并重新提交，直到全部正确）
     work_max_retries = common_config.get("work_max_retries", 3)
 
+    # 视频是否串行：默认并发（快）；遇到"刷完又变回没刷"可以打开
+    serial_video = str_to_bool(common_config.get("serial_video", False))
+
     # 实例化超星API
     chaoxing = Chaoxing(
         account=account,
         tiku=tiku,
         query_delay=query_delay,
         work_max_retries=work_max_retries,
+        serial_video=serial_video,
     )
 
     return chaoxing
@@ -673,6 +677,25 @@ def _parse_max_points(raw):
     return per_course, default, bad
 
 
+def select_points_for_course(all_points, max_points=0):
+    """
+    把一门课的章节分成"已完成"和"待刷"两部分，并算出本次要刷哪些。
+
+    已完成（has_finished）的章节直接跳过，不再排进任务队列 ——
+    否则每节都会闪过一行"预计 1 秒"，看起来像是要把前面几章重刷一遍。
+
+    返回 (已完成, 待刷, 本次要刷)
+    """
+    all_points = list(all_points or [])
+    finished = [p for p in all_points if p.get("has_finished")]
+    pending = [p for p in all_points if not p.get("has_finished")]
+    if max_points and max_points > 0:
+        selected = pending[:max_points]
+    else:
+        selected = pending
+    return finished, pending, selected
+
+
 def _format_course_table(all_course):
     """格式化课程列表，供用户选择或报错时展示"""
     lines = ["*" * 10 + "课程列表" + "*" * 10]
@@ -826,7 +849,7 @@ def main():
         course_task = filter_courses(all_course, common_config.get("course_list"))
 
         # 开始学习
-        logger.info(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
+        logger.trace(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
 
         _old_format_sizeof = tqdm.format_sizeof
         tqdm.format_sizeof = format_time
@@ -834,30 +857,38 @@ def main():
         # 任务点数量已在启动检查时解析并校验（见上面的 max_points_map / max_points_default）
         tasks = []
         for course in course_task:
-            logger.info(f"正在读取课程章节: {course['title']}")
+            logger.trace(f"正在读取课程章节: {course['title']}")
             point_list = chaoxing.get_course_point(
                 course["courseId"], course["clazzId"], course["cpi"]
             )
-            points = point_list["points"]
+            all_points = point_list["points"]
 
+            # 已经刷完的章节不再排进任务队列：整段跳过，只给一行汇总说明
             cid = str(course["courseId"])
             max_points = max_points_map.get(cid, max_points_default)
-            if max_points > 0:
-                # 只取前 N 个"尚未完成"的章节，避免把已完成的算进数量
-                pending = [p for p in points if not p.get("has_finished")]
-                selected = pending[:max_points]
-                logger.info(
-                    "课程[{}] 共 {} 个章节, 未完成 {} 个; 按设置只刷前 {} 个",
-                    course["title"], len(points), len(pending), len(selected)
-                )
-                points = selected
-            else:
-                logger.info(
-                    "课程[{}] 共 {} 个章节, 按设置全部刷完", course["title"], len(points)
-                )
-            for i, point in enumerate(points):
+            finished, pending, selected = select_points_for_course(all_points, max_points)
+
+            logger.info(
+                "课程[{}] 共 {} 节, 已完成 {} 节, 待刷 {} 节, 本次刷 {} 节",
+                course["title"], len(all_points), len(finished), len(pending), len(selected)
+            )
+            print("  " + course["title"] + "：" + course_plan_summary(finished, pending, len(selected)))
+
+            for i, point in enumerate(selected):
                 task = ChapterTask(point=point, index=i, course=course)
                 tasks.append(task)
+
+        # 所有课程都已经刷完：不用再走后面的刷课流程，也不用让用户白等
+        if not tasks:
+            tqdm.format_sizeof = _old_format_sizeof
+            print()
+            print("  ✔ 所有课程的任务点都已刷完，没有需要重刷的内容")
+            print()
+            try:
+                notification.send("超星刷课：无需刷课\n所有课程的任务点都已刷完")
+            except Exception:
+                pass
+            return
 
         # 刷课开始：提示如何退出，并启动键盘监听（按 q 立即终止）
         interrupt.print_hint()
@@ -915,13 +946,29 @@ def main():
 
         used = int(time.time() - run_started_at)
         used_text = (f"{used // 60} 分 {used % 60} 秒" if used >= 60 else f"{used} 秒")
-        logger.info("所有课程学习任务已完成")
-        notification.send(
-            "超星刷课：全部完成\n"
-            f"课程（{len(course_task)} 门）：{course_names}\n"
-            f"任务点：{total_points} 个\n"
-            f"耗时：{used_text}"
-        )
+
+        # 有任务点没刷成功就不能说"全部完成"：否则用户以为已经刷完，
+        # 实际上还差几节（#618）。这里按实际失败数量分开报。
+        failed_points = getattr(progress, "failed", 0) or 0
+        if failed_points:
+            logger.warning(f"有 {failed_points} 个任务点未能完成")
+            print()
+            print(f"  ⚠ 有 {failed_points} 个任务点未能完成（下次运行会自动重试）")
+            print(flush=True)
+            notification.send(
+                "超星刷课：部分完成（有失败）\n"
+                f"课程（{len(course_task)} 门）：{course_names}\n"
+                f"任务点：成功 {max(0, total_points - failed_points)} 个 · 失败 {failed_points} 个\n"
+                f"耗时：{used_text}"
+            )
+        else:
+            logger.info("所有课程学习任务已完成")
+            notification.send(
+                "超星刷课：全部完成\n"
+                f"课程（{len(course_task)} 门）：{course_names}\n"
+                f"任务点：{total_points} 个\n"
+                f"耗时：{used_text}"
+            )
 
         # 刷课完成后，如果开启了增加章节学习次数，则执行
         if add_learning_count:
@@ -969,4 +1016,5 @@ def main():
 
 
 if __name__ == "__main__":
+    safe_console()
     main()

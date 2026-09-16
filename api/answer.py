@@ -169,6 +169,8 @@ def brief_error(err, limit=70) -> str:
         return "账户余额不足"
     if "429" in low or "rate limit" in low:
         return "请求过于频繁"
+    if "400" in low or "bad request" in low:
+        return "请求被服务方拒绝（400，通常是内容审核或参数不支持）"
     if "timeout" in low or "timed out" in low:
         return "连接超时"
     if "connection" in low:
@@ -1615,7 +1617,9 @@ class SiliconFlow(Tiku):
                         }
                     ],
                     'stream': False,
-                    'max_tokens': 10,
+                    # 思考模型会先输出 reasoning_content，正文要更多 token 才出得来。
+                    # 原来填 10 会把"配置正确"误判成"连接失败"（#603）。
+                    'max_tokens': 200,
                     'temperature': 0.7,
                     'top_p': 0.7,
                     'response_format': {'type': 'text'}
@@ -1634,12 +1638,16 @@ class SiliconFlow(Tiku):
 
                 if response.status_code == 200:
                     result = response.json()
-                    if result.get('choices') and result['choices'][0]['message']['content']:
+                    choices = result.get('choices') if isinstance(result, dict) else None
+                    message = {}
+                    if choices and isinstance(choices, list) and isinstance(choices[0], dict):
+                        message = choices[0].get('message') or {}
+                    # 思考模型的正文可能在 reasoning_content 里，两种都算成功
+                    if message.get('content') or message.get('reasoning_content'):
                         logger.info(f'{self.name} 连接检查成功')
                         return True
-                    else:
-                        logger.error(f'{self.name} 连接检查失败：未收到有效响应')
-                        return False
+                    logger.error(f'{self.name} 连接检查失败：未收到有效响应')
+                    return False
                 else:
                     logger.error(f'{self.name} 连接检查失败：{response.status_code} {response.text}')
                     return False

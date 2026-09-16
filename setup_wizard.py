@@ -26,6 +26,7 @@ sys.path.insert(0, BASE)
 
 from api import accounts, interrupt, paths
 from api.configfile import read_config_file
+from api.display import safe_console
 
 # 模板在项目目录；用户配置在数据目录（~/.chaoxing/config.ini），
 # 这样升级代码不会影响用户的配置。
@@ -1108,6 +1109,7 @@ def main(force_setup=False):
 
 
 if __name__ == "__main__":
+    safe_console()
     # cx setup -> 重新配置；cx -> 已配置则直接开始
     _force = "--setup" in sys.argv or "setup" in sys.argv
     sys.exit(main(force_setup=_force))
