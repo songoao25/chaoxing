@@ -95,7 +95,8 @@ def _type_text(by_type: dict) -> str:
 
 
 def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
-           task_center_enabled: bool, only_discussion: bool = False) -> str:
+           task_center_enabled: bool, only_discussion: bool = False,
+           discussion_mode: str = "task") -> str:
     """扫描报告：结论先行，几行说完"""
     lines = ["  开始前扫描", "  " + "─" * 46]
     for row in chapter_rows or []:
@@ -123,7 +124,12 @@ def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
         if detail:
             lines.append("    待完成    " + detail)
         if only_discussion:
-            lines.append("    本次只刷  主题讨论（其它类型本次跳过）")
+            if discussion_mode == "board":
+                lines.append("    本次只刷  讨论区帖子（自己挑，逐条给草稿确认后发送）")
+            else:
+                lines.append("    本次只刷  任务里的主题讨论（自动，其它类型跳过）")
+        elif discussion_mode == "board":
+            lines.append("    讨论      走讨论区模式（任务里的主题讨论本次跳过）")
         for name in row.get("unsupported") or []:
             lines.append("    提醒      · " + str(name) + " 暂不支持，需要手动完成")
         todo_types = row.get("by_type") or {}
@@ -141,7 +147,7 @@ def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
 
 def run(chaoxing, courses: list, config: dict, chapter_rows: list,
         chapters_enabled: bool, task_center_enabled: bool,
-        only_discussion: bool = False) -> str:
+        only_discussion: bool = False, discussion_mode: str = "task") -> str:
     """执行扫描并返回可直接 print 的报告文本（永不抛异常）"""
     tc_rows = []
     if task_center_enabled:
@@ -151,7 +157,7 @@ def run(chaoxing, courses: list, config: dict, chapter_rows: list,
             logger.debug("任务中心扫描整体失败: {}", e)
     try:
         return render(chapter_rows, tc_rows, chapters_enabled,
-                      task_center_enabled, only_discussion)
+                      task_center_enabled, only_discussion, discussion_mode)
     except Exception as e:
         logger.debug("扫描报告渲染失败: {}", e)
         return ""

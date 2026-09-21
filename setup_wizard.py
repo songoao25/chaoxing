@@ -121,7 +121,7 @@ def ask(prompt, default=None, allow_empty=False):
 
 def ask_yes_no(prompt, default_no=True):
     # 把默认值写进提示：回车 = 默认（危险动作默认不继续）
-    tip = "  [y/N，q 退出]" if default_no else "  [Y/n，q 退出]"
+    tip = "  [y/n · 回车＝" + ("否" if default_no else "是") + " · q 退出]"
     ans = _read_line(prompt, tip).lower()
 
     if ans in QUIT_WORDS:
@@ -834,7 +834,12 @@ STUDY_SCOPES = {
     "1": (True, True, False),
     "2": (True, False, False),
     "3": (False, True, False),
-    "4": (False, True, True),     # 只刷主题讨论（评论区）
+    "4": (False, False, True),    # 只刷讨论（模式在下一步单独问）
+}
+
+DISCUSSION_MODES = {
+    "1": "task",     # 任务里的主题讨论：自动，按解锁顺序
+    "2": "board",    # 讨论区帖子：先列出来，自己挑
 }
 
 
@@ -856,22 +861,58 @@ def choose_study_scope():
     print("   4. 只刷讨论（评论区）")
     print()
 
-    while True:
+    raw = "1"
+    for _ in range(5):
         raw = ask("请选择", default="1")
         if raw in STUDY_SCOPES:
             break
         print("  ✘ 只能填 1 / 2 / 3 / 4。")
+    else:
+        raw = "1"
+        print("  · 没收到有效选择，按默认「章节 + 任务中心」继续")
 
     chapters, task_center, only_discussion = STUDY_SCOPES[raw]
     if only_discussion:
-        print("  → 只刷讨论（任务中心里的主题讨论）")
+        print("  → 只刷讨论")
     elif chapters and task_center:
         print("  → 章节 + 任务中心")
     elif chapters:
         print("  → 只刷章节")
     else:
         print("  → 只刷任务中心")
-    return chapters, task_center, only_discussion
+
+    # 讨论怎么刷：任务里的主题讨论（自动）还是讨论区挑帖（手动）
+    discussion_mode = ""
+    if only_discussion or task_center:
+        discussion_mode = choose_discussion_mode(required=only_discussion)
+    return chapters, task_center, only_discussion, discussion_mode
+
+
+def choose_discussion_mode(required=False):
+    """讨论的两种刷法：自动跟任务，或进讨论区自己挑帖子"""
+    title("讨论怎么刷")
+    if not required:
+        print("  教学任务里本来就包含主题讨论，这里选它怎么刷。")
+        print()
+    print("   1. 任务里的主题讨论（自动，按解锁顺序）   ✓推荐")
+    print("   2. 讨论区帖子（先列出来，自己挑几条回复）")
+    print()
+    raw = "1"
+    for _ in range(5):
+        raw = ask("请选择", default="1")
+        if raw in DISCUSSION_MODES:
+            break
+        print("  ✘ 只能填 1 / 2。")
+    else:
+        # 非交互输入（管道/重定向）反复给不出有效值时按默认走，绝不卡死
+        raw = "1"
+        print("  · 没收到有效选择，按默认「任务里的主题讨论」继续")
+    mode = DISCUSSION_MODES[raw]
+    if mode == "task":
+        print("  → 任务里的主题讨论（自动）")
+    else:
+        print("  → 讨论区帖子（自己挑，逐条给草稿、确认后发送）")
+    return mode
 
 
 def _ask_count(prompt):
@@ -895,7 +936,8 @@ def _ask_count(prompt):
             print("  ✘ 请填数字（如 3），或填 all 表示全部。")
 
 
-def choose_courses(cx, ask_points=True, ask_tasks=True):
+def choose_courses(cx, ask_points=True, ask_tasks=True, only_discussion=False,
+                   discussion_mode=""):
     title("选择课程")
     print("  正在读取课程列表...")
 
@@ -947,6 +989,17 @@ def choose_courses(cx, ask_points=True, ask_tasks=True):
 
     print("  已选：" + "、".join(c["title"] for c in chosen))
 
+    # 只刷讨论：不设数量，直接说明这次会怎么刷（模式在上一步已经问过）
+    if only_discussion:
+        title("讨论怎么刷")
+        if discussion_mode == "board":
+            print("  进入讨论区后先列出帖子，你自己挑要回复哪几条；逐条给草稿、确认后发送。")
+        else:
+            print("  自动刷任务里的主题讨论：按解锁顺序，每条读已有回复后写一条普通回复。")
+        print("  讨论不按数量限制（有任务/帖子就会处理）。")
+        print()
+        return [(c, 0, 0) for c in chosen]
+
     # 两类都不刷的课程不存在；只刷一类时另一类就别问了
     if not ask_points and not ask_tasks:
         return [(c, 0, 0) for c in chosen]
@@ -981,7 +1034,7 @@ def choose_courses(cx, ask_points=True, ask_tasks=True):
 # ==================== 主流程 ====================
 
 def build_config(username, password, plan, chapters_enabled=True, task_center_enabled=True,
-                 only_discussion=False):
+                 only_discussion=False, discussion_mode="task"):
     """写出本次要用的配置（用账号专属文件，不污染全局配置）"""
     paths.backup_config()
     text = _read_config_text()
@@ -1005,6 +1058,8 @@ def build_config(username, password, plan, chapters_enabled=True, task_center_en
     text = replace_value(text, "common", "chapter_study", "true" if chapters_enabled else "false")
     text = replace_value(text, "common", "only_discussion",
                          "true" if only_discussion else "false")
+    text = replace_value(text, "common", "discussion_mode",
+                         discussion_mode or "task")
     text = replace_value(text, "common", "max_points_per_course", mp)
     text = replace_value(text, "common", "max_tasks_per_course", mt)
     text = replace_value(text, "common", "use_cookies", "false")
@@ -1127,18 +1182,23 @@ def _main_inner(force_setup=False):
             print("  当前账号：" + label + "（" + username + "）")
 
         # ---- 选刷课范围：章节（目录）/ 任务中心·教学任务 ----
-        chapters_enabled, task_center_enabled, only_discussion = choose_study_scope()
+        chapters_enabled, task_center_enabled, only_discussion, discussion_mode = \
+            choose_study_scope()
 
         # ---- 选课 + 逐门设置本次范围（不刷的那一类不问） ----
-        plan = choose_courses(cx, ask_points=chapters_enabled, ask_tasks=task_center_enabled)
+        plan = choose_courses(cx, ask_points=chapters_enabled, ask_tasks=task_center_enabled,
+                              only_discussion=only_discussion,
+                              discussion_mode=discussion_mode)
 
         # ---- 写该用户专属配置 ----
         user_config = build_config(username, password, plan,
-                                   chapters_enabled, task_center_enabled, only_discussion)
+                                   chapters_enabled, task_center_enabled, only_discussion,
+                                   discussion_mode)
 
         # ---- 最终确认 ----
         if only_discussion:
-            scope_text = "只刷讨论（评论区）"
+            scope_text = "只刷讨论（" + ("讨论区挑帖" if discussion_mode == "board"
+                                        else "任务里的主题讨论") + "）"
         elif chapters_enabled and task_center_enabled:
             scope_text = "章节 + 任务中心"
         elif chapters_enabled:
@@ -1156,7 +1216,7 @@ def _main_inner(force_setup=False):
             cp = "章节全部" if chapter_n == 0 else ("章节 " + str(chapter_n) + " 个未完成")
             tp = "教学任务全部" if task_n == 0 else ("教学任务 " + str(task_n) + " 个未完成")
             if only_discussion:
-                detail = "只刷讨论"
+                detail = "讨论区挑帖" if discussion_mode == "board" else "任务讨论自动"
             elif chapters_enabled and task_center_enabled:
                 detail = cp + " · " + tp
             elif chapters_enabled:

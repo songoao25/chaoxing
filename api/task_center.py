@@ -1755,17 +1755,37 @@ class TaskCenter:
 
     def reply_topic(self, bbsid: str, topic_uuid: str, course: Optional[dict] = None,
                     name: str = "", referer: str = "") -> bool:
-        """给讨论区里任意一个帖子回复一条（模式 1「任务里的主题讨论」与
-        模式 2「自己挑帖子」共用同一条：读已有回复 → 去 AI 味生成 → 提交 → 留痕）。
+        """模式 1：任务里的主题讨论——生成草稿后按提交模式提交。"""
+        draft = self.draft_reply(bbsid, topic_uuid, course=course, name=name, referer=referer)
+        if draft is None:
+            return False
+        if draft.get("has_replied"):
+            return True
+        name = name or "主题讨论"
+        if not self.confirm_submission("主题讨论", draft["title"] + "\n" + draft["reply"]):
+            return False
+        return self.submit_reply(bbsid, topic_uuid, course=course, name=name,
+                                 topic_info=draft["topic_info"], reply=draft["reply"],
+                                 referer=draft["referer"])
 
-        bbsid/topic_uuid 来自讨论区列表接口；referer 不传时按详情页地址自己拼。
+    @staticmethod
+    def _topic_detail_url(bbsid: str, topic_uuid: str, course: Optional[dict] = None) -> str:
+        """帖子详情页地址（讨论区模式没有现成的 study_url 时用它）"""
+        course = course or {}
+        class_id = str(course.get("classId") or course.get("clazzId") or "")
+        return (f"{DISCUSSION_BASE}/pc/topic/jumpToTopicDetail?bbsid={quote(str(bbsid))}"
+                f"&uuid={quote(str(topic_uuid))}&classId={quote(class_id)}")
+
+    def draft_reply(self, bbsid: str, topic_uuid: str, course: Optional[dict] = None,
+                    name: str = "", referer: str = "") -> Optional[dict]:
+        """只生成回复草稿，**不提交**。
+
+        讨论区模式（自己挑帖子）要先给用户看草稿、确认之后再发，所以拆出这一步。
+        返回 {topic_info, title, reply, has_replied, referer}；失败返回 None。
         """
         course = course or {}
         name = name or "主题讨论"
-        study_url = referer or (
-            f"{DISCUSSION_BASE}/pc/topic/jumpToTopicDetail?bbsid={quote(bbsid)}"
-            f"&uuid={quote(topic_uuid)}&classId={quote(str(course.get(chr(99) + chr(108) + chr(97) + chr(122) + chr(122) + chr(73) + chr(100)) or chr(39) + chr(39)))}"
-        )
+        study_url = referer or self._topic_detail_url(bbsid, topic_uuid, course)
 
         try:
             resp = self.session.get(
@@ -1773,20 +1793,20 @@ class TaskCenter:
             )
         except Exception as e:
             logger.warning("主题讨论页打开失败: {} - {}", name, e)
-            return False
+            return None
         if getattr(resp, "status_code", 0) != 200:
             logger.warning("主题讨论页打开失败: {} HTTP {}", name, getattr(resp, "status_code", "?"))
-            return False
+            return None
 
         topic_info = _extract_discussion_topic(resp.text or "")
         if not topic_info["url_token"]:
             logger.warning("主题讨论页没取到 urlToken（登录失效或页面改版），本次不提交: {}", name)
-            return False
+            return None
 
         writer = getattr(self, "writer", None)
         if writer is None or not getattr(writer, "available", False):
             logger.warning("主题讨论需要 AI 写作器，当前不可用，本次不提交: {}", name)
-            return False
+            return None
 
         existing, has_replied = self._load_discussion_replies(
             bbsid, topic_uuid, topic_info.get("user_puid", "")
@@ -1794,7 +1814,9 @@ class TaskCenter:
         if has_replied:
             # 已经回复过就不再发一条（重复运行不能刷屏讨论区）
             logger.info("主题讨论已经回复过，本次不重复发帖: {}", name)
-            return True
+            return {"topic_info": topic_info, "title": topic_info["title"], "reply": "",
+                    "has_replied": True, "referer": study_url}
+
         topic = (topic_info["title"] + "\n" + topic_info["content"]).strip()
         try:
             reply = writer.discussion(topic, existing_posts=existing, max_chars=180)
@@ -1802,19 +1824,30 @@ class TaskCenter:
             logger.warning(
                 "主题讨论生成回复失败（AI 味/编造内容反复出现），本次不提交: {} - {}", name, e
             )
-            return False
+            return None
         reply = str(reply or "").strip()
         if not reply:
             logger.warning("主题讨论没有生成内容，本次不提交: {}", name)
-            return False
+            return None
         logger.debug("主题讨论回复草稿（{} 字）：{}", len(reply), reply)
+        return {"topic_info": topic_info, "title": topic_info["title"], "reply": reply,
+                "has_replied": False, "referer": study_url}
 
-        if not self.confirm_submission("主题讨论", topic_info["title"] + "\n" + reply):
+    def submit_reply(self, bbsid: str, topic_uuid: str, course: Optional[dict] = None,
+                     name: str = "", topic_info: Optional[dict] = None, reply: str = "",
+                     referer: str = "", echo: bool = True) -> bool:
+        """把已经确认的草稿提交给平台（含实时留痕与复核记录）。"""
+        course = course or {}
+        name = name or "主题讨论"
+        topic_info = topic_info or {}
+        reply = str(reply or "").strip()
+        if not reply:
+            logger.warning("主题讨论没有可提交的正文: {}", name)
             return False
-
+        study_url = referer or self._topic_detail_url(bbsid, topic_uuid, course)
         payload = {
             "courseId": str(course.get("courseId") or ""),
-            "classId": str(course.get("clazzId") or ""),
+            "classId": str(course.get("classId") or course.get("clazzId") or ""),
             "replyId": -1,
             "uuid": uuid4().hex,
             # 网页端先 encodeURIComponent 一次，jQuery 再编码一次；这里保持一致
@@ -1822,11 +1855,12 @@ class TaskCenter:
             "files_url": "",
             "files_attr": "",
             "anonymous": "",
-            "urlToken": topic_info["url_token"],
+            "urlToken": topic_info.get("url_token", ""),
             "bbsid": bbsid,
         }
-        emit_block(f"讨论 · {clip(name, 24)}", reply)
-        post_url = f"{DISCUSSION_BASE}/pc/invitation/{quote(topic_uuid)}/addReplys"
+        if echo:
+            emit_block(f"讨论 · {clip(name, 24)}", reply)
+        post_url = f"{DISCUSSION_BASE}/pc/invitation/{quote(str(topic_uuid))}/addReplys"
         try:
             posted = self.session.post(
                 post_url,

@@ -92,20 +92,30 @@ class WizardScopeTestCase(unittest.TestCase):
         self.assertEqual(wizard.STUDY_SCOPES["1"], (True, True, False))
         self.assertEqual(wizard.STUDY_SCOPES["2"], (True, False, False))
         self.assertEqual(wizard.STUDY_SCOPES["3"], (False, True, False))
-        self.assertEqual(wizard.STUDY_SCOPES["4"], (False, True, True))   # 只刷讨论
+        self.assertEqual(wizard.STUDY_SCOPES["4"], (False, False, True))   # 只刷讨论
 
     def test_choose_scope_mapping(self):
-        for choice, expect in wizard.STUDY_SCOPES.items():
-            with mock.patch.object(wizard, "ask", return_value=choice), \
+        cases = [
+            ("1", "1", (True, True, False, "task")),      # 章节 + 任务中心 + 讨论自动
+            ("1", "2", (True, True, False, "board")),     # 章节 + 任务中心 + 讨论区挑帖
+            ("2", "", (True, False, False, "")),          # 只刷章节：不问讨论
+            ("3", "1", (False, True, False, "task")),     # 只刷任务中心
+            ("4", "2", (False, False, True, "board")),    # 只刷讨论：讨论区挑帖
+            ("4", "1", (False, False, True, "task")),     # 只刷讨论：任务讨论自动
+        ]
+        for scope, mode, expect in cases:
+            answers = [scope] + ([mode] if mode else [])
+            with mock.patch.object(wizard, "ask",
+                                   side_effect=lambda *a, **k: answers.pop(0) if answers else "1"), \
                  mock.patch("builtins.print"):
-                self.assertEqual(wizard.choose_study_scope(), expect)
+                self.assertEqual(wizard.choose_study_scope(), expect, (scope, mode))
 
     def test_choose_scope_reprompts_on_bad_input(self):
         answers = iter(["9", "2"])
         with mock.patch.object(wizard, "ask",
                                side_effect=lambda *a, **k: next(answers)), \
              mock.patch("builtins.print"):
-            self.assertEqual(wizard.choose_study_scope(), (True, False, False))
+            self.assertEqual(wizard.choose_study_scope(), (True, False, False, ""))
 
     def test_choose_courses_skips_points_for_task_center_only(self):
         course = {"courseId": 1, "clazzId": 2, "title": "测试课"}
@@ -243,18 +253,23 @@ class WizardDisplayTestCase(unittest.TestCase):
         return buf.getvalue()
 
     def test_pages_stay_concise(self):
-        out = self._render(["3", "1", "3", "n", "3"])   # 只刷任务中心 / 前 3 / 取消
+        # 只刷任务中心 / 讨论自动 / 课程 1 / 教学任务 3 个 / 取消
+        out = self._render(["3", "1", "1", "3", "n", "3"])
         for line in out.splitlines():
             self.assertLessEqual(self._width(line), 76, f"页面行超过 76 列: {line!r}")
         self.assertNotIn("\n\n\n", out, "不要连续两个空行")
 
     def test_key_information_is_shown(self):
-        out = self._render(["1", "1", "2", "all", "n", "3"])   # 章节 + 任务中心
+        # 章节 + 任务中心 / 讨论自动 / 课程 1 / 章节 2 / 教学任务全部 / 取消
+        out = self._render(["1", "1", "1", "2", "all", "n", "3"])
         self.assertIn("刷什么内容", out)
         self.assertIn("数字 = 本次刷多少个「还没完成」的，已完成的自动跳过、不会重刷。", out)
         self.assertIn("all 或直接回车 = 没完成的全部刷完。", out)
         self.assertIn("范围  章节 + 任务中心", out)
         self.assertIn("章节 2 个未完成 · 教学任务全部", out)
+        self.assertIn("讨论怎么刷", out)
+        self.assertIn("任务里的主题讨论（自动，按解锁顺序）", out)
+        self.assertIn("讨论区帖子（先列出来，自己挑几条回复）", out)
 
 
 class WizardFlowTestCase(unittest.TestCase):
@@ -264,15 +279,19 @@ class WizardFlowTestCase(unittest.TestCase):
         course = {"courseId": 1, "clazzId": 2, "title": "测试课"}
         seen = {}
 
-        def fake_choose_courses(cx, ask_points=True, ask_tasks=True):
+        def fake_choose_courses(cx, ask_points=True, ask_tasks=True, only_discussion=False,
+                                discussion_mode=""):
             seen["ask_points"] = ask_points
             seen["ask_tasks"] = ask_tasks
+            seen["only_discussion"] = only_discussion
+            seen["discussion_mode"] = discussion_mode
             return [(course, 0, 0)]
 
         def fake_build_config(username, password, plan,
                               chapters_enabled=True, task_center_enabled=True,
-                              only_discussion=False):
+                              only_discussion=False, discussion_mode="task"):
             seen["scope"] = (chapters_enabled, task_center_enabled, only_discussion)
+            seen["discussion_mode"] = discussion_mode
             return "/tmp/cx-test-run.ini"
 
         def fake_run_main():
@@ -293,26 +312,26 @@ class WizardFlowTestCase(unittest.TestCase):
         return seen
 
     def test_task_center_only_forwards_yes(self):
-        seen = self._run_flow(["setup_wizard.py", "--yes"], (False, True, False))
+        seen = self._run_flow(["setup_wizard.py", "--yes"], (False, True, False, "task"))
         self.assertFalse(seen["ask_points"])
         self.assertTrue(seen["ask_tasks"])
         self.assertEqual(seen["scope"], (False, True, False))
         self.assertEqual(seen["argv"], ["main.py", "-c", "/tmp/cx-test-run.ini", "--yes"])
 
     def test_chapters_and_task_center_without_yes(self):
-        seen = self._run_flow(["setup_wizard.py"], (True, True, False), submit_answer=True)
+        seen = self._run_flow(["setup_wizard.py"], (True, True, False, "task"), submit_answer=True)
         self.assertTrue(seen["ask_points"])
         self.assertTrue(seen["ask_tasks"])
         self.assertEqual(seen["scope"], (True, True, False))
         self.assertEqual(seen["argv"], ["main.py", "-c", "/tmp/cx-test-run.ini"])
 
     def test_chapters_only_does_not_ask_tasks(self):
-        seen = self._run_flow(["setup_wizard.py"], (True, False, False), submit_answer=True)
+        seen = self._run_flow(["setup_wizard.py"], (True, False, False, ""), submit_answer=True)
         self.assertTrue(seen["ask_points"])
         self.assertFalse(seen["ask_tasks"])
 
     def test_cancel_does_not_run_main(self):
-        seen = self._run_flow(["setup_wizard.py"], (True, False, False), submit_answer=False)
+        seen = self._run_flow(["setup_wizard.py"], (True, False, False, ""), submit_answer=False)
         self.assertNotIn("argv", seen)
 
 

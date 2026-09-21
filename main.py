@@ -1118,7 +1118,8 @@ def _complete_teaching_plan(tc: TaskCenter, chaoxing: Chaoxing, course: dict, pl
 
 def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, task: dict,
                            config: dict, point_map: dict,
-                           only_discussion: bool = False, stats: dict = None) -> tuple:
+                           only_discussion: bool = False, stats: dict = None,
+                           skip_discussion: bool = False) -> tuple:
     """
     按分组顺序推进一个教学任务。
 
@@ -1169,7 +1170,10 @@ def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, tas
                 if interrupt.should_stop():
                     return False, unsupported
                 plan_key = str(plan.get("planId"))
-                if only_discussion and int(plan.get("planType") or -1) != PLAN_TYPE_DISCUSS:
+                plan_type = int(plan.get("planType") or -1)
+                skip_this = (only_discussion and plan_type != PLAN_TYPE_DISCUSS) or \
+                    (skip_discussion and plan_type == PLAN_TYPE_DISCUSS)
+                if skip_this:
                     if plan_key not in skipped_other_ids:
                         skipped_other_ids.add(plan_key)
                         if stats is not None:
@@ -1232,7 +1236,10 @@ def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, tas
             for plan in plans:
                 if tc.plan_finished(plan):
                     continue
-                if only_discussion and int(plan.get("planType") or -1) != PLAN_TYPE_DISCUSS:
+                plan_type = int(plan.get("planType") or -1)
+                if only_discussion and plan_type != PLAN_TYPE_DISCUSS:
+                    continue
+                if skip_discussion and plan_type == PLAN_TYPE_DISCUSS:
                     continue
                 remaining += 1
         if remaining == 0 and locked_remaining == 0 and saw_plan_data:
@@ -1245,7 +1252,8 @@ def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, tas
 
 
 def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
-                           max_tasks=None, only_discussion: bool = False) -> dict:
+                           max_tasks=None, only_discussion: bool = False,
+                           skip_discussion: bool = False) -> dict:
     """
     任务中心 -> 教学任务。
 
@@ -1320,6 +1328,7 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
                 ok, unsupported = _process_teaching_task(
                     tc, chaoxing, course, task, config, point_map,
                     only_discussion=only_discussion, stats=stats,
+                    skip_discussion=skip_discussion,
                 )
             except Exception as e:
                 logger.error("处理教学任务出错: {} - {}: {}", task.get("name", "?"),
@@ -1351,6 +1360,20 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
     return stats
 
 
+def _run_discussion_board(chaoxing: Chaoxing, config: dict, courses: list,
+                          auto_yes: bool = False) -> None:
+    """讨论区模式（discussion_mode=board）：列帖子 → 自己挑 → 草稿 → 确认 → 逐条发送"""
+    from api import discussion
+    print()
+    print("  讨论区模式 · 下面自己挑帖子回复")
+    try:
+        discussion.discuss_cli(chaoxing, None, config, courses=courses, auto_yes=auto_yes)
+    except Exception as e:
+        logger.warning("讨论区模式出错: {}: {}", type(e).__name__, e)
+        logger.debug(traceback.format_exc())
+        print(f"  ⚠ 讨论区模式出错（不影响已完成的刷课）：{e}")
+
+
 def _print_review_hint():
     """刷完后提示可以复核 AI 生成的文字（有留痕才提示，保持界面干净）"""
     try:
@@ -1371,7 +1394,8 @@ def _start_interrupt(hint_shown: bool) -> bool:
 
 
 def _run_task_center_quiet(chaoxing: Chaoxing, course_task: list, config: dict,
-                           max_tasks=None, only_discussion: bool = False) -> dict:
+                           max_tasks=None, only_discussion: bool = False,
+                           skip_discussion: bool = False) -> dict:
     """
     任务中心阶段包一层控制台静音。
 
@@ -1381,7 +1405,8 @@ def _run_task_center_quiet(chaoxing: Chaoxing, course_task: list, config: dict,
     set_console_quiet(True)
     try:
         return run_task_center_phase(chaoxing, course_task, config, max_tasks,
-                                     only_discussion=only_discussion)
+                                     only_discussion=only_discussion,
+                                     skip_discussion=skip_discussion)
     finally:
         set_console_quiet(False)
 
@@ -1443,9 +1468,14 @@ def main():
         only_discussion = bool(getattr(args, "only_discussion", False)) or str(
             common_config.get("only_discussion", "") or ""
         ).strip().lower() in ("1", "true", "yes", "on")
+        # 讨论的两种刷法：task=任务里的主题讨论（自动）；board=讨论区挑帖（手动）
+        discussion_mode = str(common_config.get("discussion_mode", "") or "task").strip().lower()
+        if discussion_mode not in ("task", "board"):
+            discussion_mode = "task"
+        board_mode = discussion_mode == "board"
         if only_discussion:
             chapters_enabled = False
-            print("  本次只刷主题讨论（其它类型自动跳过）")
+            print("  本次只刷讨论（" + ("讨论区挑帖" if board_mode else "任务里的主题讨论") + "）")
         if not chapters_enabled and not _task_center_enabled(common_config, args):
             hard_stop(
                 "章节和任务中心都被关掉了，没有可以刷的内容",
@@ -1577,7 +1607,7 @@ def main():
             report = scan.run(
                 chaoxing, course_task, common_config, scan_rows,
                 chapters_enabled, _task_center_enabled(common_config, args),
-                only_discussion=only_discussion,
+                only_discussion=only_discussion, discussion_mode=discussion_mode,
             )
             if report:
                 print(report)
@@ -1604,7 +1634,7 @@ def main():
             # 章节刷完了不代表任务中心刷完了：教学任务是独立的一套学习入口
             tc_stats = {"courses": 0, "done": 0, "failed": 0, "unsupported": 0,
                         "waiting_confirmation": 0, "locked": 0, "read_failed": 0}
-            if _task_center_enabled(common_config, args):
+            if _task_center_enabled(common_config, args) and not (only_discussion and board_mode):
                 hint_shown = _start_interrupt(hint_shown)
                 print()
                 if chapters_enabled:
@@ -1616,6 +1646,7 @@ def main():
                         chaoxing, course_task, common_config,
                         (max_tasks_map, max_tasks_default),
                         only_discussion=only_discussion,
+                        skip_discussion=skip_discussion,
                     )
                     _print_task_center_summary(tc_stats)
                 except Exception as e:
@@ -1624,6 +1655,10 @@ def main():
                     logger.debug(traceback.format_exc())
                     print(f"  ⚠ 任务中心处理出错（章节不受影响）：{type(e).__name__}: {e}")
                     tc_stats["read_failed"] = tc_stats.get("read_failed", 0) + 1
+            if board_mode and not interrupt.should_stop():
+                _run_discussion_board(chaoxing, common_config,
+                                      course_task or all_course,
+                                      auto_yes=bool(getattr(args, "yes", False)))
             if interrupt.should_stop():
                 # 在任务中心阶段被终止：绝不能走到下面的"全部完成"分支
                 print()
@@ -1724,6 +1759,7 @@ def main():
                     chaoxing, course_task, common_config,
                     (max_tasks_map, max_tasks_default),
                     only_discussion=only_discussion,
+                    skip_discussion=skip_discussion,
                 )
                 _print_task_center_summary(tc_stats)
             except Exception as e:
@@ -1733,6 +1769,11 @@ def main():
                 logger.debug(traceback.format_exc())
                 print(f"  ⚠ 任务中心处理出错（章节不受影响）：{type(e).__name__}: {e}")
                 tc_stats["read_failed"] = tc_stats.get("read_failed", 0) + 1
+
+        if board_mode and not interrupt.should_stop():
+            _run_discussion_board(chaoxing, common_config,
+                                  course_task or all_course,
+                                  auto_yes=bool(getattr(args, "yes", False)))
 
         _print_review_hint()
 

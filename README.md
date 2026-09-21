@@ -158,9 +158,11 @@ It only reads; nothing is submitted during the scan, and a scan failure never bl
 | Mode | Entry | What it does |
 | --- | --- | --- |
 | 1. Task discussions (automatic) | included in scope 1/3, or scope 4 / `--only-discussion` | Walks the Task Center's `planType=14` points in unlock order, reads the existing replies, writes one ordinary reply and submits it |
-| 2. Discussion board (you pick) | `./cx discuss` | Lists every thread of the course board (20 per page), you choose which post to reply to; `./cx discuss --list-topics` only lists |
+| 2. Discussion board (you pick) | wizard scope 4 → "讨论区帖子", or `./cx discuss` | Reads the board first (how many threads), you pick which ones (`1,3,5` / `1-3` / `all`), then each one shows a draft, asks `y/n`, and is sent one by one; `./cx discuss --list-topics` only lists |
 
 Both modes share the same reply pipeline: read existing replies → de-AI-ified text → humanization audit → submit → live trace + `~/.chaoxing/reviews/` record. A thread you already replied to is never replied to twice.
+
+The wizard asks only what your choice needs: chapters-only asks about chapter task points, Task Center asks about teaching tasks, and "只刷讨论" asks nothing about counts — it asks how to brush discussions (automatic task discussions vs. picking threads on the board).
 
 ```text
   讨论区 · 企业战略管理

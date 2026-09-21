@@ -188,5 +188,175 @@ class DiscussCliListOnlyTestCase(unittest.TestCase):
         self.assertIn("企业战略管理", buf.getvalue())
 
 
+
+class ParseSelectionTestCase(unittest.TestCase):
+    """用户挑帖子：支持 1,3,5 / 1-3 / all"""
+
+    def test_commas_and_ranges(self):
+        self.assertEqual(discussion.parse_selection("1,3,5", 10), [1, 3, 5])
+        self.assertEqual(discussion.parse_selection("1-3", 10), [1, 2, 3])
+        self.assertEqual(discussion.parse_selection("3-1", 10), [1, 2, 3])
+        self.assertEqual(discussion.parse_selection("1，2、4", 10), [1, 2, 4])
+
+    def test_all_and_dedup(self):
+        self.assertEqual(discussion.parse_selection("all", 3), [1, 2, 3])
+        self.assertEqual(discussion.parse_selection("1,1,2", 5), [1, 2])
+
+    def test_out_of_range_and_invalid(self):
+        self.assertEqual(discussion.parse_selection("9", 3), None)
+        self.assertIsNone(discussion.parse_selection("abc", 3))
+        self.assertIsNone(discussion.parse_selection("", 3))
+
+
+class FetchAllTopicsTestCase(unittest.TestCase):
+    def test_stops_at_short_page(self):
+        pages = {
+            1: [_topic_item(uuid="u%d" % i) for i in range(discussion.DEFAULT_PAGE_SIZE)],
+            2: [_topic_item(uuid="last")],
+        }
+
+        class Sess:
+            def __init__(self):
+                self.calls = []
+
+            def get(self, url, **kwargs):
+                page = kwargs["params"]["page"]
+                self.calls.append(page)
+                return FakeResp({"status": True, "datas": pages.get(page, [])})
+
+        session = Sess()
+        topics = discussion.fetch_all_topics(session, "bbs")
+        self.assertEqual(len(topics), discussion.DEFAULT_PAGE_SIZE + 1)
+        self.assertEqual(session.calls, [1, 2])
+
+
+class FakeBoardTaskCenter:
+    def __init__(self, draft):
+        self.session = FakeSession({"status": True, "datas": []})
+        self._draft = draft
+        self.drafts = []
+        self.submitted = []
+
+    def get_course_tasks(self, course):
+        return [{"name": "第1章"}]
+
+    def open_task(self, task):
+        return {"encryTaskUserId": "u1"}
+
+    def get_groups(self, encry):
+        return [{"encryptGroupId": "g1"}]
+
+    def get_plans(self, encry, group):
+        return [{"planType": 14, "encryptPlanId": "p1"}]
+
+    def get_study_url(self, encry, plan_id):
+        return ("https://groupweb.chaoxing.com/pc/topic/jumpToTopicDetail?"
+                "bbsid=2a4b2fff0f67dd5b88099bcd5c2a941e&uuid=topic-uuid")
+
+    def draft_reply(self, bbsid, topic_uuid, course=None, name="", referer=""):
+        self.drafts.append((topic_uuid, name))
+        return self._draft
+
+    def submit_reply(self, bbsid, topic_uuid, **kwargs):
+        self.submitted.append(topic_uuid)
+        return True
+
+
+class DiscussCliInteractiveTestCase(unittest.TestCase):
+    """挑帖 → 草稿 → 确认 → 逐条发送"""
+
+    def _run(self, inputs, draft=None, auto_yes=False):
+        payload = {"status": True, "datas": [_topic_item(uuid="u1"), _topic_item(uuid="u2")]}
+        tc = FakeBoardTaskCenter(draft or {
+            "topic_info": {"url_token": "tok"}, "title": "标题",
+            "reply": "我觉得吧，机会和能不能抓住是两回事。", "has_replied": False,
+            "referer": "https://groupweb.chaoxing.com/pc/topic/jumpToTopicDetail?x=1",
+        })
+        tc.session = FakeSession(payload)
+        chaoxing = mock.Mock()
+        chaoxing.get_course_list.return_value = [{"courseId": "1", "title": "企业战略管理"}]
+        answers = list(inputs)
+
+        def fake_input(prompt=""):
+            return answers.pop(0) if answers else "q"
+
+        buf = io.StringIO()
+        with mock.patch("builtins.input", fake_input), contextlib.redirect_stdout(buf):
+            code = discussion.discuss_cli(chaoxing, tc, {}, auto_yes=auto_yes)
+        return code, tc, buf.getvalue()
+
+    def test_confirm_yes_sends_one(self):
+        code, tc, out = self._run(["1", "y"])
+        self.assertEqual(code, 0)
+        self.assertEqual(tc.submitted, ["u1"])
+        self.assertIn("我觉得吧", out)          # 草稿给用户看了
+        self.assertIn("发送 1 条", out)
+
+    def test_confirm_no_skips(self):
+        code, tc, out = self._run(["1", "n"])
+        self.assertEqual(tc.submitted, [])
+        self.assertIn("已跳过这条", out)
+
+    def test_multi_select_sends_one_by_one(self):
+        code, tc, out = self._run(["1-2", "y", "y"])
+        self.assertEqual(tc.submitted, ["u1", "u2"])
+        self.assertIn("[1/2]", out)
+        self.assertIn("[2/2]", out)
+
+    def test_already_replied_is_skipped(self):
+        draft = {"topic_info": {"url_token": "tok"}, "title": "标题", "reply": "",
+                 "has_replied": True, "referer": ""}
+        code, tc, out = self._run(["1", "y"], draft=draft)
+        self.assertEqual(tc.submitted, [])
+        self.assertIn("已经回复过", out)
+
+    def test_auto_yes_skips_confirmation(self):
+        code, tc, out = self._run(["1"], auto_yes=True)
+        self.assertEqual(tc.submitted, ["u1"])
+
+
+class DraftSubmitSplitTestCase(unittest.TestCase):
+    """模式 2 的草稿/提交拆分：草稿不提交，提交才发请求"""
+
+    def _tc(self):
+        from api.task_center import TaskCenter
+        tc = TaskCenter(object(), {})
+
+        class Sess:
+            def __init__(self):
+                self.posts = []
+
+            def get(self, url, **kwargs):
+                return FakeResp({"status": True})
+
+            def post(self, url, **kwargs):
+                self.posts.append(url)
+                return FakeResp({"status": True, "datas": [{"id": 1}]})
+
+        tc.session = Sess()
+        tc.writer = mock.Mock(available=True)
+        tc.writer.discussion.return_value = "先说观点：机会不等于结果，能不能抓住看自身资源。"
+        return tc
+
+    def test_draft_does_not_post(self):
+        tc = self._tc()
+        info = {"url_token": "tok", "title": "标题", "content": "正文", "user_puid": "1"}
+        with mock.patch("api.task_center._extract_discussion_topic", return_value=info), \
+             mock.patch.object(type(tc), "_load_discussion_replies", return_value=([], False)):
+            draft = tc.draft_reply("bbs", "uuid", course={"title": "课"}, name="帖子")
+        self.assertEqual(tc.session.posts, [])
+        self.assertIn("机会不等于结果", draft["reply"])
+
+    def test_submit_posts_and_records(self):
+        tc = self._tc()
+        with mock.patch("api.task_center.review.record") as recorder:
+            ok = tc.submit_reply("bbs", "uuid", course={"title": "课"}, name="帖子",
+                                 topic_info={"url_token": "tok"}, reply="正文内容",
+                                 referer="https://x/y", echo=False)
+        self.assertTrue(ok)
+        self.assertEqual(len(tc.session.posts), 1)
+        self.assertTrue(recorder.called)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,9 @@
 - Probe configuration via `tools/probe/local.env` (gitignored) instead of hard-coded accounts.
 
 ### Changed
+- The wizard now asks only what the chosen scope needs ("只刷讨论" no longer asks about task counts); a new "讨论怎么刷" step picks between automatic task discussions and picking threads on the board.
+- Discussion-board flow rebuilt: read-only count → pick threads (`1,3,5` / `1-3` / `all`) → per-thread draft → `y/n` confirmation → send one by one.
+- All y/n prompts use lowercase `[y/n]` consistently.
 - The number you type now clearly means "how many unfinished task points to do" (finished ones are always skipped); the wizard and README say so explicitly.
 - Console cleanup: one startup header instead of duplicated lines, condensed 403/captcha messages, quieter notification hints, and a one-line summary for failures.
 - Default parallel tasks lowered from 4 to 2 (fewer captcha/403 triggers); existing configs are migrated once.
