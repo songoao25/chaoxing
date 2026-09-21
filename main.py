@@ -209,6 +209,10 @@ def parse_args():
         help="只刷任务中心里的主题讨论（评论区），其它类型本次跳过",
     )
     parser.add_argument(
+        "--course-id", type=str, default=None,
+        help="指定课程 ID（cx discuss 浏览哪门课的讨论区）",
+    )
+    parser.add_argument(
         "--discuss", action="store_true",
         help="浏览课程讨论区，自己挑帖子回复（模式 2），不进刷课流程",
     )
