@@ -22,6 +22,7 @@ make status      # 当前账号的任务中心进度快照（只读）
 make classify    # 平台结构分类总表（只读，抽样请求）
 make lint        # 编译检查 + 测试（无第三方 linter 依赖）
 make test-313    # 用 CI 同版本（3.13）再跑一遍：本地可能是 3.14，注解求值时机不同
+                 # 本机 3.13 缺依赖时：python3.13 -m venv /tmp/cx313 && /tmp/cx313/bin/pip install -r requirements.txt
 ./cx --yes       # 真实刷课（会消耗真实学习时间，谨慎）
 ```
 

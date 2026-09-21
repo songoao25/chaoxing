@@ -9,7 +9,8 @@ help:  ## 列出所有命令
 # 提交前用 CI 同版本再跑一遍，避免"本地绿、CI 红"。
 test-313:
 	@command -v python3.13 >/dev/null 2>&1 || { echo "没有 python3.13，跳过（CI 会跑）"; exit 0; }
-	@python3.13 -c "import loguru" 2>/dev/null || { echo "python3.13 没装依赖，跳过（CI 会跑）"; exit 0; }
+	@python3.13 -c "import loguru, openai, bs4, lxml, requests, httpx, tqdm, tenacity" 2>/dev/null \
+		|| { echo "python3.13 缺依赖，跳过（CI 会跑）。要本地对齐：python3.13 -m venv /tmp/cx313 && /tmp/cx313/bin/pip install -r requirements.txt"; exit 0; }
 	python3.13 -m compileall -q api main.py setup_wizard.py tools tests
 	python3.13 -m unittest discover -s tests -t .
 
