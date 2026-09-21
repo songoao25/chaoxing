@@ -132,6 +132,8 @@ python main.py -u <手机号> -p <密码> \
 | --- | --- |
 | `./cx` | **推荐。** 交互式向导：选用户 → 登录 → 选刷什么 → 选课 → 每门刷多少 → 确认 |
 | `cx setup` | 重新配置答题方式或通知 |
+| `cx discuss` | 浏览课程讨论区，自己挑帖子回复（`--list-topics` 只列不回复） |
+| `cx review` | 复核 AI 生成并提交过的文字（`--days N` / `--all` / `--list`） |
 | `cx --yes` | 与 `./cx` 相同，但跳过最后的人工确认（自动化用） |
 | `python main.py -c config.ini` | 直接读取 `~/.chaoxing/config.ini` 运行 |
 | `python main.py -u <手机号> -p <密码> -l <课程ID>` | 用显式账号、课程和参数运行 |

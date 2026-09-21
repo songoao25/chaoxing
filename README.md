@@ -132,6 +132,8 @@ The wizard writes `~/.chaoxing/config.ini` for you; `config_template.ini` in the
 | --- | --- |
 | `./cx` | **Recommended.** Interactive wizard: user → login → what to study → courses → task points per course → confirm |
 | `cx setup` | Reconfigure the answering mode or notifications |
+| `cx discuss` | Browse the course discussion board and reply to the threads you pick (`--list-topics` lists only) |
+| `cx review` | Review the AI-written text that was submitted (`--days N` / `--all` / `--list`) |
 | `cx --yes` | Same as `./cx`, but skips the final confirmation (for automation) |
 | `python main.py -c config.ini` | Run directly from `~/.chaoxing/config.ini` |
 | `python main.py -u <phone> -p <password> -l <ids>` | Run with an explicit account and courses. Avoid `-p` in a shared terminal — it lands in your shell history; the wizard or a config file is safer. |
