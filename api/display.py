@@ -109,6 +109,91 @@ def _fmt_bar(done, total, width=20):
 _LABEL_RE = re.compile(r"^\s*(\d+(?:[.\-]\d+)*)")
 
 
+# ---------------------------------------------------------------- 作答留痕
+
+QUESTION_TYPE_LABELS = {
+    'single': '选择',
+    'multiple': '多选',
+    'judgement': '判断',
+    'completion': '填空',
+    'shortanswer': '简答',
+    'unknown': '问答',
+}
+
+
+def clip(text, limit: int = 36) -> str:
+    '''单行显示用的截断（按显示宽度，中文算 2 列）'''
+    value = re.sub(r'\s+', ' ', str(text or '')).strip()
+    if not value:
+        return ''
+    if _disp_width(value) <= limit:
+        return value
+    out = []
+    width = 0
+    for ch in value:
+        w = _disp_width(ch)
+        if width + w > limit - 1:
+            break
+        out.append(ch)
+        width += w
+    return ''.join(out) + '…'
+
+
+def answer_line(index, q_type, answer, title: str = "") -> str:
+    '''一题的作答留痕：序号 + 题型 + 题干提示 + 答案'''
+    label = QUESTION_TYPE_LABELS.get(str(q_type or '').lower(), '作答')
+    hint = clip(title, 20)
+    prefix = f'    {index:>2}. {label:<4}'
+    if hint:
+        prefix += hint + '  '
+    body = str(answer or '').strip()
+    if _disp_width(body) > 36:
+        body = clip(body, 36) + f'（{len(body)} 字）'
+    return prefix + body
+
+
+def answers_header(title, count) -> str:
+    '''一次作答的开头：题目数量一眼可见'''
+    return f'  作答 · {clip(title, 24)}（{count} 题）'
+
+
+def emit(text):
+    '''把一行留痕同时写到控制台和运行日志（普通运行日志即可回溯）'''
+    line = str(text or '')
+    if not line.strip():
+        return
+    try:
+        print(line)
+    except Exception:
+        pass
+    try:
+        from api.logger import log_file_only
+        log_file_only(line.strip(), 'INFO')
+    except Exception:
+        pass
+
+
+def emit_block(title: str, text: str, width: int = 60) -> None:
+    '''多行正文（讨论回复等）留痕：标题一行 + 折行正文'''
+    import textwrap
+    if title:
+        emit('  ' + title)
+    body = re.sub(r'\s+', ' ', str(text or '')).strip()
+    if not body:
+        return
+    wrapped = textwrap.wrap(body, width=width) or []
+    # 中文标点不落行首（读起来更顺）
+    no_lead = '，。、；：！？）》”’…'
+    fixed = []
+    for line in wrapped:
+        if fixed and line and line[0] in no_lead:
+            fixed[-1] = fixed[-1] + line[0]
+            line = line[1:]
+        if line:
+            fixed.append(line)
+    for line in fixed:
+        emit('    ' + line)
+
 def chapter_label(point, max_width=20) -> str:
     """
     章节简称：优先用编号（1.2 / 1.2.3），没有编号就退回标题本身。

@@ -42,6 +42,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from uuid import uuid4
 
 from api import interrupt, paths, review
+from api.display import answer_line, answers_header, clip, emit, emit_block
 from api.ai_writer import HumanLikeWriter
 from api.base import (
     SessionManager,
@@ -1666,6 +1667,24 @@ class TaskCenter:
         return answer[:2000]
 
     @staticmethod
+    def _ai_turn_type(turn: dict) -> str:
+        """AI 实践里的一道题属于什么题型（仅用于留痕显示）"""
+        q_type = str((turn or {}).get("questionType") or "").strip()
+        if q_type in {"0", "1"}:
+            return "single" if q_type == "0" else "multiple"
+        if q_type == "2":
+            return "judgement"
+        return "shortanswer"
+
+    @staticmethod
+    def _ai_turn_title(turn: dict) -> str:
+        for key in ("stem", "question", "title", "content"):
+            value = str((turn or {}).get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    @staticmethod
     def _ai_record_submitted(data: dict) -> bool:
         try:
             return int(data.get("recordStatus") or 0) in {1, 2}
@@ -1792,6 +1811,7 @@ class TaskCenter:
             "urlToken": topic_info["url_token"],
             "bbsid": bbsid,
         }
+        emit_block(f"讨论 · {clip(name, 24)}", reply)
         post_url = f"{DISCUSSION_BASE}/pc/invitation/{quote(topic_uuid)}/addReplys"
         try:
             posted = self.session.post(
@@ -1904,7 +1924,8 @@ class TaskCenter:
             answers = answers[:len(questions)]
 
         random_count = 0
-        for q, res in zip(questions, answers):
+        emit(answers_header(task_name or "作业", len(questions)))
+        for _qi, (q, res) in enumerate(zip(questions, answers), 1):
             q_type = q.get("type")
             answer = ""
             if q_type == "shortanswer" or (q_type == "unknown" and not q.get("options")):
@@ -1952,6 +1973,7 @@ class TaskCenter:
                     random_count += 1
                     logger.debug("题库没匹配到答案，已随机作答: {}", str(q.get("title"))[:40])
             q.setdefault("answerField", {})[f"answer{q['id']}"] = answer
+            emit(answer_line(_qi, q_type, answer, q.get("title")))
         if random_count:
             logger.info("作业有 {} 题没搜到答案，已随机作答", random_count)
         return None
@@ -2199,6 +2221,8 @@ class TaskCenter:
                 used.add(self._ai_answer_core(answer))
                 last_answer = answer
                 turn_count += 1
+                emit(answer_line(turn_count, self._ai_turn_type(turn), answer,
+                                 self._ai_turn_title(turn)))
                 if turn_count > 1:
                     time.sleep(1.0)
                 before_msgs = len((data or {}).get("messageList") or [])

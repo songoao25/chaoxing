@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+- Live answer trace: every question is printed as it is answered (`1. 选择  A`, `4. 简答  …（41 字）`) and written to the normal run log; discussion replies are shown in full.
 - Review step for AI-written content: every submitted short answer, homework essay, discussion reply and AI-practice answer is logged to `~/.chaoxing/reviews/` (daily Markdown + JSONL index) and can be browsed with `./cx review` (`--days N`, `--all`, `--list`).
 - Local submission ledger (`~/.chaoxing/submissions.json`) to avoid duplicate homework submissions and repeated document reading.
 - `api/llm.py`: adaptive thinking policy (auto / on / off) with automatic fallback and reasoning fallback.

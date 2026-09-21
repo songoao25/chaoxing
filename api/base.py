@@ -1703,7 +1703,9 @@ class Chaoxing:
                 answers = list(answers) + [None] * (total_questions - len(answers))
                 answers = answers[:total_questions]
 
-            for q, res in zip(questions["questions"], answers):
+            from api.display import answer_line as _answer_line, answers_header as _answers_header, emit as _emit
+            _emit(_answers_header(str(_job.get("name") or "章节测验"), len(questions["questions"])))
+            for _qi, (q, res) in enumerate(zip(questions["questions"], answers), 1):
                 logger.debug(f"当前题目信息 -> {q}")
                 answer = ""
                 if not res:
@@ -1747,8 +1749,9 @@ class Chaoxing:
                         logger.info(f"成功获取到答案：{answer}")
                         q[f'answerSource{q["id"]}'] = "cover"
                         found_answers += 1
-                # 填充答案
+                # 填充答案 + 实时留痕（控制台与运行日志各一份）
                 q["answerField"][f'answer{q["id"]}'] = answer
+                _emit(_answer_line(_qi, q.get("type"), answer, q.get("title")))
                 logger.debug(f'{q["title"]} 填写答案为 {answer}')
             # 复核留痕：AI 生成的简答题文字（客观题字母没有复核价值，不记）
             try:

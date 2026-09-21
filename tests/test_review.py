@@ -112,5 +112,54 @@ class HomeworkShortAnswerHookTestCase(unittest.TestCase):
         self.assertEqual(kwargs.get("task"), "总体战略对比分析")
 
 
+class LiveTraceTestCase(unittest.TestCase):
+    """运行中实时留痕：控制台看得到、普通运行日志也留一份"""
+
+    def test_answer_line_formats_letters_and_types(self):
+        from api.display import answer_line, answers_header
+        self.assertEqual(answers_header("总体战略对比分析", 4), "  作答 · 总体战略对比分析（4 题）")
+        line = answer_line(1, "single", "A", "以下属于波特五力的是")
+        self.assertIn("1. 选择", line)
+        self.assertIn("A", line)
+
+    def test_long_answer_is_clipped_with_char_count(self):
+        from api.display import answer_line
+        long_text = "我觉得应该先把主业做扎实再考虑多元化。" * 5
+        line = answer_line(3, "shortanswer", long_text)
+        self.assertIn("字）", line)
+        self.assertLessEqual(len(line), 80)
+
+    def test_emit_writes_console_and_run_log(self):
+        """留痕要同时进控制台和运行日志（这里校验调用契约，避免异步写盘抖动）"""
+        import contextlib
+        import io
+        from api import display
+        from api import logger as logger_mod
+        buf = io.StringIO()
+        with mock.patch.object(logger_mod, "log_file_only") as file_log, \
+             contextlib.redirect_stdout(buf):
+            display.emit("留痕测试：第 1 题选择 A")
+        self.assertIn("留痕测试", buf.getvalue())
+        file_log.assert_called_once()
+        self.assertIn("留痕测试：第 1 题选择 A", file_log.call_args.args[0])
+
+    def test_homework_emits_one_line_per_question(self):
+        from api.task_center import TaskCenter
+        tc = TaskCenter(object(), {})
+        tc.chaoxing = type("CX", (), {"tiku": FakeTiku()})()
+        tc.writer = FakeWriter()
+        questions = [
+            {"id": 1, "type": "shortanswer", "title": "你更支持哪种战略？",
+             "options": "", "answerField": {}},
+        ]
+        with mock.patch("api.task_center.emit") as emitter:
+            failure = tc._fill_homework_answers(questions, course={"title": "企业战略管理"},
+                                                task_name="总体战略对比分析")
+        self.assertIsNone(failure)
+        printed = [str(c.args[0]) for c in emitter.call_args_list if c.args]
+        self.assertTrue(any("作答 · 总体战略对比分析" in line for line in printed))
+        self.assertTrue(any("简答" in line for line in printed))
+
+
 if __name__ == "__main__":
     unittest.main()
