@@ -742,6 +742,10 @@ class TaskCenter:
             info.get("videoName", ""), duration, current, speed,
             f"，需要观看 {required} 秒" if required else "",
         )
+        # 长视频给一行用户可见提示（控制台刷课期间只显示 print 和 WARNING）
+        if duration >= 180 or required >= 180:
+            minutes = max(1, int((required or duration) // 60))
+            print(f"      · 播放视频：{info.get('videoName', '')}（约 {minutes} 分钟）")
 
         effective = 0.0
         passes = 0
@@ -906,6 +910,7 @@ class TaskCenter:
                 return False
             label = (plan or {}).get("name") or reader_info.get("name") or "文档"
             logger.info("任务中心文档：{}（需要阅读约 {:.0f} 分钟）", label, required / 60)
+            print(f"      · 阅读文档：{label}（约 {required / 60:.0f} 分钟，请勿关闭窗口）")
             if not self._read_document_points(mark, required):
                 return False
             self._mark_submitted(plan, kind="document")
@@ -1893,6 +1898,7 @@ class TaskCenter:
             answers = list(answers) + [None] * (len(questions) - len(answers))
             answers = answers[:len(questions)]
 
+        random_count = 0
         for q, res in zip(questions, answers):
             q_type = q.get("type")
             answer = ""
@@ -1932,8 +1938,11 @@ class TaskCenter:
             if not answer and q_type not in ("shortanswer", "unknown"):
                 answer = random_answer(q.get("options", ""), q_type)
                 if answer:
-                    logger.warning("题库没匹配到答案，已随机作答: {}", str(q.get("title"))[:40])
+                    random_count += 1
+                    logger.debug("题库没匹配到答案，已随机作答: {}", str(q.get("title"))[:40])
             q.setdefault("answerField", {})[f"answer{q['id']}"] = answer
+        if random_count:
+            logger.info("作业有 {} 题没搜到答案，已随机作答", random_count)
         return None
 
     def study_homework(self, study_url: str, plan: Optional[dict] = None,
@@ -2058,7 +2067,17 @@ class TaskCenter:
         final_url = getattr(page, "url", None) or study_url
         params = self._ai_page_params(final_url, getattr(page, "text", ""))
         if not params:
-            logger.warning("AI实践入口页缺少 courseid/clazzid/cpi/publishRelationUuid/aiEnc")
+            if "situationalDialogue" in final_url or "situationalDialogue" in (getattr(page, "text", "") or ""):
+                # 新版"情景对话"是另一套接口（/mobile/situationalDialogue/*），与思维阶梯不通用
+                logger.warning(
+                    "该 AI 实践是新版「情景对话」(situationalDialogue)，暂未适配，本次跳过"
+                )
+                print("      · 该 AI 实践是新版「情景对话」，暂不支持，请到学习通 App 手动完成")
+            else:
+                logger.warning(
+                    "AI实践入口页缺少 courseid/clazzid/cpi/publishRelationUuid/aiEnc（最终地址: {}）",
+                    final_url,
+                )
             return False
 
         data = self._ai_load_data(params)

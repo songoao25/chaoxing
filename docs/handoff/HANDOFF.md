@@ -7,7 +7,7 @@
 | 上一轮 Agent | dsh（DeepSeek Harness；作业与主题讨论真机打通、控制台降噪、默认自动提交） |
 | 接手对象 | 具备浏览器操控能力的 Agent，或人类开发者 |
 | 下一步（唯一入口） | 读 `docs/handoff/TASKS.yaml` → 思考题（第5章解锁后）与文档时长最终复验 |
-| 验证命令 | `make lint`（编译 + 当前 245 项离线单测） |
+| 验证命令 | `make lint`（编译 + 当前 274 项离线单测） |
 
 ---
 
@@ -37,7 +37,7 @@
   扣分的关键接口是 `POST /ai-ans/ai-evaluate/think/end-report` —— 提交**不会**出分，
   必须请求一次"学习质量评估报告"成绩才现算出来。开学第一课实测 4 次练习各 100 分、
   练习平均分 81.7、平台成绩字段 `answerScore=100`。
-- **当前卡点**：文档时长类任务点平台仍不计入（2026-09-21 两次各 600 秒打点 + readEnd 验证）；
+- **当前卡点**：AI实践新版「情景对话」未适配（第5章 1 个）；文档时长类任务点平台仍不计入（2026-09-21 两次各 600 秒打点 + readEnd 验证）；
   思考题任务点在锁定分组、尚未取证；主题讨论/作业/AI实践已全部真机验收。
   主题讨论已完整验收：回复成功 → 约 3 分钟后引擎 `isFinish` 翻转（22:28 false → 22:31 true）。
 - **当前路线**：文档路径真机复验（`B2-doc-chapter-sync-verify`）；第1章第 3 组解锁后抓作业/讨论
@@ -50,7 +50,7 @@
 ```bash
 cd /path/to/chaoxing
 make doctor          # 环境自检
-    make lint            # 确认当前代码是绿的（当前 234 项离线单测）
+    make lint            # 确认当前代码是绿的（当前 274 项离线单测）
 make status          # 看账号当前进度（只读，会用到 173****6569 的 cookie；账号已脱敏）
 ```
 
@@ -88,6 +88,7 @@ make status          # 看账号当前进度（只读，会用到 173****6569 �
 | 14 | AI实践的判分是**平台自己的大模型**，会自相矛盾（标准答案判错、判断题"错""对"都判错）；且知识点答完后平台仍会把最后一题推回来而**不再收录作答**（`messageList` 不增长） | 真机实测：同一题"错/对"来回换十几次；整局曾拖到 112 题、空转 23 分钟 |
 | 11 | 章节类任务点的同步数据 `stuJobInfo` 由**平台下发**：章节页 `isTaskEngineNode=true` → `window.isEngineNode="1"`；视频打点响应 / `/mooc-ans/job/document` 响应里带 `stuJobInfo`，父页面 POST `autoPullChapterScore` | 真实浏览器抓包 + 同步后引擎复查，见 `docs/artifacts/capture_autopull.txt` |
 | 12 | mooc 视频打点在部分网络下按**客户端指纹**拦截：同一 URL/参数/Cookie/UA，Chrome 200、curl 200、Python requests **403**；且 `playTime` 到结尾但未通过时必须在结尾反复重报是没用的，要**从头回看**（浏览器从 0 播到 ~232s 才通过） | 2026-09-17 实测；CLI 已加 curl 回退（决 D12）与回看逻辑（决 D13） |
+| 18 | AI实践有**两套互不通用**的接口：思维阶梯（think-ladder，入口 302 带 aiEnc）与新版**情景对话**（situationalDialogue，无 aiEnc，接口族 /mobile/situationalDialogue/*）。当前只适配了思维阶梯；遇到情景对话会明确提示手动完成，不假装成功 | 2026-09-21 只读取证（第5章「与格力电器总裁董明珠对话」）；任务见 TASKS#H-ai-situational |
 | 15 | 任务中心作业走**新版学习页**：`getToStudyUrl` → `mooc2/work/task`（302 到 `dowork`）；章节测验的 `mooc-ans/api/work` 对课程级作业返回 **403**，作业提交接口是 `addStudentWorkNewWeb`。题型在 `input[name=answertype<id>]`（0 单选/1 多选/2 填空/3 判断/4 简答），题干要按 DOM 顺序拼——真实页面把 `<p>` 嵌在 `<h3>` 里属非法 HTML，lxml 会提前闭合 h3 | 2026-09-20 真机取证 `docs/artifacts/capture_homework.txt`；第1章作业自动作答提交后平台判 **83.3** 分、`isFinish=true` |
 
 ---

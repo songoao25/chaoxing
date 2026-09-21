@@ -17,6 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("CX_DATA_HOME", tempfile.mkdtemp(prefix="cx-audit-"))
 
 from api import base as base_mod  # noqa: E402
+from api import task_center as tc_mod  # noqa: E402
+from api.task_center import TaskCenter  # noqa: E402
 from api import interrupt  # noqa: E402
 from api.live_process import LiveProcessor  # noqa: E402
 import setup_wizard as wizard  # noqa: E402
@@ -85,6 +87,110 @@ class ConfirmDefaultTestCase(unittest.TestCase):
         with mock.patch.object(wizard, "_read_line", return_value=""), \
              mock.patch("builtins.print"):
             self.assertTrue(wizard.ask_yes_no("重新输入吗？", default_no=False))
+
+
+class SituationalDialogueTestCase(unittest.TestCase):
+    """新版 AI 实践（情景对话）要明确报"暂不支持"，不能只说参数缺失"""
+
+    def test_detected_as_unsupported_subtype(self):
+        tc = TaskCenter(object(), {})
+
+        class Resp:
+            status_code = 200
+            url = "https://mooc2-ans.chaoxing.com/mooc2-ans-vue/situationalDialogue?courseid=1"
+            text = "<html>situationalDialogue</html>"
+
+        class Sess:
+            def get(self, url, **kwargs):
+                return Resp()
+
+        tc.session = Sess()
+        messages = []
+        with mock.patch.object(tc_mod.logger, "warning",
+                               side_effect=lambda msg, *a, **k: messages.append(str(msg))), \
+             mock.patch("builtins.print"):
+            ok = tc.study_ai_practice("https://mooc2-ans.chaoxing.com/ai-evaluate/v2/answer?x=1")
+        self.assertFalse(ok)
+        self.assertTrue(any("情景对话" in m for m in messages), messages)
+
+
+class NoFakeSuccessTestCase(unittest.TestCase):
+    """独立审计新发现的"可能假完成"路径：一律不能返回成功（铁律 1）"""
+
+    def test_unknown_card_type_is_collected(self):
+        from api.decode import _process_attachment_cards
+        jobs, unknown = _process_attachment_cards(
+            [{"job": {"id": 1}, "type": "weird-new-type", "property": {}}]
+        )
+        self.assertEqual(jobs, [])
+        self.assertEqual(unknown, ["weird-new-type"])
+
+    def test_get_job_list_fails_on_unknown_card_types(self):
+        from api import base as base_mod
+        cx = base_mod.Chaoxing()
+
+        class Resp:
+            status_code = 200
+            text = "<html></html>"
+
+        class Sess:
+            def get(self, *args, **kwargs):
+                return Resp()
+
+        with mock.patch.object(base_mod.SessionManager, "get_session", return_value=Sess()), \
+             mock.patch.object(base_mod, "decode_course_card",
+                               return_value=([], {"unknownCardTypes": ["weird"]})):
+            jobs, info = cx.get_job_list(
+                {"courseId": "1", "clazzId": "2", "cpi": "3"},
+                {"id": "9", "title": "第1章"},
+            )
+        self.assertIsNone(jobs)
+        self.assertEqual(info.get("unknownCardTypes"), ["weird"])
+
+    def test_chapter_document_result_false_is_error(self):
+        from api import base as base_mod
+        cx = base_mod.Chaoxing()
+
+        class Resp:
+            status_code = 200
+            text = "{}"
+
+            def json(self):
+                return {"result": False, "msg": "任务未完成"}
+
+        class Sess:
+            def get(self, *args, **kwargs):
+                return Resp()
+
+        with mock.patch.object(base_mod.SessionManager, "get_session", return_value=Sess()):
+            result = cx.study_document(
+                {"courseId": "1", "clazzId": "2"},
+                {"jobid": "1", "otherinfo": "nodeId_9-cpi_1", "jtoken": "t"},
+            )
+        self.assertEqual(result, base_mod.StudyResult.ERROR)
+
+    def test_read_non_json_is_error(self):
+        from api import base as base_mod
+        cx = base_mod.Chaoxing()
+
+        class Resp:
+            status_code = 200
+            text = "<html>login</html>"
+
+            def json(self):
+                raise ValueError("not json")
+
+        class Sess:
+            def get(self, *args, **kwargs):
+                return Resp()
+
+        with mock.patch.object(base_mod.SessionManager, "get_session", return_value=Sess()):
+            result = cx.study_read(
+                {"courseId": "1", "clazzId": "2"},
+                {"jobid": "1", "jtoken": "t"},
+                {"knowledgeid": "9"},
+            )
+        self.assertEqual(result, base_mod.StudyResult.ERROR)
 
 
 class TerminationGuardTestCase(unittest.TestCase):

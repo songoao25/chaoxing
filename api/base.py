@@ -420,7 +420,7 @@ def random_answer(options: str, q_type: str) -> str:
     # 判断题处理
     elif q_type == "judgement":
         answer = "true" if random.choice([True, False]) else "false"
-    logger.info(f"随机选择 -> {answer}")
+    logger.trace(f"随机选择 -> {answer}")
     return answer
 
 
@@ -1048,6 +1048,15 @@ class Chaoxing:
             unique_jobs.append(_job)
         job_list = unique_jobs
 
+        unknown_types = job_info.get("unknownCardTypes") or []
+        if unknown_types:
+            # 铁律 1：不认识的卡片不能当成"已完成"，宁可报读取失败让人来看
+            logger.error(
+                "章节 [{}] 出现未知任务点类型 {}：为避免把未完成记成完成，按读取失败处理",
+                point.get("title", ""), "、".join(str(t) for t in unknown_types),
+            )
+            return None, job_info
+
         if not job_list:
             # 空章节也要把"访问"这一步做成功才算完成；失败同样按读取失败处理
             empty_result = self.study_emptypage(course, point)
@@ -1503,7 +1512,17 @@ class Chaoxing:
                 f"&_dc={get_timestamp()}")
         _resp = _session.get(_url)
         if _resp.status_code != 200:
+            logger.error("章节文档打开失败 -> [{}]{}", _resp.status_code, str(_resp.text)[:120])
             return StudyResult.ERROR
+        # 只看 HTTP 200 会把平台拒绝当成功：能解析出 result=false 就判失败
+        try:
+            _doc_data = _resp.json()
+        except ValueError:
+            _doc_data = None
+        if isinstance(_doc_data, dict) and _doc_data.get("result") is False:
+            logger.error("章节文档未完成 -> {}", str(_doc_data.get("msg") or _doc_data)[:160])
+            return StudyResult.ERROR
+        logger.info("章节文档完成: {}", _job.get("name") or node_ids[0])
         if engine_info:
             # 任务引擎节点下，浏览器读完文档走的正是这个接口；它会返回
             # stuJobInfo（章节同步数据）。拿不到不影响文档本身的学习结果。
@@ -1699,7 +1718,7 @@ class Chaoxing:
                         answer = res
 
                     if not answer:  # 检查 answer 是否为空
-                        logger.warning(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
+                        logger.debug(f"找到答案但答案未能匹配 -> {res}\t随机选择答案")
                         answer = random_answer(q["options"], q["type"])  # 如果为空，则随机选择答案
                         q[f'answerSource{q["id"]}'] = "random"
                     else:
@@ -1708,7 +1727,7 @@ class Chaoxing:
                         found_answers += 1
                 # 填充答案
                 q["answerField"][f'answer{q["id"]}'] = answer
-                logger.info(f'{q["title"]} 填写答案为 {answer}')
+                logger.debug(f'{q["title"]} 填写答案为 {answer}')
             cover_rate = (found_answers / total_questions) * 100
             logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
             # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交
@@ -1784,15 +1803,22 @@ class Chaoxing:
                 logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res.text}')
                 return StudyResult.ERROR
 
-            # 5. 若只是保存未提交，无法判断成绩，保持原有行为
+            # 5. 只保存未提交：平台不会把任务点记为完成，不能返回成功（铁律 1）
             if questions["pyFlag"] == "1":
-                return StudyResult.SUCCESS
+                logger.warning("章节检测已保存但未提交（submit=false），本任务点不记为完成")
+                return StudyResult.ERROR
 
             # 6. 提交后检查成绩：若未全部正确，则收集错误反馈并重新作答提交
-            result_info = self._check_work_result(_session, _course, _job, _job_info, questions)
+            result_info = None
+            for _try in range(3):
+                result_info = self._check_work_result(_session, _course, _job, _job_info, questions)
+                if result_info is not None:
+                    break
+                time.sleep(2)
             if result_info is None:
-                # 无法获取成绩详情（如接口异常），按原行为返回成功，避免误判失败
-                return StudyResult.SUCCESS
+                # 读不到成绩就不能说通过（铁律 1）：重试 3 次后按失败处理
+                logger.error("提交后连续 3 次读不到章节检测成绩，本任务点不记为完成")
+                return StudyResult.ERROR
 
             if result_info.get("all_correct", False):
                 logger.info(f"章节检测全部正确（成绩 {result_info.get('score', '?')} 分），通过！")
@@ -1987,10 +2013,17 @@ class Chaoxing:
         if _resp.status_code != 200:
             logger.error(f"阅读任务学习失败 -> [{_resp.status_code}]{_resp.text}")
             return StudyResult.ERROR
-        else:
+        try:
             _resp_json = _resp.json()
-            logger.info(f"阅读任务学习 -> {_resp_json['msg']}")
-            return StudyResult.SUCCESS
+        except ValueError:
+            logger.error("阅读任务返回非 JSON，无法确认结果，按失败处理")
+            return StudyResult.ERROR
+        if isinstance(_resp_json, dict) and _resp_json.get("result") is False:
+            logger.error("阅读任务未完成 -> {}", str(_resp_json.get("msg") or _resp_json)[:160])
+            return StudyResult.ERROR
+        _msg = _resp_json.get("msg", "成功") if isinstance(_resp_json, dict) else "成功"
+        logger.info(f"阅读任务学习 -> {_msg}")
+        return StudyResult.SUCCESS
 
     def _send_monitor_heartbeat(self, course, point):
         """

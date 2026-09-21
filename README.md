@@ -28,7 +28,7 @@ A command-line assistant that completes Chaoxing (学习通 / 泛雅) course tas
 | --- | :---: | --- |
 | Video | ✅ | Plays through the task engine and reports on the real playback rhythm |
 | Chapter sync | ✅ | Reuses chapter automation and calls the platform's chapter-score sync |
-| AI practice | ✅ | `main-talk` SSE dialogue, then the end-report call that makes the platform score it |
+| AI practice | 🟡 | "Thinking ladder" (思维阶梯) is supported: `main-talk` SSE dialogue, then the end-report call that makes the platform score it. The newer **situational dialogue** (情景对话, `/mobile/situationalDialogue/*`) is a different API and is not adapted yet |
 | Homework | ✅ | Multiple-choice / true-false / fill-in via the question bank; short answers via `api/ai_writer.py` |
 | Topic discussion | ✅ | Reads existing replies for style, generates a non-duplicate reply, submits it |
 | Document | ⚠️ | 30-second heartbeats are sent, and "finish reading" documents (readEnd) complete. For duration-only documents the platform was **not** observed counting even 600 s of heartbeats + readEnd (verified twice); the tool keeps them unfinished and retries at most once per 24 h |

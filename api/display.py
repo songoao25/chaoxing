@@ -188,7 +188,7 @@ def course_plan_summary(finished_points, pending_points, planned_count=None) -> 
 class ChapterProgress:
     """章节级进度：每完成一个章节输出一行整体进度"""
 
-    def __init__(self, total, enabled=True, title_width=38):
+    def __init__(self, total, enabled=True, title_width=30):
         self.total = int(total or 0)
         self.done = 0
         self.failed = 0
@@ -228,14 +228,12 @@ class ChapterProgress:
 
         name = _truncate(str(title).strip(), self.title_width)
 
-        # 固定列宽（按显示宽度计算），保证多行对齐、一目了然。
+        # 固定列宽（按显示宽度计算），保证多行对齐；整行控制在 80 列左右。
         # 百分比不单独列一栏：进度条本身已经直观表达了比例。
-        counter = (str(processed) + "/" + str(total)).rjust(9)
-        info = _pad_right("剩 " + str(remain) + " 节 · " + when_text, 26)
+        counter = _pad_right(str(processed) + "/" + str(total), 7)
+        info = _pad_right("剩 " + str(remain) + " · " + when_text, 18)
 
-        return (
-            "  " + bar + "  " + counter + "   " + info + " " + mark + " " + name + extra
-        )
+        return "  " + bar + " " + counter + info + " " + mark + " " + name + extra
 
     def _emit(self, line):
         if not self._enabled:

@@ -167,6 +167,32 @@ tasks:
       - 取证：docs/artifacts/capture_discussion.txt；接口实现见 api/task_center.py study_discussion
       - 完成同步已复验：回复后约 3 分钟任务引擎 isFinish 翻转（22:28 false → 22:31 true）
 
+  - id: H-ai-situational
+    title: 新版 AI 实践「情景对话」（situationalDialogue）适配
+    status: ready
+    priority: P1
+    owner: null
+    depends_on: []
+    blocked_by: null
+    context: |
+      第5章「与格力电器总裁董明珠对话」属于情景对话：getToStudyUrl →
+      /ai-evaluate/v2/answer?...&publishRelationUuid=...&__from=taskEngine →
+      302 到 /mooc2-ans-vue/situationalDialogue?courseid=&clazzid=&cpi=&publishRelationUuid=
+      （没有 aiEnc，和思维阶梯不是同一套）。SPA bundle 里的接口族：
+      /mobile/situationalDialogue、/mobile/situationalDialogue/chat、/evaluate、
+      /editEvaluate、/viewDetail。
+    files:
+      - api/task_center.py
+      - tests/test_task_center.py
+    steps:
+      - 抓一次真实情景对话：加载配置、发消息、提交/评估、成绩与状态翻转
+      - 在 study_ai_practice 里加 subtype 分支（思维阶梯逻辑保持不动）
+      - 单测：subtype 识别、失败不假装成功
+    acceptance: 情景对话任务点 isFinish=true，文本过两遍真人化审计。
+    evidence:
+      - 2026-09-21 只读取证：入口 302 到 situationalDialogue（无 aiEnc），接口族见上
+      - 当前行为：明确提示"暂不支持，请到 App 手动完成"，不假装完成
+
   - id: E-ai-practice-high-score
     title: AI实践（思维阶梯）重答刷到 80~90 分
     status: done

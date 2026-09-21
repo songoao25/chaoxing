@@ -276,7 +276,9 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
 
     # 处理所有附件任务
     cards = cards_data.get("attachments", [])
-    job_list = _process_attachment_cards(cards)
+    job_list, unknown_types = _process_attachment_cards(cards)
+    if unknown_types:
+        job_info["unknownCardTypes"] = unknown_types
 
     return job_list, job_info
 
@@ -307,17 +309,22 @@ def _extract_job_info(cards_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _process_attachment_cards(cards: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
     处理所有附件任务卡片，强化直播任务识别逻辑
-    
+
     Args:
         cards: 附件任务卡片列表
-        
+
     Returns:
-        处理后的任务列表
+        (处理后的任务列表, 无法识别的卡片类型列表)
+
+    平台新增任务点类型时必须让上层知道：整章卡片都不认识 → 任务列表为空，
+    以前会走"空章节"分支把章节记成完成（假完成）。现在把未知类型带上去，
+    由 get_job_list 按"读取失败"处理。
     """
     job_list = []
+    unknown_types: List[str] = []
 
     for index, card in enumerate(cards):
         # 跳过已通过的任务
@@ -375,10 +382,13 @@ def _process_attachment_cards(cards: List[Dict[str, Any]]) -> List[Dict[str, Any
             if work_job:
                 job_list.append(work_job)
         else:
-            logger.warning(f"Unknown card type: {card_type}")
-            logger.warning(card)
+            # 未知类型不能静默丢弃：整章都是未知卡片时会被误判成"空章节已完成"
+            logger.error(f"Unknown card type: {card_type}")
+            logger.debug(card)
+            if card_type not in unknown_types:
+                unknown_types.append(card_type)
 
-    return job_list
+    return job_list, unknown_types
 
 
 def _process_live_task(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:

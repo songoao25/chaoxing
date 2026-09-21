@@ -126,7 +126,7 @@ class HumanLikeWriter:
             content = (data["choices"][0]["message"]["content"] or "").strip()
             if content:
                 return content
-            logger.warning("大模型第 {} 档 thinking={} 返回空内容（model={}）", index + 1, step, self.model)
+            logger.debug("大模型第 {} 档 thinking={} 返回空内容（model={}）", index + 1, step, self.model)
             if index + 1 < len(steps):
                 time.sleep(1.0)
                 continue
@@ -349,7 +349,7 @@ class HumanLikeWriter:
             )
             if not last_problems:
                 return self.cut_at_sentence(text, max_chars)
-            logger.warning("生成内容不合格（第 {} 次）：{}", attempt, "、".join(last_problems))
+            logger.debug("生成内容不合格（第 {} 次）：{}", attempt, "、".join(last_problems))
             overused = [word for word, count in self.habit_stats(text).items() if count >= 2]
             extra = ("；这一版里「" + "、".join(overused) + "」用多了，换掉") if overused else ""
             # 把这一版具体踩到的问题回给模型，比笼统说"写得像人一点"有效
@@ -369,7 +369,7 @@ class HumanLikeWriter:
         # 编造个人履历（实习/兼职/在职）是硬伤：宁可不提交，也不能把假经历发给老师
         if "编造的个人琐事" in last_problems:
             raise RuntimeError("生成内容里仍在编造个人经历（实习/兼职/在职）")
-        logger.warning("生成内容重写 3 次仍有真人化问题（{}），按原样返回", "、".join(last_problems))
+        logger.debug("生成内容重写 3 次仍有真人化问题（{}），按原样返回", "、".join(last_problems))
         return self.cut_at_sentence(text, max_chars)
 
     def answer(self, question: str, requirement: str = "", references=None,

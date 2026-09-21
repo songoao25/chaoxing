@@ -14,6 +14,8 @@
 - Probe configuration via `tools/probe/local.env` (gitignored) instead of hard-coded accounts.
 
 ### Changed
+- Console/log noise reduction: the q-key hint prints once per run, chapter progress lines fit ~80 columns, AI-writer retries and per-question details are debug-only, long videos/documents print one progress line, and failures collapse into a single summary line.
+- Log file defaults to DEBUG; set `CX_LOG_LEVEL=TRACE` for full request-level tracing.
 - AI answering: thinking defaults to `auto` (V4.1 flash reasons by default), objective questions use 3-sample majority voting, prompts ask for option letters, and answer parsing accepts JSON / code fences / plain text.
 - Live sessions now run in real time (1x), honour `q`/Ctrl+C, and return failure when a heartbeat fails.
 - Document tasks: "finish reading" documents complete; duration-only documents are reported unfinished (platform was not observed counting 600 s + readEnd) and are not re-read for 24 h.
@@ -21,6 +23,7 @@
 - Tests always use a temporary `CX_DATA_HOME`.
 
 ### Fixed
+- New AI-practice subtype "situational dialogue" (`/mobile/situationalDialogue/*`) is detected and reported as unsupported instead of a confusing "missing parameters" warning.
 - Task Center phase interrupted by `q` no longer reports "all done".
 - Chapter quizzes without a question bank are no longer recorded as completed.
 - `tqdm.format_sizeof` global patch is always restored.

@@ -1,3 +1,4 @@
+import os
 import sys
 
 from loguru import logger
@@ -11,7 +12,8 @@ MAX_LOG_BUFFER_SIZE = 1000
 
 # 刷课期间的控制台静音开关。
 # 刷课时打开：控制台只显示 WARNING 及以上，避免 TRACE/DEBUG 刷屏；
-# 日志文件始终记录 TRACE 全量，方便事后排查。
+# 日志文件默认记 DEBUG（够排查且不刷屏），需要逐请求排查时用
+# 环境变量 CX_LOG_LEVEL=TRACE 打开全量。
 _quiet = False
 
 
@@ -114,4 +116,5 @@ try:
     _LOG_FILE = _paths.log_path()
 except Exception:
     _LOG_FILE = "chaoxing.log"
-logger.add(_LOG_FILE, rotation="10 MB", level="TRACE")
+logger.add(_LOG_FILE, rotation="10 MB",
+           level=(os.environ.get("CX_LOG_LEVEL") or "DEBUG").strip().upper())

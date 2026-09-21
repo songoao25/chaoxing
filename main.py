@@ -1321,6 +1321,14 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
     return stats
 
 
+def _start_interrupt(hint_shown: bool) -> bool:
+    """启动 q 键监听；提示语整次运行只打一遍，避免每个阶段重复刷屏。"""
+    if not hint_shown:
+        interrupt.print_hint()
+    interrupt.start_watcher()
+    return True
+
+
 def _run_task_center_quiet(chaoxing: Chaoxing, course_task: list, config: dict,
                            max_tasks=None) -> dict:
     """
@@ -1359,6 +1367,7 @@ def _print_task_center_summary(stats: dict):
 def main():
     """主程序入口"""
     _old_format_sizeof = None      # tqdm 全局格式补丁的恢复兜底（见 finally）
+    hint_shown = False             # q 键提示整次运行只打一遍
     try:
         # 初始化配置
         common_config, tiku_config, notification_config, config_path, args = init_config()
@@ -1505,8 +1514,7 @@ def main():
             tc_stats = {"courses": 0, "done": 0, "failed": 0, "unsupported": 0,
                         "waiting_confirmation": 0, "locked": 0, "read_failed": 0}
             if _task_center_enabled(common_config, args):
-                interrupt.print_hint()
-                interrupt.start_watcher()
+                hint_shown = _start_interrupt(hint_shown)
                 print()
                 if chapters_enabled:
                     print("  章节已全部完成，继续检查任务中心的教学任务…")
@@ -1559,8 +1567,7 @@ def main():
             return
 
         # 刷课开始：提示如何退出，并启动键盘监听（按 q 立即终止）
-        interrupt.print_hint()
-        interrupt.start_watcher()
+        hint_shown = _start_interrupt(hint_shown)
 
         # 记录开始时间 + 通知开始
         run_started_at = time.time()
@@ -1650,24 +1657,30 @@ def main():
         # 实际上还差几节（#618）。这里按实际失败数量分开报。
         failed_points = getattr(progress, "failed", 0) or 0
         if failed_points or unreadable_courses or tc_stats["failed"] or tc_stats.get("read_failed"):
-            logger.warning(f"有 {failed_points} 个任务点未能完成")
-            print()
+            # 一行汇总：细节在日志和通知里，控制台不刷屏
+            parts = []
             if failed_points:
-                print(f"  ⚠ 有 {failed_points} 个任务点未能完成（下次运行会自动重试）")
+                parts.append(f"章节失败 {failed_points} 个")
             if unreadable_courses:
-                print("  ⚠ 有课程没能读到章节：" + "、".join(unreadable_courses))
+                parts.append(f"读不到章节 {len(unreadable_courses)} 门")
             if tc_stats["failed"]:
-                extras = []
+                detail = []
                 if tc_stats["unsupported"]:
-                    extras.append(f"暂不支持 {tc_stats['unsupported']} 个")
+                    detail.append(f"暂不支持 {tc_stats['unsupported']}")
                 if tc_stats.get("waiting_confirmation"):
-                    extras.append(f"等待确认 {tc_stats['waiting_confirmation']} 个")
+                    detail.append(f"等待确认 {tc_stats['waiting_confirmation']}")
                 if tc_stats.get("locked"):
-                    extras.append(f"未解锁 {tc_stats['locked']} 个")
-                extra = f"（{'、'.join(extras)}）" if extras else ""
-                print(f"  ⚠ 任务中心有 {tc_stats['failed']} 个教学任务未完成{extra}")
+                    detail.append(f"未解锁 {tc_stats['locked']}")
+                parts.append(
+                    "教学任务未完成 " + str(tc_stats["failed"])
+                    + ("（" + "、".join(detail) + "）" if detail else "")
+                )
             if tc_stats.get("read_failed"):
-                print(f"  ⚠ 任务中心有 {tc_stats['read_failed']} 门课程读取失败，无法判断是否完成")
+                parts.append(f"任务中心读取失败 {tc_stats['read_failed']} 门")
+            summary_line = " · ".join(parts)
+            logger.warning("本次未全部完成：" + summary_line)
+            print()
+            print("  ⚠ 本次没全部完成：" + summary_line + "（下次运行会自动继续）")
             print(flush=True)
             unreadable_text = ("\n读不到章节的课程：" + "、".join(unreadable_courses)) if unreadable_courses else ""
             tc_text = ""
