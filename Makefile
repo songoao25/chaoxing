@@ -5,6 +5,14 @@ PY := ./.venv/bin/python
 help:  ## 列出所有命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
+# 本地默认解释器可能比 CI 新（如 3.14）：注解求值时机不同，
+# 提交前用 CI 同版本再跑一遍，避免"本地绿、CI 红"。
+test-313:
+	@command -v python3.13 >/dev/null 2>&1 || { echo "没有 python3.13，跳过（CI 会跑）"; exit 0; }
+	@python3.13 -c "import loguru" 2>/dev/null || { echo "python3.13 没装依赖，跳过（CI 会跑）"; exit 0; }
+	python3.13 -m compileall -q api main.py setup_wizard.py tools tests
+	python3.13 -m unittest discover -s tests -t .
+
 test:  ## 跑全量单测（离线）
 	$(PY) -m unittest discover -s tests -t .
 
