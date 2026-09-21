@@ -147,5 +147,39 @@ class OnlyDiscussionTestCase(unittest.TestCase):
         self.assertEqual(stats["skipped_other"], 1)
 
 
+
+    def test_skip_discussion_skips_task_discussions(self):
+        """board 模式：任务中心里跳过主题讨论（之前 skip_discussion 未定义直接 NameError）"""
+        groups = [{"encryptGroupId": "g1", "groupAllowStudy": True}]
+        plans = {"g1": [
+            {"planId": 1, "planType": 14, "name": "讨论"},
+            {"planId": 2, "planType": 4, "name": "作业"},
+        ]}
+        fake = FakeTaskCenter(groups, plans)
+        stats = {"skipped_other": 0}
+        handled = []
+
+        def fake_complete(tc, chaoxing, course, plan, info, config, point_map):
+            handled.append(int(plan.get("planType")))
+            fake._finished.add(str(plan.get("planId")))
+            return True
+
+        with mock.patch.object(main_mod, "_complete_teaching_plan", side_effect=fake_complete), \
+             mock.patch.object(main_mod, "_load_course_point_map", return_value={}):
+            main_mod._process_teaching_task(
+                fake, object(), {"title": "课", "courseId": "1"}, {"name": "第1章"},
+                {}, {}, skip_discussion=True, stats=stats,
+            )
+        self.assertEqual(handled, [4])
+        self.assertEqual(stats["skipped_other"], 1)
+
+    def test_main_assigns_skip_discussion(self):
+        """main() 里必须有 skip_discussion 赋值，否则任务中心阶段每次 NameError"""
+        source = open(os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "main.py"),
+            encoding="utf-8").read()
+        self.assertIn("skip_discussion = board_mode", source)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1246,7 +1246,7 @@ class Chaoxing:
             )
 
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
-            logger.warning("该任务点被平台风控拦截（403），已跳过；详情见日志文件")
+            logger.warning("这个任务被平台临时拦了一下，已跳过（稍后会自动重试；详情见日志文件）")
             logger.debug("403 请求 url: {}", resp.url)
             logger.debug("403 请求头: {}", dict(_session.headers) | headers)
             return False, 403

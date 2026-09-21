@@ -34,6 +34,11 @@
 - Tests always use a temporary `CX_DATA_HOME`.
 
 ### Fixed
+- "只刷讨论" could be blocked by the startup check because the run config wrote `task_center = false`; it now always keeps the Task Center path enabled.
+- `skip_discussion` was referenced but never assigned, so the whole Task Center phase failed with a NameError (reported as "read failed"). Now defined from the discussion mode.
+- Answer-mode table was unpacked in the wrong order: question-bank modes asked for a DeepSeek key, and choosing "no quizzes" at the key step discarded the just-entered token. Both fixed.
+- Pre-run scan mixed units ("9 teaching tasks · 62 done") — now "9 teaching tasks · 77 task points (62 done · 9 pending · 6 locked)".
+- Discussion board count now says "at least N (first 10 pages read)" when capped, and you can keep picking after a batch.
 - Flow coherence: the confirmation page now shows the discussion choice, the run header says "章节任务点", board mode no longer claims teaching tasks are done, and the pre-run scan's reminders match the selected scope/mode.
 - Wizard input robustness: every choice prompt now has a retry cap and a safe default, so piped/non-interactive input can never hang the wizard.
 - New AI-practice subtype "situational dialogue" (`/mobile/situationalDialogue/*`) is detected and reported as unsupported instead of a confusing "missing parameters" warning.

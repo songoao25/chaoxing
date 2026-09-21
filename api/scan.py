@@ -44,7 +44,7 @@ def scan_task_center(chaoxing, courses: list, config: dict) -> List[dict]:
         logger.debug("任务中心扫描初始化失败: {}", e)
         return rows
     for course in courses:
-        row = {"title": str(course.get("title") or ""), "tasks": 0, "done": 0,
+        row = {"title": str(course.get("title") or ""), "tasks": 0, "plans": 0, "done": 0,
                "todo": 0, "locked": 0, "unsupported": [], "by_type": {},
                "locked_by_type": {}, "error": ""}
         try:
@@ -60,6 +60,7 @@ def scan_task_center(chaoxing, courses: list, config: dict) -> List[dict]:
                                          group.get("encryptGroupId", "")) or []
                     unlocked = bool(group.get("groupAllowStudy"))
                     for plan in plans:
+                        row["plans"] += 1
                         if tc.plan_finished(plan):
                             row["done"] += 1
                             continue
@@ -115,10 +116,12 @@ def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
             continue
         if not row.get("tasks"):
             continue
-        head = ("    教学任务  " + str(row.get("tasks")) + " 个 · 已完成 "
-                + str(row.get("done")) + " · 待完成 " + str(row.get("todo")))
+        head = ("    教学任务  " + str(row.get("tasks")) + " 个 · 任务点 "
+                + str(row.get("plans")) + " 个（已完成 " + str(row.get("done"))
+                + " · 待完成 " + str(row.get("todo")))
         if row.get("locked"):
             head += " · 未解锁 " + str(row.get("locked"))
+        head += "）"
         lines.append(head)
         detail = _type_text(row.get("by_type") or {})
         if detail:

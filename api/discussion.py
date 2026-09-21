@@ -83,17 +83,24 @@ def fetch_topics(session, bbsid: str, page: int = 1, page_size: int = DEFAULT_PA
     return [normalize_topic(it) for it in items if isinstance(it, dict) and it.get("uuid")]
 
 
-def fetch_all_topics(session, bbsid: str, max_pages: int = MAX_PAGES) -> List[dict]:
-    """把讨论区的帖子全部读出来（只读，最多 max_pages 页）"""
+def fetch_all_topics(session, bbsid: str, max_pages: int = MAX_PAGES) -> Tuple[List[dict], bool]:
+    """把讨论区的帖子读出来（只读，最多 max_pages 页）。
+
+    返回 (帖子列表, 是否因为页数上限被截断)——截断时界面上要说"至少 N 条"，
+    不能假装这就是全部。
+    """
     topics: List[dict] = []
+    capped = False
     for page in range(1, max(1, int(max_pages)) + 1):
         batch = fetch_topics(session, bbsid, page=page)
         if not batch:
             break
         topics.extend(batch)
         if len(batch) < DEFAULT_PAGE_SIZE:
-            break
-    return topics
+            return topics, False
+        if page == max(1, int(max_pages)):
+            capped = True
+    return topics, capped
 
 
 def resolve_bbsid(tc, course: dict) -> str:
@@ -247,11 +254,14 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
     print(f"  讨论区 · {title}")
     print("  " + "─" * 46)
     print("  正在读取帖子…")
-    topics = fetch_all_topics(tc.session, bbsid)
+    topics, capped = fetch_all_topics(tc.session, bbsid)
     if not topics:
         print("  ✘ 没读到帖子（可能登录失效、页面改版，或这个讨论区还是空的）")
         return 1
-    print(f"  共 {len(topics)} 条帖子 · 已经回复过的会自动跳过")
+    if capped:
+        print(f"  至少 {len(topics)} 条帖子（只读了前 {MAX_PAGES} 页）· 已经回复过的会自动跳过")
+    else:
+        print(f"  共 {len(topics)} 条帖子 · 已经回复过的会自动跳过")
 
     page_size = DEFAULT_PAGE_SIZE
     page = 1
@@ -338,4 +348,15 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
     print(f"  完成：发送 {sent} 条 · 跳过 {skipped} 条")
     if sent:
         print("  （平台约 3 分钟后才显示完成，可在 ./cx review 里复核正文）")
-    return 0
+    if auto_yes:
+        return 0
+    again = _ask("  还要继续挑别的帖子吗？[y/n · 回车＝退出] ")
+    if again.lower() not in ("y", "yes", "是", "1"):
+        return 0
+    # 重新读一遍（可能有新回复），回到第一页继续挑
+    topics, capped = fetch_all_topics(tc.session, bbsid)
+    if not topics:
+        print("  · 没读到帖子了，先退出")
+        return 0
+    return discuss_cli(chaoxing, tc, config, list_only=False, course_id=course_id,
+                       courses=courses, auto_yes=auto_yes)

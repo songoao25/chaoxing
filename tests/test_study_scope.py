@@ -117,6 +117,49 @@ class WizardScopeTestCase(unittest.TestCase):
              mock.patch("builtins.print"):
             self.assertEqual(wizard.choose_study_scope(), (True, False, False, ""))
 
+
+    def test_only_discussion_keeps_task_center_enabled(self):
+        """只刷讨论必须写成 task_center = true，否则启动检查会拦下"""
+        plan = [({"courseId": 1, "clazzId": 2, "title": "测试课"}, 0, 0)]
+        path = wizard.build_config("13800000000", "pw", plan,
+                                   chapters_enabled=False, task_center_enabled=False,
+                                   only_discussion=True, discussion_mode="board")
+        text = open(path, encoding="utf-8").read()
+        self.assertIn("task_center = true", text)
+        self.assertIn("chapter_study = false", text)
+        self.assertIn("only_discussion = true", text)
+        self.assertIn("discussion_mode = board", text)
+
+    @staticmethod
+    def _empty_cfg():
+        import configparser
+        cfg = configparser.ConfigParser()
+        cfg.add_section("tiku")
+        return cfg
+
+    def test_question_bank_mode_does_not_ask_ai_key(self):
+        """选言溪题库不该被追问 DeepSeek Key（表结构解包顺序回归）"""
+        with mock.patch.object(wizard, "read_config", return_value=self._empty_cfg()), \
+             mock.patch.object(wizard, "ask", side_effect=["2", "tok-123"]), \
+             mock.patch.object(wizard, "ask_deepseek_key") as key_ask, \
+             mock.patch.object(wizard, "update_config"), \
+             mock.patch("builtins.print"):
+            provider, result = wizard.setup_answer_mode(force=True)
+        self.assertEqual(provider, "TikuYanxi")
+        self.assertEqual(result.get("tokens"), "tok-123")
+        key_ask.assert_not_called()
+
+    def test_key_step_downgrade_keeps_question_bank_tokens(self):
+        """在 Key 步骤选「不做测验」时，不能把刚填好的题库 token 丢掉"""
+        with mock.patch.object(wizard, "read_config", return_value=self._empty_cfg()), \
+             mock.patch.object(wizard, "ask", side_effect=["4", "tok-9"]), \
+             mock.patch.object(wizard, "ask_deepseek_key", return_value=""), \
+             mock.patch.object(wizard, "update_config"), \
+             mock.patch("builtins.print"):
+            provider, result = wizard.setup_answer_mode(force=True)
+        self.assertEqual(provider, "TikuYanxi")
+        self.assertEqual(result.get("tokens"), "tok-9")
+
     def test_choose_courses_skips_points_for_task_center_only(self):
         course = {"courseId": 1, "clazzId": 2, "title": "测试课"}
         cx = mock.Mock()
@@ -203,7 +246,7 @@ class WizardScopeTestCase(unittest.TestCase):
     def test_prefs_summary_is_short(self):
         line = wizard.prefs_summary()
         self.assertLessEqual(WizardDisplayTestCase._width(line), 76)
-        self.assertIn("提交自动", line)
+        self.assertIn("自动提交", line)
 
     def test_build_config_defaults_both_on(self):
         plan = [({"courseId": 1, "clazzId": 2, "title": "测试课"}, 3, 2)]
@@ -268,7 +311,7 @@ class WizardDisplayTestCase(unittest.TestCase):
         self.assertIn("范围  章节 + 任务中心", out)
         self.assertIn("章节 2 个未完成 · 教学任务全部", out)
         self.assertIn("讨论怎么刷", out)
-        self.assertIn("任务里的主题讨论（自动，按解锁顺序）", out)
+        self.assertIn("任务里的主题讨论（自动，按课程要求的顺序做）", out)
         self.assertIn("讨论区帖子（先列出来，自己挑几条回复）", out)
 
 

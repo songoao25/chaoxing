@@ -225,9 +225,21 @@ class FetchAllTopicsTestCase(unittest.TestCase):
                 return FakeResp({"status": True, "datas": pages.get(page, [])})
 
         session = Sess()
-        topics = discussion.fetch_all_topics(session, "bbs")
+        topics, capped = discussion.fetch_all_topics(session, "bbs")
         self.assertEqual(len(topics), discussion.DEFAULT_PAGE_SIZE + 1)
+        self.assertFalse(capped)
         self.assertEqual(session.calls, [1, 2])
+
+    def test_reports_capped_when_page_limit_reached(self):
+        class Sess:
+            def get(self, url, **kwargs):
+                return FakeResp({"status": True,
+                                 "datas": [_topic_item(uuid="u%d" % kwargs["params"]["page"])]
+                                 * discussion.DEFAULT_PAGE_SIZE})
+
+        topics, capped = discussion.fetch_all_topics(Sess(), "bbs", max_pages=2)
+        self.assertTrue(capped)
+        self.assertEqual(len(topics), discussion.DEFAULT_PAGE_SIZE * 2)
 
 
 class FakeBoardTaskCenter:

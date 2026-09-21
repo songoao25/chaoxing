@@ -478,7 +478,7 @@ def setup_answer_mode(force=False):
     cur_key = cfg.get("tiku", "key", fallback="") if cfg.has_section("tiku") else ""
 
     title("选择答题方式")
-    print("  章节测验需要答题才能解锁，选一种答题方式：")
+    print("  章节测验要答对才能继续往下刷，选一种答题方式：")
     print()
     for num, _p, label, desc, _need_ai in ANSWER_MODES:
         print("   " + num + ". " + _pad(label, 16) + desc)
@@ -491,7 +491,8 @@ def setup_answer_mode(force=False):
             break
         print("  ✘ 没有这个序号，请重新填。")
 
-    _num, provider, label, need_ai, _desc = hit[0]
+    # 表结构是 (序号, provider, 名称, 说明, 是否需要 AI)；顺序错会让题库模式也被追问 Key
+    _num, provider, label, _desc, need_ai = hit[0]
 
     result = {"provider": provider}
 
@@ -510,7 +511,7 @@ def setup_answer_mode(force=False):
     # 需要 token 的题库
     if "TikuYanxi" in provider:
         print()
-        print("  言溪题库需要 token（登录 https://tk.enncy.cn/ 获取）")
+        print("  言溪题库（别人整理好的答案库）需要 token，登录 https://tk.enncy.cn/ 获取")
         print("  有多个 token 可以用英文逗号分隔。")
         print()
         tokens = ask("言溪 token")
@@ -538,8 +539,16 @@ def setup_answer_mode(force=False):
         else:
             result["key"] = ask_deepseek_key()
 
-        # 用户在填 Key 时选择了"不做测验" -> 转为不答题，并标记已降级
+        # 用户在填 Key 时选择了"不做测验"
         if not result.get("key"):
+            tokens = result.get("tokens") or ""
+            go_auth = result.get("go_authorization") or ""
+            if tokens or go_auth:
+                # 已经填好题库了：只去掉 AI 兜底，不要把用户刚填的 token 丢掉
+                plain = "TikuYanxi" if "TikuYanxi" in provider else "TikuGo"
+                print("  已切换为「只用题库、不加 AI 兜底」：" + plain)
+                return plain, {"provider": plain, "tokens": tokens,
+                               "go_authorization": go_auth}
             print("  已切换为「不做测验」模式。")
             return "", {"provider": "", "degraded": True, "_ran": True}
 
@@ -693,9 +702,9 @@ RECOMMENDED_PREFS = {
 def prefs_summary() -> str:
     """一行显示本次生效的推荐配置（只在启动时显示一遍，不询问）"""
     return (
-        "  推荐配置：视频 " + RECOMMENDED_PREFS["speed"] + "x · 并发 "
-        + RECOMMENDED_PREFS["jobs"] + " · 未开放跳过 · 答错重做 "
-        + RECOMMENDED_PREFS["work_max_retries"] + " 次 · 提交自动"
+        "  推荐配置：" + RECOMMENDED_PREFS["speed"] + " 倍速 · 同时刷 "
+        + RECOMMENDED_PREFS["jobs"] + " 个 · 未开放跳过 · 答错重做 "
+        + RECOMMENDED_PREFS["work_max_retries"] + " 次 · 自动提交"
     )
 
 
@@ -715,7 +724,7 @@ def ensure_global_prefs(force=False):
         if version != "2":
             if (cfg.get("common", "jobs", fallback="") or "").strip() == "4":
                 update_config({("common", "jobs"): RECOMMENDED_PREFS["jobs"]})
-                print("  · 并发任务数已从 4 调整为 2（更稳，能明显降低验证码概率）")
+                print("  · 同时刷的任务数已从 4 调整为 2（更稳，能明显减少验证码）")
             update_config({("cx", "prefs_version"): "2"})
         print(prefs_summary())
         return
@@ -843,7 +852,7 @@ def manage_accounts():
         accounts.delete_account(target["username"])
         from api import cookies
         cookies.clear_cookies(target["username"])
-        print("  ✔ 已删除该账号（含其 cookie）")
+        print("  ✔ 已删除该账号（连同它的登录状态）")
 
 
 # ==================== 刷课范围 / 选课 ====================
@@ -873,6 +882,7 @@ def choose_study_scope():
     """
     title("刷什么内容")
     print("  章节（目录）和任务中心的教学任务是两套独立记录，要分开刷。")
+    print("  一个「任务点」就是课程里的一个视频 / 文档 / 测验 / 讨论。")
     print()
     print("   1. 章节 + 任务中心   ✓推荐")
     print("   2. 只刷章节（目录）")
@@ -905,7 +915,7 @@ def choose_discussion_mode(required=False):
     if not required:
         print("  教学任务里本来就包含主题讨论，这里选它怎么刷。")
         print()
-    print("   1. 任务里的主题讨论（自动，按解锁顺序）   ✓推荐")
+    print("   1. 任务里的主题讨论（自动，按课程要求的顺序做）   ✓推荐")
     print("   2. 讨论区帖子（先列出来，自己挑几条回复）")
     print()
     raw = ask_choice("请选择", set(DISCUSSION_MODES), default="1")
@@ -1064,7 +1074,9 @@ def build_config(username, password, plan, chapters_enabled=True, task_center_en
     text = replace_value(text, "common", "task_center_submit_mode",
                          RECOMMENDED_PREFS["task_center_submit_mode"])
     # 刷课范围：向导里选了什么就写什么，不再吃全局配置的默认值
-    text = replace_value(text, "common", "task_center", "true" if task_center_enabled else "false")
+    # 只刷讨论也走任务中心链路：必须写成 true，否则启动检查会以为"两个入口都关了"
+    text = replace_value(text, "common", "task_center",
+                         "true" if (task_center_enabled or only_discussion) else "false")
     text = replace_value(text, "common", "chapter_study", "true" if chapters_enabled else "false")
     text = replace_value(text, "common", "only_discussion",
                          "true" if only_discussion else "false")
@@ -1150,7 +1162,8 @@ def ask_after_run(label, cancelled=False):
 def _main_inner(force_setup=False):
     title("超星刷课")
     print()
-    print("  提示：在本向导里输入 q 再回车可随时退出（不会刷任何课）。")
+    print("  提示：程序会一步步问你（刷什么、刷哪门、刷多少），按回车就是默认值。")
+    print("        在本向导里输入 q 再回车可随时退出，不会刷任何课。")
 
     # cx --yes：跳过向导最后的人工确认，并把 --yes 传给 main.py 的启动检查
     auto_yes = any(a in ("--yes", "-y") for a in sys.argv[1:])

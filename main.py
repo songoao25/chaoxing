@@ -343,7 +343,7 @@ def _load_default_tiku_and_notification():
         _common, tiku_config, notification_config = load_config_from_file(default_config)
         return tiku_config, notification_config
     except Exception as e:
-        logger.warning(f"读取默认配置 {default_config} 失败，将忽略其中的题库/通知设置: {e}")
+        logger.warning(f"读取配置文件失败，将忽略其中的答题/通知设置: {e}")
         return {}, {}
 
 
@@ -433,7 +433,7 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
                     )
 
                 print()
-                print("  ✘ API Key 校验失败，章节测验将无法作答")
+                print("  ✘ 答题用的 API Key 没通过验证，章节测验这次不能自动作答（运行 cx setup 可以改）")
                 print("    可能原因：填错了、已失效、或账户余额不足。")
                 print("    建议先运行 cx 重新填写；这里选停止更安全。")
                 print()
@@ -1355,9 +1355,9 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
                     )
                 elif outcome == TaskOutcome.LOCKED:
                     stats["locked"] += 1
-                    print("      ⤼ 未解锁（按分组顺序等待前置任务）")
+                    print("      ⤼ 还没轮到（要先完成前面的任务）")
                 else:
-                    print("      ✗ 未完成（可能还没解锁）")
+                    print("      ✗ 未完成（可能要先完成前面的任务）")
     return stats
 
 
@@ -1379,7 +1379,7 @@ def _print_review_hint():
         from api import review
         count = review.count_today()
         if count:
-            print(f"  AI 生成的 {count} 条内容已留痕 · 运行 ./cx review 可复核")
+            print(f"  AI 写的 {count} 条内容已经记下来 · 运行 ./cx review 可以查看和复核")
     except Exception:
         pass
 
@@ -1475,8 +1475,12 @@ def main():
         if discussion_mode not in ("task", "board"):
             discussion_mode = "task"
         board_mode = discussion_mode == "board"
+        # 讨论走讨论区模式时，任务中心里不再自动刷主题讨论（改由讨论区流程处理）
+        skip_discussion = board_mode
         if only_discussion:
             chapters_enabled = False
+            # 只刷讨论走的是任务中心那条链路：这里强制打开，避免"两个都关"被启动检查拦下
+            common_config["task_center"] = "true"
             print("  本次只刷讨论（" + ("讨论区挑帖" if board_mode else "任务里的主题讨论") + "）")
         if not chapters_enabled and not _task_center_enabled(common_config, args):
             hard_stop(

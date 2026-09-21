@@ -132,7 +132,7 @@ def _wrap(text: str, width: int = 62, indent: str = "  ") -> str:
 def render_index(items: List[dict]) -> str:
     """列表视图：每条两行，一眼扫过。"""
     if not items:
-        return "\n  还没有可复核的内容。刷课过程中 AI 生成的文字会自动留痕在这里。\n"
+        return "\n  还没有可复核的内容。刷课过程中 AI 写的文字会自动记到这里。\n"
     out = [""]
     for idx, item in enumerate(items, 1):
         when = str(item.get("ts") or "")[11:16]
@@ -195,7 +195,7 @@ def review_cli(argv: Optional[List[str]] = None) -> int:
     print()
     print("  复核 · AI 生成内容")
     print("  " + "─" * 46)
-    print(f"  {scope} {len(items)} 条 · 留痕 {markdown_path()}")
+    print(f"  {scope} {len(items)} 条 · 记录文件 {markdown_path()}")
     print(render_index(items))
     if not items or "--list" in argv:
         return 0

@@ -1895,7 +1895,7 @@ class TaskCenter:
         else:
             logger.info("主题讨论已回复（等待任务中心状态复查）: {}", name)
             review.record(review.KIND_DISCUSSION, reply, course=course.get("title", ""),
-                          task=name, status="已提交，等平台复查")
+                          task=name, status="已提交，等平台确认")
         return True
 
     # ------------------------------------------------------------ 提交去重
@@ -1989,7 +1989,7 @@ class TaskCenter:
                     review.KIND_HOMEWORK, answer,
                     course=(course or {}).get("title", ""),
                     task=task_name or "",
-                    status="已提交，等平台复查",
+                    status="已提交，等平台确认",
                 )
             elif not res:
                 answer = random_answer(q.get("options", ""), q_type)
