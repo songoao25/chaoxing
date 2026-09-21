@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+- Discussion mode 2: `./cx discuss` lists every thread of the course board and lets you pick which post to reply to (`--list-topics` lists only). Both discussion modes share the same reply pipeline.
 - Pre-run scan (always on, read-only): before every run the tool reports what is still unfinished — chapters, teaching tasks, locked groups, unsupported types, missing homework and discussions.
 - "只刷讨论" study scope (wizard option 4 / `--only-discussion`): only topic discussions are processed in this run.
 - Live answer trace: every question is printed as it is answered (`1. 选择  A`, `4. 简答  …（41 字）`) and written to the normal run log; discussion replies are shown in full.

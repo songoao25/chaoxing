@@ -208,6 +208,14 @@ def parse_args():
         "--only-discussion", action="store_true",
         help="只刷任务中心里的主题讨论（评论区），其它类型本次跳过",
     )
+    parser.add_argument(
+        "--discuss", action="store_true",
+        help="浏览课程讨论区，自己挑帖子回复（模式 2），不进刷课流程",
+    )
+    parser.add_argument(
+        "--list-topics", action="store_true",
+        help="只列出讨论区帖子（不交互、不回复），配合 --discuss 使用",
+    )
 
     parser.add_argument(
         "-lc",
@@ -1398,6 +1406,14 @@ def _print_task_center_summary(stats: dict):
 
 def main():
     """主程序入口"""
+    # cx discuss / cx topics 需要登录：没显式给 -c 时用最近使用的账号配置
+    if ("--discuss" in sys.argv[1:] or "--list-topics" in sys.argv[1:]) \
+            and not any(a in sys.argv[1:] for a in ("-c", "--config")):
+        from api import accounts
+        latest = accounts.latest_run_config()
+        if latest:
+            sys.argv.extend(["-c", latest])
+
     # cx review：翻阅 AI 生成过的文字，不进入刷课流程
     if "--review" in sys.argv[1:]:
         from api import review
@@ -1492,6 +1508,16 @@ def main():
 
         # 过滤要学习的课程
         course_task = filter_courses(all_course, common_config.get("course_list"))
+
+        # cx discuss / cx topics：讨论区浏览 + 挑帖子回复（模式 2），不进刷课流程
+        if getattr(args, "discuss", False) or getattr(args, "list_topics", False):
+            from api import discussion
+            return discussion.discuss_cli(
+                chaoxing, None, common_config,
+                list_only=bool(getattr(args, "list_topics", False)),
+                course_id=getattr(args, "course_id", None),
+                courses=course_task or all_course,
+            )
 
         # 开始学习
         logger.trace(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")

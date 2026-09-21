@@ -33,6 +33,12 @@ if [ "${1:-}" = "setup" ]; then
   exec "$PY" "$APP_DIR/setup_wizard.py" --setup "$@"
 fi
 
+# cx discuss -> 浏览讨论区、自己挑帖子回复（模式 2）
+if [ "${1:-}" = "discuss" ] || [ "${1:-}" = "topics" ]; then
+  shift
+  exec "$PY" "$APP_DIR/main.py" --discuss "$@"
+fi
+
 # cx review -> 复核 AI 生成过的文字（测验简答 / 作业简答 / 讨论回复 / AI实践作答）
 if [ "${1:-}" = "review" ]; then
   shift

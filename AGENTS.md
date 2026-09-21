@@ -9,7 +9,7 @@
 目前覆盖两条互相独立的入口：
 
 1. **章节（目录）** — 已完整支持（视频/文档/阅读/章节测验/直播）。
-2. **任务中心 · 教学任务** — 进行中（视频✅、AI实践✅（含"提交后必须请求 end-report 才出分"）、章节同步✅、作业✅（真机 83.3 分、`isFinish=true`）、主题讨论✅（2026-09-20 真机：读已有回复→ai_writer 生成→addReplys 提交）；文档⚠️（"读到底"类可完成，时长类实测平台不计入）；思考题❌）。
+2. **任务中心 · 教学任务** — 进行中（视频✅、AI实践✅（含"提交后必须请求 end-report 才出分"）、章节同步✅、作业✅（真机 83.3 分、`isFinish=true`）、主题讨论✅（模式 1 自动：读已有回复→ai_writer 生成→addReplys 提交；模式 2 `cx discuss`：直接列讨论区帖子、用户挑帖回复）；文档⚠️（"读到底"类可完成，时长类实测平台不计入）；思考题❌）。
 
 当前重点工作：把「任务中心」补齐到与章节同等的体验，见 `docs/handoff/HANDOFF.md`。
 
@@ -37,6 +37,7 @@ make lint        # 编译检查 + 测试（无第三方 linter 依赖）
 | `api/ai_writer.py` | 去 AI 味文案生成（问答、讨论；模仿真人 + 参考已有回复） |
 | `api/decode.py` | 页面/JSON 解析（`knowledge/cards` 的 mArg 等） |
 | `api/answer.py` | 题库（含大模型 provider）与答题 |
+| `api/discussion.py` | 讨论区浏览（模式 2）：帖子列表、板块解析、挑帖回复 |
 | `tools/probe/*.py` | 只读探针：状态快照、分类总表、各类型实验 |
 | `docs/handoff/` | **交接与协作**：HANDOFF / TASKS / DECISIONS / SESSION-LOG / CAPTURE-PROTOCOL |
 | `docs/artifacts/` | 抓包与探测的原始样例（JSON/curl），改代码前先看这里 |

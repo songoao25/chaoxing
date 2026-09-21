@@ -153,6 +153,28 @@ Before every run the tool scans what is still missing — no checkbox, no extra 
 
 It only reads; nothing is submitted during the scan, and a scan failure never blocks the run.
 
+### Discussions: two modes
+
+| Mode | Entry | What it does |
+| --- | --- | --- |
+| 1. Task discussions (automatic) | included in scope 1/3, or scope 4 / `--only-discussion` | Walks the Task Center's `planType=14` points in unlock order, reads the existing replies, writes one ordinary reply and submits it |
+| 2. Discussion board (you pick) | `./cx discuss` | Lists every thread of the course board (20 per page), you choose which post to reply to; `./cx discuss --list-topics` only lists |
+
+Both modes share the same reply pipeline: read existing replies → de-AI-ified text → humanization audit → submit → live trace + `~/.chaoxing/reviews/` record. A thread you already replied to is never replied to twice.
+
+```text
+  讨论区 · 企业战略管理
+  ──────────────────────────────────────────────
+  第 1 页 · 20 条
+
+   1. [1 回复] 徐飞阳 · 2小时前
+      企业外部环境存在机会，是否就代表企业一定可以抓住机会获得成功？
+   2. [0 回复] 范钟贤 · 6小时前
+      波特五力模型里，替代品威胁和现有竞争者竞争有什么区别，试举一个行业分析。
+
+  ▶ 输入序号回复该帖（n 下一页 · p 上一页 · q 退出）
+```
+
 ### Study scope
 
 | Choice | What runs |

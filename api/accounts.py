@@ -122,6 +122,15 @@ def list_accounts():
     return items
 
 
+def latest_run_config():
+    """最近使用的账号专属配置路径（cx discuss 这类命令没给 -c 时用它）"""
+    for item in list_accounts():
+        path = os.path.join(ACCOUNTS_DIR, "run_" + _safe_name(item["username"]) + ".ini")
+        if os.path.exists(path):
+            return path
+    return ""
+
+
 def delete_account(username):
     path = account_path(username)
     if os.path.exists(path):

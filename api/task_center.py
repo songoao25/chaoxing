@@ -1744,13 +1744,28 @@ class TaskCenter:
         是否算完成仍由上层 wait_plan_finished 复查任务引擎状态裁定。
         """
         name = (plan or {}).get("name") or "主题讨论"
-        course = course or {}
         query = parse_qs(urlparse(study_url).query)
         bbsid = (query.get("bbsid") or [""])[0]
         topic_uuid = (query.get("uuid") or [""])[0]
         if not bbsid or not topic_uuid:
             logger.warning("主题讨论学习地址缺少 bbsid/uuid，本次不提交: {}", name)
             return False
+        return self.reply_topic(bbsid, topic_uuid, course=course, name=name,
+                                referer=study_url)
+
+    def reply_topic(self, bbsid: str, topic_uuid: str, course: Optional[dict] = None,
+                    name: str = "", referer: str = "") -> bool:
+        """给讨论区里任意一个帖子回复一条（模式 1「任务里的主题讨论」与
+        模式 2「自己挑帖子」共用同一条：读已有回复 → 去 AI 味生成 → 提交 → 留痕）。
+
+        bbsid/topic_uuid 来自讨论区列表接口；referer 不传时按详情页地址自己拼。
+        """
+        course = course or {}
+        name = name or "主题讨论"
+        study_url = referer or (
+            f"{DISCUSSION_BASE}/pc/topic/jumpToTopicDetail?bbsid={quote(bbsid)}"
+            f"&uuid={quote(topic_uuid)}&classId={quote(str(course.get(chr(99) + chr(108) + chr(97) + chr(122) + chr(122) + chr(73) + chr(100)) or chr(39) + chr(39)))}"
+        )
 
         try:
             resp = self.session.get(
@@ -1777,8 +1792,7 @@ class TaskCenter:
             bbsid, topic_uuid, topic_info.get("user_puid", "")
         )
         if has_replied:
-            # 已经回复过就不再发一条（重复运行不能刷屏讨论区）；
-            # 是否算完成仍然交给 wait_plan_finished 复查任务引擎状态。
+            # 已经回复过就不再发一条（重复运行不能刷屏讨论区）
             logger.info("主题讨论已经回复过，本次不重复发帖: {}", name)
             return True
         topic = (topic_info["title"] + "\n" + topic_info["content"]).strip()
@@ -1842,11 +1856,11 @@ class TaskCenter:
             return False
         if not data.get("datas"):
             logger.info("主题讨论已提交，平台提示需要审核: {}", name)
-            review.record(review.KIND_DISCUSSION, reply, course=(course or {}).get("title", ""),
+            review.record(review.KIND_DISCUSSION, reply, course=course.get("title", ""),
                           task=name, status="已提交，平台提示需审核")
         else:
             logger.info("主题讨论已回复（等待任务中心状态复查）: {}", name)
-            review.record(review.KIND_DISCUSSION, reply, course=(course or {}).get("title", ""),
+            review.record(review.KIND_DISCUSSION, reply, course=course.get("title", ""),
                           task=name, status="已提交，等平台复查")
         return True
 

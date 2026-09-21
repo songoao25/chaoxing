@@ -622,3 +622,25 @@ make status   # 任务中心进度快照
 
 ### 验证
 - make lint：295 项离线单测全绿（新增 tests/test_scan.py 8 项）。
+
+## 2026-09-21 · dsh（讨论区两种模式，D42）
+
+### 只读取证（2026-09-21）
+- 讨论区入口：`/pc/topic/topiclist/index?bbsid=…`（详情页里的模板链接暴露）；
+  列表接口：`GET /pc/topic/topiclist/{bbsid}/getTopicList?folder_uuid=&page=1&pageSize=20`
+  `&kw=&last_reply_time=&searchType=&authMappId=&isSetTop=1` → JSON（datas/title/content/
+  createrName/reply_count/ftime/lastReply/uuid）。
+- 实机 `main.py --list-topics`：企业战略管理讨论区第 1 页 20 条帖子正常列出。
+
+### 实现
+- `api/discussion.py`：normalize_topic / fetch_topics / resolve_bbsid / render_topics / discuss_cli。
+- `TaskCenter.study_discussion` 重构：主体逻辑抽成 `reply_topic(bbsid, topic_uuid, course, name, referer)`，
+  模式 1 与模式 2 共用（读已有回复 → 去 AI 味 → 审计 → 提交 → 实时显示 + reviews 留痕）；
+  已回复过的帖子不重复发。
+- CLI：`./cx discuss`（或 `--discuss`）、`./cx discuss --list-topics`；没给 -c 时自动用最近使用的账号配置；
+  第一门课没有讨论区时自动往下试。
+- 控制台过滤：非刷课阶段只显示 INFO 以上，DEBUG/TRACE 只进日志文件（启动噪音进一步减少）。
+
+### 验证
+- make lint：308 项离线单测全绿（新增 tests/test_discussion_board.py 13 项）。
+- 实机：`--list-topics` 列出 20 条真实帖子（只读，未回复任何帖子）。

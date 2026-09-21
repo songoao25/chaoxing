@@ -32,10 +32,12 @@ def _console_filter(record) -> bool:
     # 用 log_file_only() 发的日志只进文件，控制台由 print 统一输出，避免同一句话出现两遍
     if record["extra"].get("file_only"):
         return False
-    if not _quiet:
-        return True
     try:
-        return record["level"].no >= logger.level("WARNING").no
+        if _quiet:
+            # 刷课期间：只留 WARNING 以上
+            return record["level"].no >= logger.level("WARNING").no
+        # 非刷课阶段：控制台只显示 INFO 以上，DEBUG/TRACE 只进日志文件
+        return record["level"].no >= logger.level("INFO").no
     except Exception:
         return True
 
