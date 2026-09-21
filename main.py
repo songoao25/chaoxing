@@ -8,7 +8,7 @@ import threading
 import time
 import traceback
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 from tqdm import tqdm
 from api.answer import Tiku
 from api.base import Chaoxing, Account, StudyResult
