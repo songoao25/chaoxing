@@ -33,6 +33,19 @@ from api.decode import (
 )
 
 
+# 验证码冷却：连续识别失败后，短时间内不再对每个任务点硬撞验证码
+_CAPTCHA_COOLDOWN_SECONDS = 60
+_captcha_cooldown_until = 0.0
+
+
+def _short_title(text, limit: int = 24) -> str:
+    """进度条上的任务名截断：长文件名会把整行撑爆，这里统一收短。"""
+    name = str(text or "").strip()
+    if len(name) <= limit:
+        return name
+    return name[: limit - 1] + "…"
+
+
 def get_timestamp():
     return str(int(time.time() * 1000))
 
@@ -871,7 +884,7 @@ class Chaoxing:
             _resp = _session.post(_url, headers=_headers, data=_data)
             folder_courses = decode_course_list(_resp.text)
             if not folder_courses:
-                logger.warning("课程目录《{}》里没有解析到任何课程（可能被风控或页面变化）",
+                logger.warning("课程目录《{}》没有解析到课程，已跳过",
                                folder.get("rename", folder.get("id", "")))
             course_list += folder_courses
         return course_list
@@ -1153,7 +1166,12 @@ class Chaoxing:
                 elif curl_res is not None:
                     logger.debug("curl 重放视频打点仍然失败: HTTP {}", curl_res.status_code)
             if res.status_code == 403 or '验证码' in res.text or 'validate' in res.text:
-                logger.warning("检测到验证码拦截，正在尝试自动通过验证码...")
+                global _captcha_cooldown_until
+                remain = _captcha_cooldown_until - time.time()
+                if remain > 0:
+                    logger.debug("验证码冷却中，等待 {:.0f} 秒再试", remain)
+                    time.sleep(min(remain, _CAPTCHA_COOLDOWN_SECONDS))
+                logger.warning("触发验证码，正在自动识别…")
                 try:
                     from api.captcha import CxCaptcha
                     cookies_str = "; ".join([f"{k}={v}" for k, v in _session.cookies.items()])
@@ -1167,19 +1185,23 @@ class Chaoxing:
                     captcha_solver = CxCaptcha(user_agent=ua, cookies=cookies_str, ocr=ocr_inst)
                     solved = False
                     for attempt in range(3):
-                        logger.info(f"第 {attempt + 1} 次尝试通关验证码...")
+                        logger.debug("第 {} 次尝试通关验证码…", attempt + 1)
                         if captcha_solver.try_pass():
-                            logger.success("验证码通关成功！")
+                            logger.info("验证码已通过")
                             solved = True
                             break
                         else:
-                            logger.warning("验证码验证失败，正在重试...")
+                            logger.debug("验证码识别失败，重试中…")
                             time.sleep(2)
                     if solved:
                         _session.cookies.update(captcha_solver.s.cookies)
                         res = _session.get(_url, params=params, headers=headers)
                     else:
-                        logger.error("多次验证码通关失败，可能需要手动干预。")
+                        _captcha_cooldown_until = time.time() + _CAPTCHA_COOLDOWN_SECONDS
+                        logger.warning(
+                            "验证码多次识别失败，该任务点先跳过；{} 秒内不再重试验证码（稍后自动重试）",
+                            _CAPTCHA_COOLDOWN_SECONDS,
+                        )
                 except Exception as e:
                     logger.error(f"验证码通关逻辑异常: {e}")
             return res
@@ -1224,14 +1246,14 @@ class Chaoxing:
             )
 
             # 若出现两个rt参数都返回403的情况, 则跳过当前任务
-            logger.error("出现403报错, 尝试修复无效, 正在跳过当前任务点...")
-            logger.error("请求url: {}", resp.url)
-            logger.error("请求头: {}", dict(_session.headers) | headers)
+            logger.warning("该任务点被平台风控拦截（403），已跳过；详情见日志文件")
+            logger.debug("403 请求 url: {}", resp.url)
+            logger.debug("403 请求头: {}", dict(_session.headers) | headers)
             return False, 403
 
         logger.error(f"未知错误: {resp.status_code}")
-        logger.error("请求url:", resp.url)
-        logger.error("请求头：", dict(_session.headers) | headers)
+        logger.debug("请求 url: {}", resp.url)
+        logger.debug("请求头: {}", dict(_session.headers) | headers)
         return False, resp.status_code
 
     def _refresh_video_status(self, session: requests.Session, job: dict, _type: Literal["Video", "Audio"]) \
@@ -1461,7 +1483,7 @@ class Chaoxing:
                     pbar = self._close_pbar_safe(pbar)
                 else:
                     if pbar is None:
-                        pbar = tqdm(total=duration, initial=int(play_time), desc=_job["name"],
+                        pbar = tqdm(total=duration, initial=int(play_time), desc=_short_title(_job.get("name")),
                                     unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', leave=False)
                     pbar.n = int(play_time)
                     pbar.refresh()
@@ -1728,6 +1750,22 @@ class Chaoxing:
                 # 填充答案
                 q["answerField"][f'answer{q["id"]}'] = answer
                 logger.debug(f'{q["title"]} 填写答案为 {answer}')
+            # 复核留痕：AI 生成的简答题文字（客观题字母没有复核价值，不记）
+            try:
+                from api import review as _review
+                for _q in questions["questions"]:
+                    if str(_q.get("type")) != "shortanswer":
+                        continue
+                    _text = (_q.get("answerField") or {}).get(f"answer{_q['id']}")
+                    if _text:
+                        _review.record(
+                            _review.KIND_QUIZ, _text,
+                            course=str(_course.get("title") or ""),
+                            task=str(_job.get("name") or ""),
+                            status="已提交" if questions.get("pyFlag") == "" else "已保存未提交",
+                        )
+            except Exception:
+                pass
             cover_rate = (found_answers / total_questions) * 100
             logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
             # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交

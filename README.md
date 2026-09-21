@@ -152,6 +152,26 @@ The wizard writes `~/.chaoxing/config.ini` for you; `config_template.ini` in the
 Set it with `task_center_submit_mode = auto|confirm` in the config, or `--task-center-submit-mode confirm|auto` on the command line.
 Either way, a task counts as complete only after the platform status re-check — never because the tool pressed submit.
 
+### Reviewing AI-written content
+
+The tool never hides what it wrote on your behalf. Every piece of substantive text that an AI produced and that was submitted to the platform — chapter-quiz short answers, homework essays, topic-discussion replies, AI-practice answers — is kept in a readable log:
+
+```text
+~/.chaoxing/reviews/2026-09-21.md     # one Markdown file per day
+~/.chaoxing/reviews/index.jsonl       # index used by the review command
+```
+
+Review it at any time:
+
+| Command | What it shows |
+| --- | --- |
+| `./cx review` | Today's items, then type a number to read the full text |
+| `./cx review --days 7` | The last 7 days |
+| `./cx review --all` | Everything ever recorded |
+| `./cx review --list` | Just the list (no interaction) |
+
+Each run ends with a one-line hint when new content was recorded. Objective answers (A/B/C letters, 对/错) are not recorded — they have nothing to review. The log never contains passwords, cookies or tokens.
+
 ### Notifications (optional)
 
 | Provider | Config value | Delivery |

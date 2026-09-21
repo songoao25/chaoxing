@@ -165,7 +165,7 @@ class WizardScopeTestCase(unittest.TestCase):
         cfg.read(path, encoding="utf8")
         common = cfg["common"]
         self.assertEqual(common["speed"], "2")
-        self.assertEqual(common["jobs"], "4")
+        self.assertEqual(common["jobs"], "2")
         self.assertEqual(common["work_max_retries"], "3")
         self.assertEqual(common["notopen_action"], "continue")
         self.assertEqual(common["task_center_submit_mode"], "auto")

@@ -405,7 +405,7 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
     if any(name in ['AI', 'SiliconFlow'] for name in provider_list):
         check_connection = tiku_config.get('check_llm_connection', 'true').lower() == 'true'
         if check_connection:
-            logger.info(f'正在验证大模型配置 (provider={provider})...')
+            logger.debug(f'正在验证大模型配置 (provider={provider})...')
             if not tiku.check_llm_connection():
                 logger.error('大模型连接检查失败')
 
@@ -474,7 +474,7 @@ def process_job(chaoxing: Chaoxing, course: dict, job: dict, job_info: dict, spe
                 course, job, job_info, _speed=speed, _type="Audio", engine_info=engine_info)
         if video_result.is_failure():
             logger.warning(
-                f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过"
+                f"任务点异常已跳过: {job.get('name', job['jobid'])}（详情见日志）"
             )
         return video_result
     # 文档任务
@@ -1321,6 +1321,17 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
     return stats
 
 
+def _print_review_hint():
+    """刷完后提示可以复核 AI 生成的文字（有留痕才提示，保持界面干净）"""
+    try:
+        from api import review
+        count = review.count_today()
+        if count:
+            print(f"  AI 生成的 {count} 条内容已留痕 · 运行 ./cx review 可复核")
+    except Exception:
+        pass
+
+
 def _start_interrupt(hint_shown: bool) -> bool:
     """启动 q 键监听；提示语整次运行只打一遍，避免每个阶段重复刷屏。"""
     if not hint_shown:
@@ -1366,6 +1377,11 @@ def _print_task_center_summary(stats: dict):
 
 def main():
     """主程序入口"""
+    # cx review：翻阅 AI 生成过的文字，不进入刷课流程
+    if "--review" in sys.argv[1:]:
+        from api import review
+        return review.review_cli([a for a in sys.argv[1:] if a != "--review"])
+
     _old_format_sizeof = None      # tqdm 全局格式补丁的恢复兜底（见 finally）
     hint_shown = False             # q 键提示整次运行只打一遍
     try:
@@ -1484,7 +1500,7 @@ def main():
             max_points = max_points_map.get(cid, max_points_default)
             finished, pending, selected = select_points_for_course(all_points, max_points)
 
-            logger.info(
+            logger.debug(
                 "课程[{}] 共 {} 节, 已完成 {} 节, 待刷 {} 节, 本次刷 {} 节",
                 course["title"], len(all_points), len(finished), len(pending), len(selected)
             )
@@ -1541,6 +1557,7 @@ def main():
                 except Exception:
                     pass
                 return
+            _print_review_hint()
             if tc_stats["failed"] or tc_stats.get("read_failed"):
                 if chapters_enabled:
                     print("  ✔ 章节任务点已完成；任务中心仍有未完成教学任务")
@@ -1573,7 +1590,7 @@ def main():
         run_started_at = time.time()
         total_points = len(tasks)
         course_names = "、".join(c["title"] for c in course_task)
-        logger.info(f"开始刷课：{len(course_task)} 门课，共 {total_points} 个任务点")
+        log_file_only(f"开始刷课：{len(course_task)} 门课，共 {total_points} 个任务点", "INFO")
         notification.send(
             "超星刷课：已开始\n"
             f"课程（{len(course_task)} 门）：{course_names}\n"
@@ -1584,8 +1601,8 @@ def main():
         # 避免 TRACE/DEBUG 刷屏（日志文件仍然记录全量）
         set_console_quiet(True)
         print()
-        print(f"  开始刷课：{len(course_task)} 门课，共 {total_points} 个任务点")
-        print("  ✓ 完成 · ⤼ 跳过 · ✗ 失败 · 按 q 随时停止")
+        print(f"  开始刷课 · {len(course_task)} 门课 · {total_points} 个任务点")
+        print("  ✓ 完成 · ⤼ 跳过 · ✗ 失败")
         print("  " + "─" * 46)
         print()
 
@@ -1639,6 +1656,8 @@ def main():
                 logger.debug(traceback.format_exc())
                 print(f"  ⚠ 任务中心处理出错（章节不受影响）：{type(e).__name__}: {e}")
                 tc_stats["read_failed"] = tc_stats.get("read_failed", 0) + 1
+
+        _print_review_hint()
 
         if interrupt.should_stop():
             # 终止发生在任务中心阶段：不能报"全部完成"（铁律 1）

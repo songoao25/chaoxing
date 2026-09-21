@@ -8,12 +8,15 @@
 ## [Unreleased]
 
 ### Added
+- Review step for AI-written content: every submitted short answer, homework essay, discussion reply and AI-practice answer is logged to `~/.chaoxing/reviews/` (daily Markdown + JSONL index) and can be browsed with `./cx review` (`--days N`, `--all`, `--list`).
 - Local submission ledger (`~/.chaoxing/submissions.json`) to avoid duplicate homework submissions and repeated document reading.
 - `api/llm.py`: adaptive thinking policy (auto / on / off) with automatic fallback and reasoning fallback.
 - README (English + 中文), CONTRIBUTING, SECURITY, SUPPORT, CODE_OF_CONDUCT, issue forms, dependabot.
 - Probe configuration via `tools/probe/local.env` (gitignored) instead of hard-coded accounts.
 
 ### Changed
+- Console cleanup: one startup header instead of duplicated lines, condensed 403/captcha messages, quieter notification hints, and a one-line summary for failures.
+- Default parallel tasks lowered from 4 to 2 (fewer captcha/403 triggers); existing configs are migrated once.
 - Console/log noise reduction: the q-key hint prints once per run, chapter progress lines fit ~80 columns, AI-writer retries and per-question details are debug-only, long videos/documents print one progress line, and failures collapse into a single summary line.
 - Log file defaults to DEBUG; set `CX_LOG_LEVEL=TRACE` for full request-level tracing.
 - AI answering: thinking defaults to `auto` (V4.1 flash reasons by default), objective questions use 3-sample majority voting, prompts ask for option letters, and answer parsing accepts JSON / code fences / plain text.

@@ -50,6 +50,11 @@ def legacy_cookies_path():
     return os.path.join(data_dir(), "cookies.txt")
 
 
+def reviews_dir():
+    """AI 生成内容的复核记录目录（Markdown + JSONL 索引）"""
+    return os.path.join(data_dir(), "reviews")
+
+
 def submissions_path():
     """已提交任务点记录：用于本地去重，避免平台完成状态延迟导致重复提交"""
     return os.path.join(data_dir(), "submissions.json")

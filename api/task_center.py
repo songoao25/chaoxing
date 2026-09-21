@@ -41,7 +41,7 @@ from typing import Any, Optional
 from urllib.parse import parse_qs, quote, unquote, urlparse
 from uuid import uuid4
 
-from api import interrupt, paths
+from api import interrupt, paths, review
 from api.ai_writer import HumanLikeWriter
 from api.base import (
     SessionManager,
@@ -1822,8 +1822,12 @@ class TaskCenter:
             return False
         if not data.get("datas"):
             logger.info("主题讨论已提交，平台提示需要审核: {}", name)
+            review.record(review.KIND_DISCUSSION, reply, course=(course or {}).get("title", ""),
+                          task=name, status="已提交，平台提示需审核")
         else:
             logger.info("主题讨论已回复（等待任务中心状态复查）: {}", name)
+            review.record(review.KIND_DISCUSSION, reply, course=(course or {}).get("title", ""),
+                          task=name, status="已提交，等平台复查")
         return True
 
     # ------------------------------------------------------------ 提交去重
@@ -1881,7 +1885,8 @@ class TaskCenter:
 
     # ---------------------------------------------------------------- 作业
 
-    def _fill_homework_answers(self, questions: list) -> Optional[str]:
+    def _fill_homework_answers(self, questions: list, course: Optional[dict] = None,
+                               task_name: str = "") -> Optional[str]:
         """
         给作业题目填答案（选择题/判断题/填空题走题库，简答题走去 AI 味写作器）。
 
@@ -1911,6 +1916,12 @@ class TaskCenter:
                 answer = str(answer or "").strip()
                 if not answer:
                     return f"简答题没有生成内容：{str(q.get('title'))[:40]}"
+                review.record(
+                    review.KIND_HOMEWORK, answer,
+                    course=(course or {}).get("title", ""),
+                    task=task_name or "",
+                    status="已提交，等平台复查",
+                )
             elif not res:
                 answer = random_answer(q.get("options", ""), q_type)
             elif q_type == "multiple":
@@ -1981,7 +1992,7 @@ class TaskCenter:
             return False
         logger.info("任务中心作业：{}，共 {} 题", name, len(questions))
 
-        failure = self._fill_homework_answers(questions)
+        failure = self._fill_homework_answers(questions, course=course, task_name=name)
         if failure:
             logger.warning("作业 [{}] 未提交：{}", name, failure)
             return False
@@ -2177,6 +2188,11 @@ class TaskCenter:
                 attempts[question_key] = attempts.get(question_key, 0) + 1
                 try:
                     answer = self._ai_answer(turn, data, exclude=used)
+                    review.record(
+                        review.KIND_PRACTICE, answer,
+                        course="", task=(plan or {}).get("name") or "",
+                        status="已提交给平台评分",
+                    )
                 except Exception as e:
                     logger.warning("AI实践生成答案失败: {}", e)
                     return False

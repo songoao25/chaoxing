@@ -660,7 +660,7 @@ def ensure_api_key(force=False):
 # 有观看时长要求的视频在代码里会自动 1 倍速，所以这里的 2x 只影响"播完即可"的视频。
 RECOMMENDED_PREFS = {
     "speed": "2",
-    "jobs": "4",
+    "jobs": "2",
     "notopen_action": "continue",
     "work_max_retries": "3",
     "add_learning_count": "false",
@@ -689,6 +689,13 @@ def ensure_global_prefs(force=False):
     done = cfg.get("cx", "prefs_done", fallback="") if cfg.has_section("cx") else ""
 
     if done == "yes" and not force:
+        # 一次性迁移（v2）：并发从 4 降到 2——4 个任务并行更容易触发验证码/403
+        version = cfg.get("cx", "prefs_version", fallback="1") if cfg.has_section("cx") else "1"
+        if version != "2":
+            if (cfg.get("common", "jobs", fallback="") or "").strip() == "4":
+                update_config({("common", "jobs"): RECOMMENDED_PREFS["jobs"]})
+                print("  · 并发任务数已从 4 调整为 2（更稳，能明显降低验证码概率）")
+            update_config({("cx", "prefs_version"): "2"})
         print(prefs_summary())
         return
 
@@ -707,6 +714,7 @@ def ensure_global_prefs(force=False):
         ("common", "target_count"): RECOMMENDED_PREFS["target_count"],
         ("common", "task_center_submit_mode"): RECOMMENDED_PREFS["task_center_submit_mode"],
         ("cx", "prefs_done"): "yes",
+        ("cx", "prefs_version"): "2",
         ("notification", "provider"): provider or "",
         ("notification", "url"): url or "",
         ("notification", "tg_chat_id"): tg or "XXXXXX",
@@ -1128,7 +1136,10 @@ def _main_inner(force_setup=False):
         else:
             scope_text = "只刷任务中心"
         title("请确认")
-        print("  用户  " + label + "（" + username + "）")
+        account_text = label or username or "已保存的账号"
+        if username and username != account_text:
+            account_text = account_text + "（" + username + "）"
+        print("  账号  " + account_text)
         print("  范围  " + scope_text)
         print("  课程")
         for c, chapter_n, task_n in plan:
@@ -1144,7 +1155,7 @@ def _main_inner(force_setup=False):
         print()
         if auto_yes:
             print("  （--yes：跳过确认，直接开始）")
-        elif not ask_yes_no("确认开始刷课吗？（回车＝取消）", default_no=True):
+        elif not ask_yes_no("开始刷课吗？", default_no=True):
             print("  已取消，本次不会刷任何课。")
             # 取消了不直接退出，问用户下一步
             action = ask_after_run(label, cancelled=True)

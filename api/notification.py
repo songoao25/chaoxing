@@ -175,7 +175,7 @@ class ServerChan(NotificationService):
         """初始化Server酱服务"""
         if not self._conf or not self._conf.get('url'):
             self.disabled = True
-            logger.info("未找到Server酱url配置，已忽略该通知服务")
+            logger.debug("未找到Server酱url 配置，已忽略该通知服务")
             return
 
         self.url = self._conf['url']
@@ -216,7 +216,7 @@ class Qmsg(NotificationService):
         """初始化Qmsg酱服务"""
         if not self._conf or not self._conf.get('url'):
             self.disabled = True
-            logger.info("未找到Qmsg酱url配置，已忽略该通知服务")
+            logger.debug("未找到Qmsg酱url 配置，已忽略该通知服务")
             return
 
         self.url = self._conf['url']
@@ -252,7 +252,7 @@ class Bark(NotificationService):
         """初始化Bark服务"""
         if not self._conf or not self._conf.get('url'):
             self.disabled = True
-            logger.info("未找到Bark的url配置，已忽略该通知服务")
+            logger.debug("未找到Bark的url 配置，已忽略该通知服务")
             return
 
         self.url = self._conf['url']
@@ -287,7 +287,7 @@ class Telegram(NotificationService):
         """初始化Telegram服务"""
         if not self._conf or not self._conf.get('url') or not self._conf.get('tg_chat_id'):
             self.disabled = True
-            logger.info("未找到Telegram的url或tg_chat_id配置，已忽略该通知服务")
+            logger.debug("未找到Telegram的url 配置，已忽略该通知服务")
             return
         self.tg_chat_id = self._conf['tg_chat_id']
         self.url = self._conf['url']

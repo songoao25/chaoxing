@@ -1484,7 +1484,7 @@ class AI(Tiku):
         发送一个简单的测试请求来验证 API 配置
         """
         with self._lock:
-            logger.info(f'正在检查 {self.name} 连接...')
+            logger.debug(f'正在检查 {self.name} 连接...')
             try:
                 # 限流等待
                 self._wait_for_interval()
@@ -1496,7 +1496,7 @@ class AI(Tiku):
                     max_tokens=200,
                 )
                 if text:
-                    logger.info(f'{self.name} 连接检查成功')
+                    logger.info(f'{self.name} 连接正常')
                     return True
 
                 logger.error(f'{self.name} 连接检查失败：未收到响应')
@@ -1615,7 +1615,7 @@ class SiliconFlow(Tiku):
         发送一个简单的测试请求来验证 API 配置
         """
         with self._lock:
-            logger.info(f'正在检查 {self.name} 连接...')
+            logger.debug(f'正在检查 {self.name} 连接...')
             try:
                 headers = {
                     'Authorization': f'Bearer {self.api_key}',
@@ -1658,7 +1658,7 @@ class SiliconFlow(Tiku):
                         message = choices[0].get('message') or {}
                     # 思考模型的正文可能在 reasoning_content 里，两种都算成功
                     if message.get('content') or message.get('reasoning_content'):
-                        logger.info(f'{self.name} 连接检查成功')
+                        logger.info(f'{self.name} 连接正常')
                         return True
                     logger.error(f'{self.name} 连接检查失败：未收到有效响应')
                     return False

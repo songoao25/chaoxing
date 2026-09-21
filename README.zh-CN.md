@@ -152,6 +152,26 @@ python main.py -u <手机号> -p <密码> \
 在配置里设置 `task_center_submit_mode = auto|confirm`，或在命令行用 `--task-center-submit-mode confirm|auto` 临时覆盖。
 无论哪种模式，都只在平台状态复查为完成后才算完成——不会把「点了提交」当成完成。
 
+### 复核 AI 生成的内容
+
+程序不会藏着它替你写了什么。凡是 AI 生成、并最终提交给平台的**实质性文字**——章节测验简答、作业简答、主题讨论回复、AI 实践作答——都会留一份可读记录：
+
+```text
+~/.chaoxing/reviews/2026-09-21.md     # 每天一个 Markdown 文件，可直接打开看
+~/.chaoxing/reviews/index.jsonl       # 索引，供复核命令翻阅
+```
+
+随时查阅：
+
+| 命令 | 作用 |
+| --- | --- |
+| `./cx review` | 看今天的内容，输入序号读全文 |
+| `./cx review --days 7` | 看最近 7 天 |
+| `./cx review --all` | 看全部历史 |
+| `./cx review --list` | 只列清单，不进入交互 |
+
+每次刷完如果有新留痕，会有一行提示。客观题（A/B/C、对/错）不留痕——没有复核价值。记录里不含密码、cookie、token。
+
 ### 通知（可选）
 
 | 服务 | 配置值 | 推送渠道 |

@@ -188,10 +188,5 @@ def wait_stop(timeout=None):
 
 
 def print_hint():
-    """刷课前提示怎么退出"""
-    print()
-    print("=" * 62)
-    print("  开始刷课。想中途停止，按 q 键（立即生效，不用回车）。")
-    print("  也可以按 Ctrl + C（Mac 上是 Control 键，不是 Command 键）。")
-    print("=" * 62)
-    print()
+    """刷课前提示怎么退出（一行，不画横幅）"""
+    print("  随时按 q 停止（立即生效，不用回车）；也可以 Ctrl + C。")
