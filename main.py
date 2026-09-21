@@ -1282,6 +1282,7 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
         "read_failed": 0,
         "limited": 0,
         "skipped_other": 0,     # 只刷讨论时被跳过的其它类型
+        "only_discussion": bool(only_discussion),
     }
 
     for course in course_task:
@@ -1364,8 +1365,6 @@ def _run_discussion_board(chaoxing: Chaoxing, config: dict, courses: list,
                           auto_yes: bool = False) -> None:
     """讨论区模式（discussion_mode=board）：列帖子 → 自己挑 → 草稿 → 确认 → 逐条发送"""
     from api import discussion
-    print()
-    print("  讨论区模式 · 下面自己挑帖子回复")
     try:
         discussion.discuss_cli(chaoxing, None, config, courses=courses, auto_yes=auto_yes)
     except Exception as e:
@@ -1429,7 +1428,10 @@ def _print_task_center_summary(stats: dict):
     if stats.get("limited"):
         text += f" · 按设置跳过 {stats['limited']} 个（下次继续）"
     if stats.get("skipped_other"):
-        text += f" · 只刷讨论：跳过其它类型 {stats['skipped_other']} 个"
+        if stats.get("only_discussion"):
+            text += f" · 只刷讨论：跳过其它类型 {stats['skipped_other']} 个"
+        else:
+            text += f" · 讨论走讨论区模式：跳过任务里的主题讨论 {stats['skipped_other']} 个"
     print(text)
 
 
@@ -1669,7 +1671,10 @@ def main():
                     pass
                 return
             _print_review_hint()
-            if tc_stats["failed"] or tc_stats.get("read_failed"):
+            if board_mode:
+                # 讨论区模式：本次只处理讨论区，不能说"教学任务都已刷完"
+                print("  ✔ 讨论区模式已结束（每条的发送结果见上面）")
+            elif tc_stats["failed"] or tc_stats.get("read_failed"):
                 if chapters_enabled:
                     print("  ✔ 章节任务点已完成；任务中心仍有未完成教学任务")
                 else:
@@ -1712,7 +1717,7 @@ def main():
         # 避免 TRACE/DEBUG 刷屏（日志文件仍然记录全量）
         set_console_quiet(True)
         print()
-        print(f"  开始刷课 · {len(course_task)} 门课 · {total_points} 个任务点")
+        print(f"  开始刷课 · {len(course_task)} 门课 · 章节任务点 {total_points} 个")
         print("  ✓ 完成 · ⤼ 跳过 · ✗ 失败")
         print("  " + "─" * 46)
         print()
@@ -1840,12 +1845,16 @@ def main():
         else:
             logger.info("所有课程学习任务已完成")
             tc_text = f"\n任务中心：教学任务完成 {tc_stats['done']} 个" if tc_stats["done"] else ""
+            board_text = "\n讨论区：已按你的选择逐条确认并发送" if board_mode else ""
+            if board_mode:
+                print("  ✔ 讨论区模式已结束（每条的发送结果见上面）")
             notification.send(
                 "超星刷课：全部完成\n"
                 f"课程（{len(course_task)} 门）：{course_names}\n"
                 f"任务点：{total_points} 个\n"
                 f"耗时：{used_text}"
                 f"{tc_text}"
+                f"{board_text}"
             )
 
         # 刷课完成后，如果开启了增加章节学习次数，则执行

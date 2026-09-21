@@ -134,12 +134,23 @@ def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
             lines.append("    提醒      · " + str(name) + " 暂不支持，需要手动完成")
         todo_types = row.get("by_type") or {}
         if todo_types.get("作业"):
-            lines.append("    提醒      · " + str(todo_types["作业"])
-                         + " 个作业没做，本次会自动完成（简答题要等老师批改）")
+            if only_discussion:
+                lines.append("    提醒      · " + str(todo_types["作业"])
+                             + " 个作业没做（本次只刷讨论，作业要另外选「任务中心」才刷）")
+            else:
+                lines.append("    提醒      · " + str(todo_types["作业"])
+                             + " 个作业没做，本次会自动完成（简答题要等老师批改）")
         if todo_types.get("主题讨论"):
-            lines.append("    提醒      · " + str(todo_types["主题讨论"])
-                         + " 个讨论还没回复，本次会自动回复")
-        if row.get("locked_by_type"):
+            if discussion_mode == "board":
+                lines.append("    提醒      · " + str(todo_types["主题讨论"])
+                             + " 个任务里的主题讨论未做（本次改在讨论区里自己挑）")
+            elif only_discussion:
+                lines.append("    提醒      · " + str(todo_types["主题讨论"])
+                             + " 个讨论还没回复，本次会自动回复")
+            else:
+                lines.append("    提醒      · " + str(todo_types["主题讨论"])
+                             + " 个讨论还没回复，本次会一起回复")
+        if row.get("locked_by_type") and not only_discussion:
             lines.append("    提醒      · 还有 " + _type_text(row["locked_by_type"])
                          + " 被前面的分组锁着，完成前面的任务后会自动解锁")
     lines.append("  " + "─" * 46)

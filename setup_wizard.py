@@ -78,6 +78,24 @@ def title(text):
     print("  " + RULE)
 
 
+def ask_choice(prompt, valid, default="", max_tries=5):
+    """
+    反复问，直到拿到合法选项。
+
+    非交互输入（管道/重定向）反复给不出合法值时按默认继续，绝不卡死——
+    向导里任何一个选择题都不该让整个流程停在那里。
+    """
+    options = " / ".join(sorted(valid))
+    for _ in range(max_tries):
+        raw = ask(prompt, default=default or None)
+        if raw in valid:
+            return raw
+        print("  ✘ 只能填 " + options + "。")
+    fallback = default or sorted(valid)[0]
+    print("  · 没收到有效选择，按默认 " + fallback + " 继续")
+    return fallback
+
+
 def _read_line(prompt, tip):
     """
     读一行输入（提示和输入在同一行，省掉多余的空行）。
@@ -96,7 +114,7 @@ def ask(prompt, default=None, allow_empty=False):
     读取必填项。留空会一直追问。
     输入 q / quit / exit 立即退出。
     """
-    while True:
+    for _ in range(5):
         if default is not None:
             tip = "  [回车=" + str(default) + "，q 退出]"
         elif allow_empty:
@@ -116,7 +134,10 @@ def ask(prompt, default=None, allow_empty=False):
             return str(default)
         if allow_empty:
             return ""
-        print("  ✘ 这一项必须填写，不能跳过。")
+        print("  ✘ 这一项不能为空。")
+    print()
+    print("  · 连续多次没有收到有效输入，已退出向导（重新运行 cx 即可）。")
+    sys.exit(1)
 
 
 def ask_yes_no(prompt, default_no=True):
@@ -811,12 +832,10 @@ def manage_accounts():
         print()
         print("    [0] 返回")
         print()
-        raw = ask("要删除哪个账号的序号", default="0")
+        raw = ask_choice("要删除哪个账号的序号",
+                         {"0"} | {str(i) for i in range(1, len(saved) + 1)}, default="0")
         if raw == "0":
             return
-        if not raw.isdigit() or not (1 <= int(raw) <= len(saved)):
-            print("  ✘ 没有这个序号")
-            continue
         target = saved[int(raw) - 1]
         print()
         if not ask_yes_no("  确定删除 " + (target.get("name") or target["username"]) + " 吗？", default_no=True):
@@ -861,15 +880,7 @@ def choose_study_scope():
     print("   4. 只刷讨论（评论区）")
     print()
 
-    raw = "1"
-    for _ in range(5):
-        raw = ask("请选择", default="1")
-        if raw in STUDY_SCOPES:
-            break
-        print("  ✘ 只能填 1 / 2 / 3 / 4。")
-    else:
-        raw = "1"
-        print("  · 没收到有效选择，按默认「章节 + 任务中心」继续")
+    raw = ask_choice("请选择", set(STUDY_SCOPES), default="1")
 
     chapters, task_center, only_discussion = STUDY_SCOPES[raw]
     if only_discussion:
@@ -897,16 +908,7 @@ def choose_discussion_mode(required=False):
     print("   1. 任务里的主题讨论（自动，按解锁顺序）   ✓推荐")
     print("   2. 讨论区帖子（先列出来，自己挑几条回复）")
     print()
-    raw = "1"
-    for _ in range(5):
-        raw = ask("请选择", default="1")
-        if raw in DISCUSSION_MODES:
-            break
-        print("  ✘ 只能填 1 / 2。")
-    else:
-        # 非交互输入（管道/重定向）反复给不出有效值时按默认走，绝不卡死
-        raw = "1"
-        print("  · 没收到有效选择，按默认「任务里的主题讨论」继续")
+    raw = ask_choice("请选择", set(DISCUSSION_MODES), default="1")
     mode = DISCUSSION_MODES[raw]
     if mode == "task":
         print("  → 任务里的主题讨论（自动）")
@@ -922,7 +924,7 @@ def _ask_count(prompt):
     数字 = 只刷前几个未完成的；all / 全部 / 0（或直接回车）= 全部。
     返回 0 表示全部。
     """
-    while True:
+    for _ in range(5):
         raw = ask(prompt, default="all")
         low = raw.strip().lower()
         if low in ("all", "全部", "0"):
@@ -934,6 +936,8 @@ def _ask_count(prompt):
             return n
         except ValueError:
             print("  ✘ 请填数字（如 3），或填 all 表示全部。")
+    print("  · 没收到有效数字，按「全部」继续")
+    return 0
 
 
 def choose_courses(cx, ask_points=True, ask_tasks=True, only_discussion=False,
@@ -964,7 +968,9 @@ def choose_courses(cx, ask_points=True, ask_tasks=True, only_discussion=False,
     print()
 
     chosen = None
+    tries = 0
     while chosen is None:
+        tries += 1
         raw = ask("要刷哪几门？填序号，如 1,3")
         parts = [p.strip() for p in raw.replace("，", ",").replace("、", ",").split(",") if p.strip()]
         picked, bad = [], []
@@ -979,6 +985,10 @@ def choose_courses(cx, ask_points=True, ask_tasks=True, only_discussion=False,
                     bad.append(p)
         if bad:
             print("  ✘ 没认出来：" + ", ".join(bad))
+            if tries >= 5:
+                # 非交互输入（管道/重定向）反复给不出有效序号时干净退出，绝不卡死
+                print("  · 连续多次没认出课程，已退出向导（重新运行 cx 即可）。")
+                sys.exit(1)
             continue
         uniq, seen2 = [], set()
         for c in picked:
@@ -1105,12 +1115,7 @@ def pick_user():
     idx_add = len(saved) + 1
     idx_mgr = len(saved) + 2
 
-    while True:
-        raw = ask("请选择")
-        if raw.isdigit() and 1 <= int(raw) <= idx_mgr:
-            break
-        print("  ✘ 没有这个选项，请重新填。")
-
+    raw = ask_choice("请选择", {str(i) for i in range(1, idx_mgr + 1)}, default="1")
     idx = int(raw)
     if idx == idx_mgr:
         manage_accounts()
@@ -1138,21 +1143,14 @@ def ask_after_run(label, cancelled=False):
     print("   3. 退出程序")
     print()
 
-    while True:
-        choice = ask("请选择")
-        if choice == "1":
-            return "again"
-        if choice == "2":
-            return "switch"
-        if choice == "3":
-            return "exit"
-        print("  ✘ 只能填 1 / 2 / 3。")
+    choice = ask_choice("请选择", {"1", "2", "3"}, default="3")
+    return {"1": "again", "2": "switch", "3": "exit"}[choice]
 
 
 def _main_inner(force_setup=False):
     title("超星刷课")
     print()
-    print("  提示：输入 q 回车可随时退出（不会刷任何课）。")
+    print("  提示：在本向导里输入 q 再回车可随时退出（不会刷任何课）。")
 
     # cx --yes：跳过向导最后的人工确认，并把 --yes 传给 main.py 的启动检查
     auto_yes = any(a in ("--yes", "-y") for a in sys.argv[1:])
@@ -1211,6 +1209,10 @@ def _main_inner(force_setup=False):
             account_text = account_text + "（" + username + "）"
         print("  账号  " + account_text)
         print("  范围  " + scope_text)
+        if discussion_mode:
+            print("  讨论  " + ("讨论区帖子（自己挑，逐条确认后发送）"
+                                if discussion_mode == "board"
+                                else "任务里的主题讨论（自动）"))
         print("  课程")
         for c, chapter_n, task_n in plan:
             cp = "章节全部" if chapter_n == 0 else ("章节 " + str(chapter_n) + " 个未完成")

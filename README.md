@@ -43,6 +43,16 @@ A command-line assistant that completes Chaoxing (学习通 / 泛雅) course tas
 - **Isolated accounts.** Cookies and configuration are stored per phone number under `~/.chaoxing/` — never inside the repository.
 - **Optional notifications.** Bark, ServerChan, Telegram or Qmsg can push start / finish / interrupt / error messages.
 
+### The whole flow at a glance
+
+```text
+启动 → 刷什么内容 → 讨论怎么刷 → 选课程 → 每门刷多少 → 确认
+     → 启动检查 → 登录 → 开始前扫描 → 章节刷课 → 任务中心 → 讨论区（如选）
+     → AI 内容留痕提示 → 结果汇报
+```
+
+Each step only asks what the previous choice needs, and every stage prints what it is about to do — nothing is asked twice and nothing is silently skipped.
+
 ## Quick start (no command-line experience needed)
 
 ### 1. Install Python 3.13 or newer

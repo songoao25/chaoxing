@@ -34,6 +34,8 @@
 - Tests always use a temporary `CX_DATA_HOME`.
 
 ### Fixed
+- Flow coherence: the confirmation page now shows the discussion choice, the run header says "章节任务点", board mode no longer claims teaching tasks are done, and the pre-run scan's reminders match the selected scope/mode.
+- Wizard input robustness: every choice prompt now has a retry cap and a safe default, so piped/non-interactive input can never hang the wizard.
 - New AI-practice subtype "situational dialogue" (`/mobile/situationalDialogue/*`) is detected and reported as unsupported instead of a confusing "missing parameters" warning.
 - Task Center phase interrupted by `q` no longer reports "all done".
 - Chapter quizzes without a question bank are no longer recorded as completed.
