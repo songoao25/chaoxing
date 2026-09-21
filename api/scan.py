@@ -116,6 +116,7 @@ def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
             continue
         if not row.get("tasks"):
             continue
+        lines.append("  " + title)
         head = ("    教学任务  " + str(row.get("tasks")) + " 个 · 任务点 "
                 + str(row.get("plans")) + " 个（已完成 " + str(row.get("done"))
                 + " · 待完成 " + str(row.get("todo")))
@@ -128,7 +129,7 @@ def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
             lines.append("    待完成    " + detail)
         if only_discussion:
             if discussion_mode == "board":
-                lines.append("    本次只刷  讨论区帖子（自己挑，逐条给草稿确认后发送）")
+                lines.append("    本次只刷  讨论区（自己挑帖子，逐条确认后发送）")
             else:
                 lines.append("    本次只刷  任务里的主题讨论（自动，其它类型跳过）")
         elif discussion_mode == "board":

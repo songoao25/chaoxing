@@ -225,13 +225,32 @@ class WizardScopeTestCase(unittest.TestCase):
         self.assertEqual(common["task_center_submit_mode"], "auto")
 
     def test_prefs_do_not_ask(self):
-        """正常启动不问任何刷课参数"""
-        with mock.patch.object(wizard, "setup_notification",
+        """已经配置过：正常启动不再问任何东西"""
+        import configparser
+        cfg = configparser.ConfigParser()
+        cfg.add_section("cx")
+        cfg.set("cx", "prefs_done", "yes")
+        cfg.set("cx", "prefs_version", "2")
+        with mock.patch.object(wizard, "read_config", return_value=cfg), \
+             mock.patch.object(wizard, "setup_notification",
                                side_effect=AssertionError("不该问通知")), \
              mock.patch.object(wizard, "ask",
                                side_effect=AssertionError("不该问刷课参数")), \
              mock.patch("builtins.print"):
             wizard.ensure_global_prefs(force=False)
+
+    def test_first_run_asks_optional_notification(self):
+        """第一次运行会问一次可选的通知设置（直接回车＝不用）"""
+        import configparser
+        cfg = configparser.ConfigParser()
+        cfg.add_section("cx")
+        with mock.patch.object(wizard, "read_config", return_value=cfg), \
+             mock.patch.object(wizard, "setup_notification",
+                               return_value=("", "", "")) as notify, \
+             mock.patch.object(wizard, "update_config"), \
+             mock.patch("builtins.print"):
+            wizard.ensure_global_prefs(force=False)
+        self.assertTrue(notify.called)
 
     def test_setup_only_asks_notification(self):
         """cx setup 也只问可选的通知，不问刷课参数"""
@@ -312,7 +331,7 @@ class WizardDisplayTestCase(unittest.TestCase):
         self.assertIn("章节 2 个未完成 · 教学任务全部", out)
         self.assertIn("讨论怎么刷", out)
         self.assertIn("任务里的主题讨论（自动，按课程要求的顺序做）", out)
-        self.assertIn("讨论区帖子（先列出来，自己挑几条回复）", out)
+        self.assertIn("讨论区（自己挑帖子回复）", out)
 
 
 class WizardFlowTestCase(unittest.TestCase):

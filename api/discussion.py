@@ -25,6 +25,20 @@ MAX_PAGES = 10
 SEND_INTERVAL_SECONDS = 1.5
 
 
+def clip_text(text, limit: int = 20) -> str:
+    """按显示宽度截断（中文算 2 列），用于列表/预览行不撑爆终端"""
+    value = re.sub(r"\s+", " ", str(text or "")).strip()
+    width = 0
+    out = []
+    for ch in value:
+        w = 2 if ord(ch) > 127 else 1
+        if width + w > limit:
+            return "".join(out) + "…"
+        out.append(ch)
+        width += w
+    return value
+
+
 def normalize_topic(item: dict) -> dict:
     """把接口返回的一条帖子整理成界面要用的字段"""
     item = item or {}
@@ -217,8 +231,13 @@ def _board_course(tc, courses: list) -> Tuple[Optional[dict], str]:
 
 def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
                 course_id: Optional[str] = None, courses: Optional[list] = None,
-                auto_yes: bool = False) -> int:
-    """讨论区模式的入口：统计 → 挑帖子 → 草稿 → 确认 → 逐条发送。"""
+                auto_yes: bool = False) -> dict:
+    """讨论区模式的入口：统计 → 挑帖子 → 草稿 → 确认 → 逐条发送。
+
+    返回 {ok, sent, skipped, reason}：调用方据此汇报，失败时绝不能说"已发送"。
+    auto_yes 只跳过"开始刷课"的确认；把 AI 写的回复发到公开讨论区必须逐条确认，
+    所以这里不因为 --yes 就静默群发（非交互输入会停在确认处并安全退出）。
+    """
     from api.task_center import TaskCenter
     if tc is None:
         tc = TaskCenter(chaoxing, config)
@@ -227,27 +246,35 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
             courses = chaoxing.get_course_list() or []
         except Exception as e:
             print(f"  ✘ 读取课程列表失败：{e}")
-            return 1
+            return {"ok": False, "sent": 0, "skipped": 0, "reason": "读取课程列表失败"}
     courses = list(courses)
     wanted = str(course_id or "").strip()
     if wanted:
         courses = [c for c in courses if str(c.get("courseId")) == wanted]
     if not courses:
         print("  ✘ 没有可用的课程")
-        return 1
+        return {"ok": False, "sent": 0, "skipped": 0, "reason": "没有可用的课程"}
 
     course = _pick_course(courses, list_only)
     if course is None:
-        return 0
-    if not str((course or {}).get("bbsid") or "").strip():
-        picked_course, bbsid = _board_course(tc, [course] + [c for c in courses if c is not course])
-        if picked_course is not None:
-            course, bbsid = picked_course, bbsid
-    else:
-        bbsid = resolve_bbsid(tc, course)
+        return {"ok": False, "sent": 0, "skipped": 0, "reason": "没有选择课程"}
+
+    bbsid = resolve_bbsid(tc, course)
     if not bbsid:
-        print("  ✘ 没找到讨论区板块（这门课可能没开讨论区）")
-        return 1
+        # 用户选的那门课没有讨论区：问一句再换，绝不静默改课
+        others = [c for c in courses if c is not course]
+        picked_course, picked_bbsid = _board_course(tc, others)
+        if picked_course is None:
+            print(f"  ✘ 《{course.get('title', '')}》没有讨论区板块，其它课程也没有")
+            return {"ok": False, "sent": 0, "skipped": 0, "reason": "没有找到讨论区板块"}
+        if list_only:
+            course, bbsid = picked_course, picked_bbsid
+        else:
+            answer = _ask(f"  《{course.get('title', '')}》没有讨论区，改去"
+                          f"《{picked_course.get('title', '')}》吗？[y/n · 回车＝否] ")
+            if answer.lower() not in ("y", "yes", "是", "1"):
+                return {"ok": False, "sent": 0, "skipped": 0, "reason": "用户取消了换课"}
+            course, bbsid = picked_course, picked_bbsid
 
     title = str(course.get("title") or "")
     print()
@@ -257,7 +284,7 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
     topics, capped = fetch_all_topics(tc.session, bbsid)
     if not topics:
         print("  ✘ 没读到帖子（可能登录失效、页面改版，或这个讨论区还是空的）")
-        return 1
+        return {"ok": False, "sent": 0, "skipped": 0, "reason": "没读到帖子"}
     if capped:
         print(f"  至少 {len(topics)} 条帖子（只读了前 {MAX_PAGES} 页）· 已经回复过的会自动跳过")
     else:
@@ -266,26 +293,27 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
     page_size = DEFAULT_PAGE_SIZE
     page = 1
     total_pages = max(1, (len(topics) + page_size - 1) // page_size)
+    picked: List[int] = []
     while True:
         offset = (page - 1) * page_size
         chunk = topics[offset:offset + page_size]
         print(render_topics(chunk, page=page, offset=offset, page_size=page_size))
         if list_only:
-            return 0
+            return {"ok": True, "sent": 0, "skipped": 0, "reason": "只列不回复"}
         hint = "n 下一页" if page < total_pages else ""
         back = "p 上一页" if page > 1 else ""
         keys = " · ".join([k for k in (back, hint, "q 退出") if k])
         raw = _ask(f"  ▶ 选要回复的帖子（如 1,3,5 / 1-3 / all；{keys}） ")
         low = raw.lower()
         if low in ("q", "quit", "exit", ""):
-            return 0
+            return {"ok": True, "sent": 0, "skipped": 0, "reason": "用户退出"}
         if low == "n":
             page = min(total_pages, page + 1)
             continue
         if low == "p":
             page = max(1, page - 1)
             continue
-        picked = parse_selection(raw, len(topics))
+        picked = parse_selection(raw, len(topics)) or []
         if not picked:
             print("  ✘ 没看懂，可以填 1,3,5 / 1-3 / all")
             continue
@@ -293,8 +321,8 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
 
     chosen = [topics[n - 1] for n in picked]
     print()
-    preview = " ｜ ".join(f"{n}. {(topics[n - 1].get('title') or '')[:16]}" for n in picked[:5])
-    more = f" 等 {len(chosen)} 条" if len(chosen) > 5 else ""
+    preview = " ｜ ".join(f"{n}. {clip_text(topics[n - 1].get('title') or '', 8)}" for n in picked[:4])
+    more = f" 等 {len(chosen)} 条" if len(chosen) > 4 else ""
     print(f"  将回复 {len(chosen)} 条：{preview}{more}")
     print()
 
@@ -302,7 +330,7 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
     skipped = 0
     for index, topic in enumerate(chosen, 1):
         name = topic.get("title") or "讨论区帖子"
-        print(f"  [{index}/{len(chosen)}] {textwrap.shorten(name, width=40, placeholder='…')}")
+        print(f"  [{index}/{len(chosen)}] {clip_text(name, 34)}")
         draft = tc.draft_reply(bbsid, topic["uuid"], course=course, name=name)
         if draft is None:
             print("      ✘ 这条没生成出草稿，跳过")
@@ -318,16 +346,13 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
         for line in textwrap.wrap(draft["reply"], width=60):
             print("      " + line)
         print("      " + "─" * 44)
-        if auto_yes:
-            confirmed = True
-        else:
-            answer = _ask("      发送这条吗？[y/n · 回车＝发送 · q 退出] ")
-            if answer.lower() in ("q", "quit", "exit"):
-                print()
-                print(f"  已停止：发送 {sent} 条 · 跳过 {skipped} 条")
-                return 0
-            confirmed = answer.lower() not in ("n", "no", "不", "否")
-        if not confirmed:
+        # 安全默认：回车 = 跳过；只有明确 y 才发到公开讨论区
+        answer = _ask("      发送这条吗？[y 发送 · 回车跳过 · q 退出] ")
+        if answer.lower() in ("q", "quit", "exit"):
+            print()
+            print(f"  已停止：发送 {sent} 条 · 跳过 {skipped} 条")
+            return {"ok": True, "sent": sent, "skipped": skipped, "reason": "用户中途退出"}
+        if answer.lower() not in ("y", "yes", "是", "1"):
             print("      · 已跳过这条")
             skipped += 1
             print()
@@ -348,15 +373,8 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
     print(f"  完成：发送 {sent} 条 · 跳过 {skipped} 条")
     if sent:
         print("  （平台约 3 分钟后才显示完成，可在 ./cx review 里复核正文）")
-    if auto_yes:
-        return 0
     again = _ask("  还要继续挑别的帖子吗？[y/n · 回车＝退出] ")
     if again.lower() not in ("y", "yes", "是", "1"):
-        return 0
-    # 重新读一遍（可能有新回复），回到第一页继续挑
-    topics, capped = fetch_all_topics(tc.session, bbsid)
-    if not topics:
-        print("  · 没读到帖子了，先退出")
-        return 0
+        return {"ok": True, "sent": sent, "skipped": skipped, "reason": ""}
     return discuss_cli(chaoxing, tc, config, list_only=False, course_id=course_id,
                        courses=courses, auto_yes=auto_yes)

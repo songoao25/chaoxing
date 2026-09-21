@@ -34,6 +34,13 @@
 - Tests always use a temporary `CX_DATA_HOME`.
 
 ### Fixed
+- Discussion board no longer reports success when nothing was sent (returns real `sent/skipped` counts to the console and notifications).
+- "只刷讨论" no longer prints "只刷任务中心" wording; the scope, its explanation and the confirmation page each appear once.
+- `--yes` no longer auto-sends discussion replies (posting AI text publicly always asks per post); the send prompt now defaults to **skip** on Enter.
+- Choosing a course without a discussion board now asks before switching instead of switching silently.
+- Scan report shows the course name for teaching tasks; the Task Center summary wraps at 76 columns; discussion previews are clipped.
+- Courses with no teaching tasks now say "没有找到教学任务" instead of "都已刷完".
+- First run asks once about optional notifications (Enter = skip).
 - "只刷讨论" could be blocked by the startup check because the run config wrote `task_center = false`; it now always keeps the Task Center path enabled.
 - `skip_discussion` was referenced but never assigned, so the whole Task Center phase failed with a NameError (reported as "read failed"). Now defined from the discussion mode.
 - Answer-mode table was unpacked in the wrong order: question-bank modes asked for a DeepSeek key, and choosing "no quizzes" at the key step discarded the just-entered token. Both fixed.

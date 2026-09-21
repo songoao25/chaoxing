@@ -156,8 +156,9 @@ class DiscussCliListOnlyTestCase(unittest.TestCase):
         chaoxing.get_course_list.return_value = [{"courseId": "1", "title": "企业战略管理"}]
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            code = discussion.discuss_cli(chaoxing, tc, {}, list_only=True)
-        self.assertEqual(code, 0)
+            result = discussion.discuss_cli(chaoxing, tc, {}, list_only=True)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["sent"], 0)
         out = buf.getvalue()
         self.assertIn("讨论区 · 企业战略管理", out)
         self.assertIn("企业外部环境", out)
@@ -182,8 +183,8 @@ class DiscussCliListOnlyTestCase(unittest.TestCase):
         with mock.patch.object(discussion, "resolve_bbsid", side_effect=fake_resolve):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                code = discussion.discuss_cli(Chaoxing(), tc, {}, list_only=True)
-        self.assertEqual(code, 0)
+                result = discussion.discuss_cli(Chaoxing(), tc, {}, list_only=True)
+        self.assertTrue(result["ok"])
         self.assertEqual(calls[:2], ["没讨论区的课", "企业战略管理"])
         self.assertIn("企业战略管理", buf.getvalue())
 
@@ -298,19 +299,19 @@ class DiscussCliInteractiveTestCase(unittest.TestCase):
         return code, tc, buf.getvalue()
 
     def test_confirm_yes_sends_one(self):
-        code, tc, out = self._run(["1", "y"])
-        self.assertEqual(code, 0)
+        result, tc, out = self._run(["1", "y"])
+        self.assertEqual(result["sent"], 1)
         self.assertEqual(tc.submitted, ["u1"])
         self.assertIn("我觉得吧", out)          # 草稿给用户看了
         self.assertIn("发送 1 条", out)
 
     def test_confirm_no_skips(self):
-        code, tc, out = self._run(["1", "n"])
+        result, tc, out = self._run(["1", "n"])
         self.assertEqual(tc.submitted, [])
         self.assertIn("已跳过这条", out)
 
     def test_multi_select_sends_one_by_one(self):
-        code, tc, out = self._run(["1-2", "y", "y"])
+        result, tc, out = self._run(["1-2", "y", "y"])
         self.assertEqual(tc.submitted, ["u1", "u2"])
         self.assertIn("[1/2]", out)
         self.assertIn("[2/2]", out)
@@ -318,13 +319,15 @@ class DiscussCliInteractiveTestCase(unittest.TestCase):
     def test_already_replied_is_skipped(self):
         draft = {"topic_info": {"url_token": "tok"}, "title": "标题", "reply": "",
                  "has_replied": True, "referer": ""}
-        code, tc, out = self._run(["1", "y"], draft=draft)
+        result, tc, out = self._run(["1", "y"], draft=draft)
         self.assertEqual(tc.submitted, [])
         self.assertIn("已经回复过", out)
 
-    def test_auto_yes_skips_confirmation(self):
-        code, tc, out = self._run(["1"], auto_yes=True)
-        self.assertEqual(tc.submitted, ["u1"])
+    def test_auto_yes_does_not_auto_send(self):
+        """--yes 只跳过启动确认；把 AI 回复发到公开讨论区必须逐条确认"""
+        result, tc, out = self._run(["1"], auto_yes=True)
+        self.assertEqual(tc.submitted, [])
+        self.assertEqual(result["sent"], 0)
 
 
 class DraftSubmitSplitTestCase(unittest.TestCase):

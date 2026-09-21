@@ -206,7 +206,7 @@ def parse_args():
     )
     parser.add_argument(
         "--only-discussion", action="store_true",
-        help="只刷任务中心里的主题讨论（评论区），其它类型本次跳过",
+        help="只刷讨论（任务里的主题讨论），其它类型本次跳过",
     )
     parser.add_argument(
         "--course-id", type=str, default=None,
@@ -1283,6 +1283,7 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
         "limited": 0,
         "skipped_other": 0,     # 只刷讨论时被跳过的其它类型
         "only_discussion": bool(only_discussion),
+        "empty": 0,             # 没有教学任务的课程数
     }
 
     for course in course_task:
@@ -1300,6 +1301,8 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
             print(f"  ✗ {course.get('title', '?')}：任务中心状态读取失败，无法判断是否完成")
             continue
         if not tasks:
+            stats["empty"] += 1
+            print(f"  {course.get('title', '?')}：没有找到教学任务（可能还没发布）")
             continue
 
         stats["courses"] += 1
@@ -1361,16 +1364,42 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
     return stats
 
 
-def _run_discussion_board(chaoxing: Chaoxing, config: dict, courses: list,
-                          auto_yes: bool = False) -> None:
-    """讨论区模式（discussion_mode=board）：列帖子 → 自己挑 → 草稿 → 确认 → 逐条发送"""
+def _board_result_text(result: Optional[dict]) -> str:
+    """讨论区结果一句话（失败/一条没发时绝不写"已发送"）"""
+    result = result or {}
+    sent = int(result.get("sent") or 0)
+    skipped = int(result.get("skipped") or 0)
+    if sent:
+        return f"讨论区：发送 {sent} 条 · 跳过 {skipped} 条"
+    if skipped:
+        return f"讨论区：本次没有发送任何回复（跳过 {skipped} 条）"
+    reason = str(result.get("reason") or "没有可发送的内容")
+    return f"讨论区：本次没有发送任何回复（{reason}）"
+
+
+def _print_board_result(result: Optional[dict]) -> None:
+    """控制台汇报：发送了就说发送，没发送就说没发送"""
+    result = result or {}
+    sent = int(result.get("sent") or 0)
+    if sent:
+        print("  ✔ " + _board_result_text(result))
+    else:
+        print("  ⚠ " + _board_result_text(result))
+
+
+def _run_discussion_board(chaoxing: Chaoxing, config: dict, courses: list) -> dict:
+    """讨论区模式（discussion_mode=board）：列帖子 → 自己挑 → 草稿 → 确认 → 逐条发送。
+
+    返回 discuss_cli 的结果字典，调用方据此汇报——一条都没发时绝不能说"已发送"。
+    """
     from api import discussion
     try:
-        discussion.discuss_cli(chaoxing, None, config, courses=courses, auto_yes=auto_yes)
+        return discussion.discuss_cli(chaoxing, None, config, courses=courses)
     except Exception as e:
         logger.warning("讨论区模式出错: {}: {}", type(e).__name__, e)
         logger.debug(traceback.format_exc())
         print(f"  ⚠ 讨论区模式出错（不影响已完成的刷课）：{e}")
+        return {"ok": False, "sent": 0, "skipped": 0, "reason": f"{type(e).__name__}: {e}"}
 
 
 def _print_review_hint():
@@ -1411,28 +1440,36 @@ def _run_task_center_quiet(chaoxing: Chaoxing, course_task: list, config: dict,
 
 
 def _print_task_center_summary(stats: dict):
-    """任务中心处理结果，一行汇总"""
-    if not stats or (not stats.get("courses") and not stats.get("read_failed")):
+    """任务中心处理结果：一条一条列，超过 76 列自动折行（别撑爆终端）"""
+    if not stats or (not stats.get("courses") and not stats.get("read_failed")
+                     and not stats.get("empty")):
         return
-    text = f"  任务中心：教学任务完成 {stats.get('done', 0)} 个"
+    if stats.get("empty") and not stats.get("done") and not stats.get("failed"):
+        print("  任务中心：没有找到教学任务（这门课可能还没发布，或都在未解锁的分组里）")
+        return
+    parts = [f"教学任务完成 {stats.get('done', 0)} 个"]
     if stats.get("failed"):
-        text += f" · 未完成 {stats['failed']} 个"
+        item = f"未完成 {stats['failed']} 个"
         if stats.get("unsupported"):
-            text += f"（其中暂不支持 {stats['unsupported']} 个）"
+            item += f"（其中暂不支持 {stats['unsupported']} 个）"
+        parts.append(item)
         if stats.get("waiting_confirmation"):
-            text += f" · 等待确认 {stats['waiting_confirmation']} 个"
+            parts.append(f"等待确认 {stats['waiting_confirmation']} 个")
         if stats.get("locked"):
-            text += f" · 未解锁 {stats['locked']} 个"
+            parts.append(f"未解锁 {stats['locked']} 个")
     if stats.get("read_failed"):
-        text += f" · 读取失败 {stats['read_failed']} 门课"
+        parts.append(f"读取失败 {stats['read_failed']} 门课")
     if stats.get("limited"):
-        text += f" · 按设置跳过 {stats['limited']} 个（下次继续）"
+        parts.append(f"按设置跳过 {stats['limited']} 个（下次继续）")
     if stats.get("skipped_other"):
         if stats.get("only_discussion"):
-            text += f" · 只刷讨论：跳过其它类型 {stats['skipped_other']} 个"
+            parts.append(f"只刷讨论：跳过其它类型 {stats['skipped_other']} 个")
         else:
-            text += f" · 讨论走讨论区模式：跳过任务里的主题讨论 {stats['skipped_other']} 个"
-    print(text)
+            parts.append(f"讨论走讨论区模式：跳过主题讨论 {stats['skipped_other']} 个")
+    text = "  任务中心：" + " · ".join(parts)
+    import textwrap
+    for line in textwrap.wrap(text, width=76, subsequent_indent="    ") or [text]:
+        print(line)
 
 
 def main():
@@ -1552,12 +1589,13 @@ def main():
         # cx discuss / cx topics：讨论区浏览 + 挑帖子回复（模式 2），不进刷课流程
         if getattr(args, "discuss", False) or getattr(args, "list_topics", False):
             from api import discussion
-            return discussion.discuss_cli(
+            result = discussion.discuss_cli(
                 chaoxing, None, common_config,
                 list_only=bool(getattr(args, "list_topics", False)),
                 course_id=getattr(args, "course_id", None),
-                courses=course_task or all_course,
+                courses=all_course or course_task,
             )
+            return 0 if result.get("ok") else 1
 
         # 开始学习
         logger.trace(f"课程列表过滤完毕, 当前课程任务数量: {len(course_task)}")
@@ -1571,8 +1609,11 @@ def main():
         unreadable_courses = []
         scan_rows = []          # 开始前扫描：章节侧数据（复用这里已读到的章节）
         if not chapters_enabled:
-            logger.info("chapter_study=false：跳过章节（目录），只处理任务中心")
-            print("  已选择只刷任务中心：跳过章节（目录）")
+            logger.info("chapter_study=false：跳过章节（目录）")
+            if only_discussion:
+                print("  只刷讨论：跳过章节（目录）")
+            else:
+                print("  已选择只刷任务中心：跳过章节（目录）")
             print()
         # 只刷任务中心时连章节列表都不用读，省掉一次请求，也不会误报"读不到章节"
         for course in (course_task if chapters_enabled else []):
@@ -1640,11 +1681,16 @@ def main():
             # 章节刷完了不代表任务中心刷完了：教学任务是独立的一套学习入口
             tc_stats = {"courses": 0, "done": 0, "failed": 0, "unsupported": 0,
                         "waiting_confirmation": 0, "locked": 0, "read_failed": 0}
+            board_result = None
             if _task_center_enabled(common_config, args) and not (only_discussion and board_mode):
                 hint_shown = _start_interrupt(hint_shown)
                 print()
                 if chapters_enabled:
                     print("  章节已全部完成，继续检查任务中心的教学任务…")
+                elif only_discussion and board_mode:
+                    print("  下面进入讨论区（自己挑帖子回复）…")
+                elif only_discussion:
+                    print("  继续检查任务里的主题讨论…")
                 else:
                     print("  继续检查任务中心的教学任务…")
                 try:
@@ -1662,9 +1708,8 @@ def main():
                     print(f"  ⚠ 任务中心处理出错（章节不受影响）：{type(e).__name__}: {e}")
                     tc_stats["read_failed"] = tc_stats.get("read_failed", 0) + 1
             if board_mode and not interrupt.should_stop():
-                _run_discussion_board(chaoxing, common_config,
-                                      course_task or all_course,
-                                      auto_yes=bool(getattr(args, "yes", False)))
+                board_result = _run_discussion_board(chaoxing, common_config,
+                                                     course_task or all_course)
             if interrupt.should_stop():
                 # 在任务中心阶段被终止：绝不能走到下面的"全部完成"分支
                 print()
@@ -1676,13 +1721,14 @@ def main():
                 return
             _print_review_hint()
             if board_mode:
-                # 讨论区模式：本次只处理讨论区，不能说"教学任务都已刷完"
-                print("  ✔ 讨论区模式已结束（每条的发送结果见上面）")
+                _print_board_result(board_result)
             elif tc_stats["failed"] or tc_stats.get("read_failed"):
                 if chapters_enabled:
                     print("  ✔ 章节任务点已完成；任务中心仍有未完成教学任务")
                 else:
                     print("  ✔ 任务中心仍有未完成教学任务")
+            elif tc_stats.get("empty") and not tc_stats.get("done"):
+                print("  · 没有找到教学任务（这门课可能还没发布，或都在未解锁的分组里）")
             elif chapters_enabled:
                 print("  ✔ 所有课程的任务点都已刷完，没有需要重刷的内容")
             else:
@@ -1780,9 +1826,8 @@ def main():
                 tc_stats["read_failed"] = tc_stats.get("read_failed", 0) + 1
 
         if board_mode and not interrupt.should_stop():
-            _run_discussion_board(chaoxing, common_config,
-                                  course_task or all_course,
-                                  auto_yes=bool(getattr(args, "yes", False)))
+            board_result = _run_discussion_board(chaoxing, common_config,
+                                                 course_task or all_course)
 
         _print_review_hint()
 
@@ -1849,9 +1894,9 @@ def main():
         else:
             logger.info("所有课程学习任务已完成")
             tc_text = f"\n任务中心：教学任务完成 {tc_stats['done']} 个" if tc_stats["done"] else ""
-            board_text = "\n讨论区：已按你的选择逐条确认并发送" if board_mode else ""
+            board_text = ("\n" + _board_result_text(board_result)) if board_mode else ""
             if board_mode:
-                print("  ✔ 讨论区模式已结束（每条的发送结果见上面）")
+                _print_board_result(board_result)
             notification.send(
                 "超星刷课：全部完成\n"
                 f"课程（{len(course_task)} 门）：{course_names}\n"
