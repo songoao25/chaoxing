@@ -14,6 +14,7 @@
 - `logger.py`: 日志功能
 - `notification.py`: 通知功能
 - `process.py`: 进度显示工具
+- `task_center.py`: 任务中心「教学任务」支持（视频/文档/章节任务点，分组顺序解锁）
 - `captcha.py`: 验证码识别模块（未启用）
 - `live.py`: 直播任务处理
 - `live_process.py`: 直播任务处理逻辑

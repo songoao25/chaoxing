@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import functools
+import json
 import random
 import secrets
 import re
@@ -497,13 +498,101 @@ _FULLWIDTH_MAP = str.maketrans(
 )
 
 
-def _parse_progress_passed(resp) -> bool:
+def capture_student_job_info(owner, payload) -> None:
+    """把平台在任务引擎上下文里下发的章节同步数据暂存到 owner 上（没有就保持原值）
+
+    任务引擎的"章节"任务点在网页上的同步链路是：视频打点 / job/document
+    的响应里带 stuJobInfo，章节页把它 postMessage 给任务中心父页面，
+    父页面再 POST autoPullChapterScore。这里的 stuJobInfo 就是那个
+    唯一真实的请求体来源，不能自己拼 enc。
+    """
+    if not isinstance(payload, dict):
+        return
+    info = payload.get("stuJobInfo")
+    if isinstance(info, dict) and info:
+        owner.last_student_job_info = info
+
+
+class _CurlResponse:
+    """curl 重放请求的返回值，接口和 requests.Response 保持最小兼容"""
+
+    def __init__(self, status_code: int, text: str, url: str):
+        self.status_code = status_code
+        self.text = text
+        self.url = url
+
+    def json(self):
+        return json.loads(self.text)
+
+
+def _curl_get(session, url, params, headers=None, timeout: int = 20):
+    """用系统 curl 原样重放一次 GET（cookie 走 stdin，不进命令行参数）。
+
+    存在的意义：部分网络环境下 urllib3/OpenSSL 的 TLS 指纹会被超星风控在
+    mooc 视频打点接口上拒绝，返回 403 错误页；同一时刻用相同的 URL、查询参数、
+    Cookie、User-Agent 走 curl（SecureTransport/LibreSSL）却是 200（2026-09-17 实测）。
+    所以这里只在 requests 拿到 403 时做一次等价重放，不影响正常环境。
+    """
+    import shutil
+    import subprocess
+
+    curl = shutil.which("curl")
+    if not curl:
+        logger.debug("系统里没有 curl，跳过视频打点的 curl 重放")
+        return None
+    try:
+        prepared_url = requests.Request("GET", url, params=params).prepare().url
+    except Exception as e:  # pragma: no cover - 构造 URL 失败极少见
+        logger.debug("curl 重放前构造 URL 失败: {}", e)
+        return None
+
+    config_lines = [
+        'url = "%s"' % prepared_url.replace('"', '\\"'),
+        "silent",
+        "show-error",
+        "max-time = %d" % int(timeout),
+        'write-out = "\\n%{http_code}"',
+    ]
+    for key, value in (headers or {}).items():
+        config_lines.append('header = "%s: %s"' % (key, str(value).replace('"', '\\"')))
+    cookie = "; ".join(f"{k}={v}" for k, v in session.cookies.items())
+    if cookie:
+        config_lines.append('cookie = "%s"' % cookie.replace('"', '\\"'))
+
+    try:
+        proc = subprocess.run(
+            [curl, "-K", "-"],
+            input="\n".join(config_lines),
+            capture_output=True,
+            text=True,
+            timeout=int(timeout) + 10,
+        )
+    except Exception as e:
+        logger.debug("curl 重放视频打点失败: {}", e)
+        return None
+
+    out = proc.stdout or ""
+    body, sep, status = out.rpartition("\n")
+    if not sep:
+        logger.debug("curl 重放输出没有状态码: {}", out[:200])
+        return None
+    try:
+        code = int(status.strip())
+    except ValueError:
+        logger.debug("curl 重放状态码解析失败: {}", status[:50])
+        return None
+    return _CurlResponse(code, body, prepared_url)
+
+
+def _parse_progress_passed(resp, owner=None) -> bool:
     """
     解析视频进度上报响应里的 isPassed。
 
     上报接口被风控时可能返回 200 + 登录页/验证码页（不是 JSON），
     或者 JSON 里没有 isPassed；以前直接取下标会抛异常把整个章节中断（#175 / #298），
     这里统一按"还没通过"处理。
+
+    顺带把平台下发的任务引擎同步数据（stuJobInfo）记到 owner 上。
     """
     try:
         payload = resp.json()
@@ -513,6 +602,8 @@ def _parse_progress_passed(resp) -> bool:
     if not isinstance(payload, dict):
         logger.warning("视频进度上报返回格式异常，按未通过处理")
         return False
+    if owner is not None:
+        capture_student_job_info(owner, payload)
     return bool(payload.get("isPassed", False))
 
 
@@ -620,6 +711,11 @@ class Chaoxing:
         self.rollback_times = 0
         self.rate_limiter = RateLimiter(0.5)  # 其他接口速率限制比较松
         self.video_log_limiter = RateLimiter(2)  # 上报进度极其容易卡验证码，限制2s一次
+        # 任务引擎的"章节"任务点：平台在视频/文档完成后，会把给任务引擎的
+        # 同步数据（uid/finishCount/clazzId/enc/time/jobCount/knowledgeId）
+        # 塞在视频打点或 /mooc-ans/job/document 的响应里（字段名 stuJobInfo）。
+        # 只有从任务引擎打开的章节页（isEngineNode=1）才会下发，这里暂存给上层做同步。
+        self.last_student_job_info = None
 
     def login(self, login_with_cookies=False):
         # 关键：把当前账号告诉 cookie 模块，之后 cookie 读写都落到该账号专属文件，
@@ -886,6 +982,9 @@ class Chaoxing:
         }
 
         # 学习界面任务卡片数, 很少有3个的, 但是对于章节解锁任务点少一个都不行, 可以从API /mooc-ans/mycourse/studentstudyAjax获取值, 或者干脆直接加, 但二者都会造成额外的请求
+        parsed_any = False
+        _page0_parse_error = False
+        _missing_pages = []
         for _possible_num in "0123456":
 
             logger.trace("开始读取章节所有任务点...")
@@ -904,10 +1003,50 @@ class Chaoxing:
                 logger.info("该章节未开放")
                 return [], _job_info
             if _job_info.get("parseError"):
-                return None, _job_info
+                # 新版泛雅把 num>=1 的页面改成 mArg = $mArg（由脚本注入），
+                # 页面里没有可解析的 JSON。这种页面跳过就行，不能因为它
+                # 把整章判成"读取失败"，否则新版课程一个任务点都刷不了。
+                #
+                # 日志分级：num=0 失败才是真正的异常信号（登录失效/验证码/改版），
+                # num>=1 失败是每章都会发生的正常形态，只记 TRACE，避免刷屏误导。
+                if _possible_num == "0":
+                    _page0_parse_error = True
+                    logger.warning(
+                        "任务点第 0 页解析不出 mArg（可能是登录失效、验证码页或页面改版）"
+                    )
+                else:
+                    _missing_pages.append(_possible_num)
+                continue
 
+            parsed_any = True
             job_list += _job_list
             job_info.update(_job_info)
+
+        if _missing_pages:
+            # 每章汇总成一条 DEBUG，不再逐页刷屏（新版 num>=1 本来就没有 JSON）
+            logger.debug(
+                "任务点第 {} 页无 mArg（新版只有第 0 页带全量），已跳过",
+                "、".join(_missing_pages),
+            )
+
+        # 一页都没解析出来才算读取失败（登录页 / 验证码页 / 彻底改版）
+        if not parsed_any:
+            return None, {"parseError": True}
+        if _page0_parse_error:
+            logger.warning(
+                "任务点第 0 页没解析出 mArg，但后续页有数据；下次整章读不到任务点时先检查登录状态"
+            )
+
+        # 同一批卡片可能跨页重复（新版 num=0 就带全量），按 jobid 去重
+        seen_ids = set()
+        unique_jobs = []
+        for _job in job_list:
+            _key = str(_job.get("jobid") or _job.get("id") or _job)
+            if _key in seen_ids:
+                continue
+            seen_ids.add(_key)
+            unique_jobs.append(_job)
+        job_list = unique_jobs
 
         if not job_list:
             # 空章节也要把"访问"这一步做成功才算完成；失败同样按读取失败处理
@@ -937,6 +1076,7 @@ class Chaoxing:
             _type: str = "Video",
             _isdrag: int = 3,
             headers: Optional[dict] = None,
+            engine_info: bool = False,
     ) -> tuple[bool, int]:
 
         if headers is None:
@@ -965,6 +1105,10 @@ class Chaoxing:
             "enc": enc,
             "dtype": _type
         }
+        # 任务引擎的"章节"任务点要求带上 courseEngineInfo=true，
+        # 章节刷完时平台才会在响应里下发 stuJobInfo（见类初始化里的说明）。
+        if engine_info:
+            params["courseEngineInfo"] = "true"
 
         _url = (
             f"https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/"
@@ -986,6 +1130,19 @@ class Chaoxing:
         def perform_request(rt_val):
             params.update({"rt": rt_val, "_t": get_timestamp()})
             res = _session.get(_url, params=params, headers=headers)
+            if res.status_code == 403:
+                # 少数网络环境下 urllib3/OpenSSL 会被这个接口的风控按客户端指纹拒绝
+                # （403 + 错误页），同一参数走 curl 或浏览器都是 200。先原样重放一次，
+                # 重放成功就不算失败；重放也失败再走下面的验证码/403 分支。
+                curl_res = _curl_get(_session, _url, params, headers)
+                if curl_res is not None and curl_res.status_code == 200:
+                    logger.info(
+                        "视频打点被客户端指纹拦截，已用 curl 重放成功: jobid={}",
+                        _job.get("jobid"),
+                    )
+                    res = curl_res
+                elif curl_res is not None:
+                    logger.debug("curl 重放视频打点仍然失败: HTTP {}", curl_res.status_code)
             if res.status_code == 403 or '验证码' in res.text or 'validate' in res.text:
                 logger.warning("检测到验证码拦截，正在尝试自动通过验证码...")
                 try:
@@ -1036,7 +1193,7 @@ class Chaoxing:
                 resp = perform_request(rt)
                 if resp.status_code == 200:
                     logger.trace(resp.text)
-                    return _parse_progress_passed(resp), 200
+                    return _parse_progress_passed(resp, owner=self if engine_info else None), 200
                 elif resp.status_code == 403:
                     logger.warning("出现403报错, 正常尝试切换rt")
                 else:
@@ -1048,7 +1205,7 @@ class Chaoxing:
 
         if resp.status_code == 200:
             logger.trace(resp.text)
-            return _parse_progress_passed(resp), 200
+            return _parse_progress_passed(resp, owner=self if engine_info else None), 200
 
         elif resp.status_code == 403:
             logger.debug(
@@ -1123,7 +1280,8 @@ class Chaoxing:
     _video_lock = threading.Lock()
 
     def study_video(self, _course, _job, _job_info, _speed: float = 1.0,
-                    _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
+                    _type: Literal["Video", "Audio"] = "Video",
+                    engine_info: bool = False) -> StudyResult:
         """
         播放视频 / 音频任务。
 
@@ -1132,13 +1290,19 @@ class Chaoxing:
         所以遇到"刷完又变回没刷"的用户可以打开它换取稳定；
         默认仍是并发（保持原来的速度），需要时在 config.ini 里设 serial_video = true。
         """
+        # engine_info 只在需要时多传一个参数：社区里有测试/扩展会替换 _study_video，
+        # 保持 5 参数调用形态，避免插件式猴子补丁被新参数打断。
+        args = (_course, _job, _job_info, _speed, _type)
+        if engine_info:
+            args = args + (True,)
         if not self.kwargs.get("serial_video", False):
-            return self._study_video(_course, _job, _job_info, _speed, _type)
+            return self._study_video(*args)
         with Chaoxing._video_lock:
-            return self._study_video(_course, _job, _job_info, _speed, _type)
+            return self._study_video(*args)
 
     def _study_video(self, _course, _job, _job_info, _speed: float = 1.0,
-                     _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
+                     _type: Literal["Video", "Audio"] = "Video",
+                     engine_info: bool = False) -> StudyResult:
         _session = SessionManager.get_session()
 
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
@@ -1186,15 +1350,29 @@ class Chaoxing:
         max_forbidden_retry = 2
 
         passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration, duration,
-                                                _type, headers=headers, _isdrag=4)
+                                                _type, headers=headers, _isdrag=4,
+                                                engine_info=engine_info)
         if passed:
             logger.info("任务瞬间完成: {}", _job['name'])
             return StudyResult.SUCCESS
 
+        # 平台记的 playTime 是"看到的位置"，通过与否要看真实累计观看时长：
+        # 进度显示 100% 但没通过（例如上一次的结束上报被风控/指纹挡掉）时，
+        # 在结尾反复重报没有意义，必须从头回看一遍（决 D3：不够就回看）。
+        replay_used = False
+        if play_time >= duration:
+            logger.info(
+                "任务 {} 进度已到结尾({}s/{}s)但平台未通过，从头回看一遍",
+                _job.get("name", "?"), play_time, duration,
+            )
+            play_time = 0
+            replay_used = True
+
         pbar = None
         # 服务器一直返回"200 但未通过"时不能无限循环（#358 / #451）：
         # 正常播放需要的理论时间 + 5 分钟缓冲，超了就当作失败交给上层重试。
-        play_deadline = time.time() + duration / max(_speed, 0.1) + 300
+        remaining = duration if replay_used else max(duration - play_time, 0)
+        play_deadline = time.time() + remaining / max(_speed, 0.1) + 300
         stuck_reports = 0
         max_stuck_reports = 30
         try:
@@ -1210,7 +1388,8 @@ class Chaoxing:
                 if play_time - last_log_time >= wait_time or play_time == duration:
 
                     passed, state = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, duration,
-                                                            int(play_time), _type, headers=headers)
+                                                            int(play_time), _type, headers=headers,
+                                                            engine_info=engine_info)
 
                     if state == 403:
                         if forbidden_retry >= max_forbidden_retry:
@@ -1285,7 +1464,7 @@ class Chaoxing:
         logger.info("任务完成: {}", _job['name'])
         return StudyResult.SUCCESS
 
-    def study_document(self, _course, _job) -> StudyResult:
+    def study_document(self, _course, _job, engine_info: bool = False) -> StudyResult:
         """
         Study a document in Chaoxing platform.
 
@@ -1299,6 +1478,9 @@ class Chaoxing:
                 - jobid: ID of the job
                 - otherinfo: String containing node information
                 - jtoken: Authentication token for the job
+            engine_info (bool): 是否处于任务引擎的"章节"任务点上下文。为 True 时，
+                额外走一次引擎的 job/document 接口，平台可能因此下发 stuJobInfo
+                （章节同步数据），由上层调用 autoPullChapterScore。
 
         Returns:
             requests.Response: Response object from the GET request
@@ -1322,17 +1504,66 @@ class Chaoxing:
         _resp = _session.get(_url)
         if _resp.status_code != 200:
             return StudyResult.ERROR
-        else:
-            return StudyResult.SUCCESS
+        if engine_info:
+            # 任务引擎节点下，浏览器读完文档走的正是这个接口；它会返回
+            # stuJobInfo（章节同步数据）。拿不到不影响文档本身的学习结果。
+            self.finish_engine_document_job(_course, _job)
+        return StudyResult.SUCCESS
+
+    def finish_engine_document_job(self, _course, _job) -> Optional[dict]:
+        """任务引擎上下文的文档完成接口，返回并暂存平台下发的 stuJobInfo。
+
+        网页端（ananas/ueditor/documentJob.js 的 finishJob）在文档读完时请求
+        /mooc-ans/job/document?...&courseEngineInfo=true，响应里的
+        allowSendStuJobInfoMsg / stuJobInfo 会被回传给任务中心父页面，
+        父页面再 POST autoPullChapterScore。这里是 CLI 侧等价复现。
+        """
+        node_ids = re.findall(r"nodeId_(.*?)-", str(_job.get("otherinfo", "")))
+        if not node_ids:
+            return None
+        _session = SessionManager.get_session()
+        params = {
+            "jobid": _job.get("jobid", ""),
+            "knowledgeid": node_ids[0],
+            "courseid": _course.get("courseId", ""),
+            "clazzid": _course.get("clazzId", ""),
+            "jtoken": _job.get("jtoken", ""),
+            "checkMicroTopic": "true",
+            "microTopicId": _job.get("microTopicId", ""),
+            "courseEngineInfo": "true",
+        }
+        try:
+            resp = _session.get("https://mooc1.chaoxing.com/mooc-ans/job/document",
+                                params=params, timeout=15)
+        except Exception as e:
+            logger.warning("文档任务引擎同步接口请求失败: {}", e)
+            return None
+        if getattr(resp, "status_code", 0) != 200:
+            logger.warning("文档任务引擎同步接口返回异常: HTTP {}", getattr(resp, "status_code", "?"))
+            return None
+        try:
+            payload = resp.json()
+        except ValueError:
+            logger.warning("文档任务引擎同步接口返回的不是 JSON，本次不同步章节成绩")
+            return None
+        if not isinstance(payload, dict):
+            return None
+        # 和网页端 documentJob.js 的 finishJob 一致：只有 status 为真才算接口成功
+        if not payload.get("status"):
+            logger.debug("文档任务引擎同步接口未被接受: {}", str(payload)[:200])
+            return None
+        capture_student_job_info(self, payload)
+        return payload.get("stuJobInfo") if isinstance(payload.get("stuJobInfo"), dict) else None
 
     def study_work(self, _course, _job, _job_info) -> StudyResult:
         if self.tiku.DISABLE or not self.tiku:
-            # 没题库时不再静默假装"成功"，明确记录被跳过，便于用户识别未真正作答的测验
-            logger.warning(
-                "章节测验 [{} - {}] 因未配置题库被跳过（未作答）。",
+            # 铁律：没有题库就不能把测验记成完成（历史 issue #223/#357）。
+            # 返回 ERROR 会让这个任务点显示未完成，需要答题解锁的章节会停在这里。
+            logger.error(
+                "章节测验 [{} - {}] 未作答：没有可用题库；该任务点不会记为完成。",
                 _course.get("title", "?"), _job.get("name", "?")
             )
-            return StudyResult.SUCCESS
+            return StudyResult.ERROR
 
         _session = SessionManager.get_session()
         _url = "https://mooc1.chaoxing.com/mooc-ans/api/work"

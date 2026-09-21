@@ -256,7 +256,8 @@ def decode_course_card(html_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
         # 正常的学习页面一定带 mArg；取不到说明拿到的是登录页/验证码页/
         # 改版页面。标记 parseError，让上层按"读取失败"重试，
         # 绝不能当成"这个章节没有任务点"直接打勾（#223 / #357）。
-        logger.warning("任务点页面里找不到 mArg（可能是登录页、验证码页或页面结构变化）")
+        # 逐页的"找不到 mArg"不再单独记日志：新版只有第 0 页带 mArg，
+        # 由 api/base.py 的 get_job_list 汇总成一条。
         return [], {"parseError": True}
 
     # 解析JSON数据。mArg 片段可能因为平台改版/截断而不是合法 JSON，
@@ -515,9 +516,12 @@ def decode_questions_info(html_content: str) -> Dict[str, Any]:
 
 def _extract_form_data(soup: BeautifulSoup) -> Dict[str, Any]:
     """从BeautifulSoup对象中提取表单数据"""
-    form_data = {}
-    form_tag = soup.find("form")
+    return _extract_form_fields(soup.find("form"))
 
+
+def _extract_form_fields(form_tag) -> Dict[str, Any]:
+    """从 form 标签里提取所有非答案字段的 input"""
+    form_data = {}
     if not form_tag:
         return form_data
 
@@ -544,6 +548,123 @@ def _extract_form_data(soup: BeautifulSoup) -> Dict[str, Any]:
         form_data[name_str] = val_str
 
     return form_data
+
+
+# 任务中心作业页（mooc2/work/dowork）的题型名 -> 题型代码（与 _get_question_type 对应）
+_HOMEWORK_TYPE_CODES = {
+    "单选题": "0",
+    "多选题": "1",
+    "填空题": "2",
+    "判断题": "3",
+    "简答题": "4",
+}
+
+
+def decode_homework_page(html_content: str) -> Dict[str, Any]:
+    """
+    解析「任务中心 -> 作业」的作答页（mooc2/work/dowork）。
+
+    和章节测验页（knowledge/cards 里的 TiMu/Zy_TItle）结构不同：
+      * 题型在隐藏 input answertype<题目id> 的 value 里（旧页在 div.TiMu 的 data 上）
+      * 题干在 h3.mark_name，选项在 div.stem_answer 的 div.answerBg（带 aria-label）
+      * 提交地址在 form#submitForm 的 action 上（带 token / totalQuestionNum），
+        提交接口是 addStudentWorkNewWeb，不是章节测验的 addStudentWorkNew
+
+    返回结构和 decode_questions_info 对齐（form 隐藏字段 + questions + answerwqbid），
+    额外带 form_action / form_method，供提交时原样复用。
+    """
+    soup = BeautifulSoup(html_content, "lxml")
+    form_tag = soup.find("form", id="submitForm") or soup.find("form")
+    if form_tag is None:
+        logger.warning("作业页面没有找到 form 表单，可能是登录页或页面结构变化")
+        return {"questions": [], "answerwqbid": ""}
+
+    form_data = _extract_form_fields(form_tag)
+    form_data["form_action"] = str(form_tag.attrs.get("action") or "")
+    form_data["form_method"] = str(form_tag.attrs.get("method") or "post").lower()
+
+    font_decoder = None
+    if soup.find("style", id="cxSecretStyle"):
+        font_decoder = FontDecoder(html_content)
+        logger.info("作业页面有字体加密，已启用字体解密")
+
+    questions = []
+    for div_tag in form_tag.find_all("div", class_="singleQuesId"):
+        question = _process_homework_question(div_tag, form_tag, font_decoder)
+        if question:
+            questions.append(question)
+
+    form_data["questions"] = questions
+    form_data["answerwqbid"] = (
+        ",".join(q["id"] for q in questions) + "," if questions else ""
+    )
+    return form_data
+
+
+def _extract_homework_title(div_tag, font_decoder=None) -> str:
+    """
+    提取作业题干。
+
+    作业页的题干是 "<h3>1.<span>(多选题)</span><p>题干…</p></h3>"，但 <p> 嵌在
+    <h3> 里属于非法 HTML，lxml 会把 <h3> 提前闭合，题干段落变成 h3 的兄弟节点。
+    只取 h3 会丢题干（实测第 1 题、填空题全部丢），所以这里按 DOM 顺序拼到
+    "选项区（div.stem_answer）"之前的所有文本。
+    """
+    parts = []
+    for child in div_tag.children:
+        name = getattr(child, "name", None)
+        if name == "div" and "stem_answer" in (child.get("class") or []):
+            break
+        if name == "input":
+            continue
+        if isinstance(child, NavigableString):
+            parts.append(str(child))
+        elif name in ("h3", "p", "span", "div"):
+            parts.append(_extract_title(child, font_decoder))
+    return clean_text("".join(parts))
+
+
+def _process_homework_question(div_tag, form_tag, font_decoder=None) -> Optional[Dict[str, Any]]:
+    """解析作业页里的单道题目（新版结构）"""
+    question_id = str(div_tag.attrs.get("data") or "").strip()
+    if not question_id:
+        return None
+
+    type_code = ""
+    type_input = form_tag.find("input", attrs={"name": f"answertype{question_id}"})
+    if type_input is not None:
+        type_code = str(type_input.attrs.get("value", "")).strip()
+    if not type_code:
+        type_name = str(div_tag.attrs.get("typeName") or "").strip()
+        type_code = _HOMEWORK_TYPE_CODES.get(type_name, "")
+    q_type = _get_question_type(type_code)
+
+    q_title = _extract_homework_title(div_tag, font_decoder)
+
+    options = []
+    stem = div_tag.find("div", class_="stem_answer")
+    if stem is not None:
+        for option_tag in stem.find_all("div", class_="answerBg"):
+            text = _extract_choices(option_tag, font_decoder)
+            if text:
+                options.append(text)
+        if not options:
+            for li in stem.find_all("li"):
+                text = _extract_choices(li, font_decoder)
+                if text:
+                    options.append(text)
+    options.sort()
+
+    return {
+        "id": question_id,
+        "title": q_title,
+        "options": "\n".join(options),
+        "type": q_type,
+        "answerField": {
+            f"answer{question_id}": "",
+            f"answertype{question_id}": type_code,
+        },
+    }
 
 
 def _process_question(div_tag, font_decoder=None) -> Dict[str, Any]:

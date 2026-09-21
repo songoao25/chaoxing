@@ -50,6 +50,11 @@ def legacy_cookies_path():
     return os.path.join(data_dir(), "cookies.txt")
 
 
+def submissions_path():
+    """已提交任务点记录：用于本地去重，避免平台完成状态延迟导致重复提交"""
+    return os.path.join(data_dir(), "submissions.json")
+
+
 def log_path():
     return os.path.join(data_dir(), "chaoxing.log")
 

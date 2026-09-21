@@ -1,0 +1,10 @@
+.venv/
+.git/
+.github/
+__pycache__/
+*.pyc
+docs/
+tests/
+tools/probe/local.env
+tools/probe/__pycache__/
+*.log

@@ -1,0 +1,66 @@
+# 【脱敏】任务中心 -> 主题讨论 真实取证（2026-09-20）
+
+> 账号 173****6569（账号已脱敏）/ 企业战略管理 courseId=<courseId>、clazzId=<clazzId>、cpi=<cpi>。
+> cookie / urlToken / uuid 一律脱敏成 <...>，只保留结构。
+
+## 1. 入口链路
+
+POST https://task.chaoxing.com/userStudyPlan/getToStudyUrl
+     （encryptPlanId=<...>&encryTaskUserId=<...>&studyJumpType=0）
+  -> data = {bbsId:<bbsid>, topicUuid:<topic-uuid>,
+             url:https://groupweb.chaoxing.com/pc/topic/jumpToTopicDetail?bbsid=<bbsid>&uuid=<topic-uuid>&classId=<clazzId>}
+
+GET  该 URL（跟随 302）
+  -> https://groupweb.chaoxing.com/course/topic/v3/bbs/<bbsid>/<topic-uuid>/replysList?courseId=<courseId>&classId=<clazzId>
+  页面 title = 话题详情（约 135KB）
+
+已解锁的话题（2026-09-20）：
+  * 第2章「企业使命、愿景、目标的讨论」uuid=<...>，已有 20 条同学回复
+  * 第3章「决策者对外部环境的洞察」uuid=<...>
+
+## 2. 页面里的数据（window.obj，JS 字面量不是 JSON）
+
+  window.obj = {
+    user:{puid:...},
+    topic:{... title:企业使命、愿景、目标的讨论, uuid:<topic-uuid>,
+           content:企业使命、愿景、目标是高层管理者制定的，你认为企业普通员工需要了解这些吗？谈谈你的想法。, ...},
+    circle:{... bbsid:<bbsid> ...},
+    urlToken:<32 位十六进制>,      // 每次提交后服务端会换一个新的
+  }
+
+## 3. 已有回复列表（用于模仿语气，不照抄）
+
+GET https://groupweb.chaoxing.com/pc/invitation/getReplyList
+    ?bbsid=<bbsid>&uuid=<topic-uuid>&tag=&order=2&lastValue=&lastAuxValue=
+  -> {status:true, datas:[
+        {uuid:<reply-uuid>, id:..., content:<回复正文>, creater_name:<同学>,
+         ftime:1小时前, floor:第N楼, praiseCount:..., ...}, ...]}
+
+## 4. 发回复（网页端 topicEvent/invitationEvent.js 的 $.post）
+
+POST https://groupweb.chaoxing.com/pc/invitation/<topic-uuid>/addReplys
+data:
+  courseId=<courseId>, classId=<clazzId>,
+  replyId=-1,                       // -1 = 一级回复（直接回复话题）
+  uuid=<前端随机 UUID>,              // 网页端 RichTextUitl.randomUUID() 生成
+  topic_content=<encodeURIComponent(正文)>,
+  files_url=, files_attr=, anonymous=,
+  urlToken=<页面里的 urlToken>, bbsid=<bbsid>
+响应：{status:true, msg:回复成功, datas:{reply:{...}, urlToken:<新 token>}}
+      status=true 且没有 datas = 回复待审核（也算提交成功，最终完成仍看任务引擎）
+
+## 5. 完成判定
+
+任务中心 getPlanDataByGroupId 的 isFinish / planUser.finish（和其他类型一样），
+接口返回成功只代表“回复被接受”，不代表任务点完成。
+实测同步有延迟：22:28 复查 isFinish=false → 22:31 复查 isFinish=true（约 3 分钟），
+不需要额外的同步接口，等待+复查即可。
+
+## 6. 关键结论
+
+1. 讨论区域名是 groupweb.chaoxing.com，和章节/作业/任务引擎都不是一套接口。
+2. getToStudyUrl 对 planType=14 会返回 bbsId + topicUuid + 详情页 URL（此前探针截断
+   URL 看起来像“取不到”）。
+3. 回复正文统一走 api/ai_writer.py 的 HumanLikeWriter.discussion（模仿已有回复、去 AI 味）；
+   生成器判定“编造个人经历/平台话术”等硬伤时直接放弃提交（实测模型会写“我在奶茶店做过兼职”）。
+4. urlToken 每次提交后会换新，所以每次回复都要重新打开话题页取 token。

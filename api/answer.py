@@ -17,6 +17,7 @@ import requests
 from openai import OpenAI
 from urllib3 import disable_warnings, exceptions
 
+from api import llm
 from api import paths as _paths
 from api.answer_check import check_answer
 from api.logger import logger
@@ -412,7 +413,7 @@ class Tiku(ABC):
         # 答题进度显示：避免用户以为程序卡死
         if total > 1:
             print()
-            print(f"  开始答题，共 {total} 题（每题之间会限流等待，请耐心等待）")
+            print(f"  正在作答 {total} 题（题库 + AI，请稍候）")
 
         skipped_by_breaker = 0
         for i, q in enumerate(q_list, 1):
@@ -1286,6 +1287,35 @@ class TikuAdapter(Tiku):
         self.api = self._conf.get('url', '')
 
 
+def parse_answer_text(text: str) -> str:
+    """
+    从模型输出里提取答案正文：兼容 JSON / 代码块 / "答案：X" / 纯文本。
+
+    模型有时返回 {"Answer": ["A"]}，有时直接写 "答案：A"，有时带 markdown 代码块，
+    以前只认第一种，其它情况一律记"无法解析"并退化成随机作答（错率高的直接原因之一）。
+    """
+    if not text:
+        return ""
+    cleaned = llm.strip_code_fence(str(text))
+    try:
+        data = json.loads(cleaned)
+    except (ValueError, TypeError):
+        data = None
+    if isinstance(data, dict):
+        for key in ("Answer", "answer", "答案", "result", "content"):
+            if key in data:
+                data = data[key]
+                break
+    if isinstance(data, list):
+        return "\n".join(str(item) for item in data).strip()
+    if isinstance(data, str):
+        return data.strip()
+    matched = re.search(r"(?:答案|Answer|答)\s*[:：]?\s*(.+)", cleaned, re.IGNORECASE | re.DOTALL)
+    if matched:
+        return matched.group(1).strip()
+    return cleaned.strip()
+
+
 class AI(Tiku):
     # AI大模型答题实现
     def __init__(self, config_path: Optional[str] = None) -> None:
@@ -1320,23 +1350,25 @@ class AI(Tiku):
             lines.append(str(item))
         return "\n".join(lines)
 
-    DEEPSEEK_MODEL = 'deepseek-flash'
+    def _client(self):
+        """按代理配置构造 OpenAI 客户端"""
+        if self.http_proxy:
+            httpx_client = httpx.Client(proxy=self.http_proxy)
+            return OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
+        return OpenAI(base_url=self.endpoint, api_key=self.key)
 
-    def _is_deepseek_flash(self) -> bool:
+    def _complete(self, messages, **kwargs) -> str:
         """
-        是否为 DeepSeek flash 模型。
+        统一的答题模型调用：thinking 默认交给模型自己（auto）。
 
-        该模型默认开启 thinking 模式，会导致 message.content 为空，
-        需要显式关闭 thinking，否则答题拿不到内容。
+        2026-09-20 实测：DeepSeek V4.1 flash 默认带推理且正文正常，
+        强关 thinking 只会降低正确率；旧版本"正文为空"的情况由
+        api/llm.create_completion 自动降级重试，reasoning_content 也能兜底。
         """
-        if 'api.deepseek.com' not in (self.endpoint or '').lower():
-            return False
-        return (self.model or '').strip().lower() == self.DEEPSEEK_MODEL
-
-    def _completion_kwargs(self, **kwargs):
-        if self._is_deepseek_flash():
-            kwargs['extra_body'] = {'thinking': {'type': 'disabled'}}
-        return kwargs
+        client = self._client()
+        return llm.create_completion(
+            client, model=self.model, messages=messages,
+            thinking=self.thinking, allow_reasoning_fallback=True, **kwargs)
 
     def _wait_for_interval(self):
         if self.last_request_time:
@@ -1351,102 +1383,82 @@ class AI(Tiku):
             return self._query_locked(q_info)
 
     def _query_locked(self, q_info: dict):
-        def remove_md_json_wrapper(md_str):
-            # 使用正则表达式匹配Markdown代码块并提取内容
-            pattern = r'^\s*```(?:json)?\s*(.*?)\s*```\s*$'
-            match = re.search(pattern, md_str, re.DOTALL)
-            return match.group(1).strip() if match else md_str.strip()
-
-        if self.http_proxy:
-            proxy = self.http_proxy
-            httpx_client = httpx.Client(proxy=proxy)
-            client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
-        else:
-            client = OpenAI(base_url=self.endpoint, api_key=self.key)
-        # 去除选项字母，防止大模型直接输出字母而非内容
-        options_list = q_info['options'].split('\n')
-        cleaned_options = [re.sub(r"^[A-Z]\s*", "", option) for option in options_list]
-        options = "\n".join(cleaned_options)
+        # 保留选项字母：让模型直接回答 A/B/C，比"回答选项内容再匹配回字母"可靠得多
+        options = q_info['options']
 
         # 上一轮章节检测的错误反馈（若有）
         feedback_text = self._build_work_feedback_text()
 
         def _make_messages(system_content: str, user_content: str) -> list:
             """构造带反馈上下文的消息列表."""
-            messages = [
-                {
-                    "role": "system",
-                    "content": system_content
-                },
-            ]
+            messages = [{"role": "system", "content": system_content}]
             if feedback_text:
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": feedback_text
-                    }
-                )
-            messages.append(
-                {
-                    "role": "user",
-                    "content": user_content
-                }
-            )
+                messages.append({"role": "system", "content": feedback_text})
+            messages.append({"role": "user", "content": user_content})
             return messages
 
-        # 判断题目类型
-        self._wait_for_interval()
-        self.last_request_time = time.time()
-        if q_info['type'] == "single":
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}\n选项：{options}"
-                )
-            ))
-        elif q_info['type'] == 'multiple':
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}\n选项：{options}"
-                )
-            ))
-        elif q_info['type'] == 'completion':
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}"
-                )
-            ))
-        elif q_info['type'] == 'judgement':
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}"
-                )
-            ))
+        q_type = q_info['type']
+        if q_type == "single":
+            system = ("本题为单选题。请先自己判断，再只输出选项字母，以 json 格式回答，"
+                      "例如 {\"Answer\": [\"A\"]}；不要输出选项内容、解释或多余文字。")
+            user = f"题目：{q_info['title']}\n选项：\n{options}"
+        elif q_type == "multiple":
+            system = ("本题为多选题。请选出所有正确选项（可能只有 1 个，也可能多个），"
+                      "只输出选项字母，以 json 格式回答，例如 {\"Answer\": [\"A\",\"C\"]}；"
+                      "不确定的不要选、不要为了凑数多选，不要输出解释或多余文字。")
+            user = f"题目：{q_info['title']}\n选项：\n{options}"
+        elif q_type == "completion":
+            system = ("本题为填空题。请按空的顺序给出答案，用 # 分隔，以 json 格式回答，"
+                      "例如 {\"Answer\": [\"答案1#答案2\"]}；不要输出解释或多余文字。")
+            user = f"题目：{q_info['title']}"
+        elif q_type == "judgement":
+            system = ("本题为判断题。只输出 {\"Answer\": [\"正确\"]} 或 {\"Answer\": [\"错误\"]}，"
+                      "不要输出解释或多余文字。")
+            user = f"题目：{q_info['title']}"
         else:
-            completion = client.chat.completions.create(**self._completion_kwargs(
-                model=self.model,
-                messages=_make_messages(
-                    "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料",
-                    f"题目：{q_info['title']}"
-                )
-            ))
+            system = ("本题为简答题。请给出简洁准确的答案，以 json 格式回答，"
+                      "例如 {\"Answer\": [\"答案\"]}；不要输出解释或多余文字。")
+            user = f"题目：{q_info['title']}"
+        messages = _make_messages(system, user)
 
-        try:
-            response = json.loads(remove_md_json_wrapper(completion.choices[0].message.content))
-            sep = "\n"
-            return sep.join(response['Answer']).strip()
-        except Exception:
-            # 只吞掉"解析失败"这类普通异常；
-            # 用裸 except 会连 Ctrl+C / 系统退出一起吞掉，导致无法中断
+        # 客观题多次采样投票：单次生成偶发看错选项，投票能明显降低错率
+        votes = self.objective_votes if q_type in ("single", "multiple") else 1
+        answers = []
+        for _ in range(max(1, votes)):
+            self._wait_for_interval()
+            self.last_request_time = time.time()
+            try:
+                raw = self._complete(messages)
+            except Exception as e:
+                logger.error(f"{self.name} 调用失败：{e}")
+                continue
+            parsed = parse_answer_text(raw)
+            if parsed:
+                answers.append(parsed)
+        if not answers:
             logger.error("无法解析大模型输出内容")
             return None
+        if len(answers) == 1:
+            return answers[0]
+
+        def _normalize(text):
+            stripped = str(text).strip()
+            letters = re.findall(r"[A-Za-z]", stripped)
+            if letters and re.fullmatch(r"[A-Za-z\s、,，;；/|\n]+", stripped):
+                return "".join(sorted({c.upper() for c in letters}))
+            return stripped
+
+        grouped = {}
+        for item in answers:
+            grouped.setdefault(_normalize(item), []).append(item)
+        best_key = max(grouped, key=lambda key: len(grouped[key]))
+        chosen = grouped[best_key]
+        if len(grouped) > 1:
+            logger.info(
+                "客观题投票：{} 次采样，取多数答案 {}（{}/{}）",
+                len(answers), best_key, len(chosen), len(answers),
+            )
+        return chosen[0]
 
     def _init_tiku(self):
         # 手写配置可能缺项，用安全默认值兜底，避免 KeyError
@@ -1454,6 +1466,13 @@ class AI(Tiku):
         self.key = self._conf.get('key', '')
         self.model = self._conf.get('model', '')
         self.http_proxy = self._conf.get('http_proxy', '')
+        # thinking: auto=让模型自己决定（V4.1 起默认带推理，正确率更高）；
+        # on/off 可强制；老版本"正文为空"由 api/llm 自动降级重试。
+        self.thinking = llm.normalize_thinking(self._conf.get('thinking', 'auto'))
+        try:
+            self.objective_votes = max(1, min(5, int(float(self._conf.get('objective_votes', 3) or 3))))
+        except (TypeError, ValueError):
+            self.objective_votes = 3
         try:
             self.min_interval_seconds = int(float(self._conf.get('min_interval_seconds', 3)))
         except (TypeError, ValueError):
@@ -1467,35 +1486,18 @@ class AI(Tiku):
         with self._lock:
             logger.info(f'正在检查 {self.name} 连接...')
             try:
-                # 初始化客户端
-                if self.http_proxy:
-                    httpx_client = httpx.Client(proxy=self.http_proxy)
-                    client = OpenAI(http_client=httpx_client, base_url=self.endpoint, api_key=self.key)
-                else:
-                    client = OpenAI(base_url=self.endpoint, api_key=self.key)
-
                 # 限流等待
                 self._wait_for_interval()
                 self.last_request_time = time.time()
 
-                # 发送测试请求
-                completion = client.chat.completions.create(**self._completion_kwargs(
-                    model=self.model,
-                    messages=[
-                        {
-                            'role': 'user',
-                            'content': '你好，请回答：1+1 等于几？只回答数字。'
-                        }
-                    ],
-                    max_tokens=200  # 增大以支持可能返回的 reasoning_content
-                ))
-
-                # 统一检查响应
-                if completion.choices:
-                    msg = completion.choices[0].message
-                    if msg.content or getattr(msg, 'reasoning_content', None):
-                        logger.info(f'{self.name} 连接检查成功')
-                        return True
+                # 发送测试请求（thinking 策略与答题一致，reasoning 也能兜底）
+                text = self._complete(
+                    [{'role': 'user', 'content': '你好，请回答：1+1 等于几？只回答数字。'}],
+                    max_tokens=200,
+                )
+                if text:
+                    logger.info(f'{self.name} 连接检查成功')
+                    return True
 
                 logger.error(f'{self.name} 连接检查失败：未收到响应')
                 return False

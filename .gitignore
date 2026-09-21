@@ -156,3 +156,9 @@ config*.ini
 .idea/
 .vscode/
 cache.json
+
+# 探针本机配置（含真实账号/课程参数，绝不入库）
+tools/probe/local.env
+
+# 抓包文件：*.har 一律不入库；capture_*.txt 脱敏后可以入库（提交前必须自查）
+docs/artifacts/*.har

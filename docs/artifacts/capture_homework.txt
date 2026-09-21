@@ -1,0 +1,59 @@
+# 【脱敏】任务中心 -> 作业 真实取证
+
+> 账号 173****6569（账号已脱敏）/ 企业战略管理 courseId=<courseId>、clazzId=<clazzId>、cpi=<cpi>（2026-09-20）。
+> cookie / token / enc / answerId 一律替换为 <...>，只保留结构；workId 是业务 ID，保留原值便于对照。
+
+## 1. 入口链路
+
+POST https://task.chaoxing.com/userStudyPlan/getToStudyUrl
+     （encryptPlanId=<...>&encryTaskUserId=<...>&studyJumpType=0）
+  -> data.url = https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task
+                ?courseId=<courseId>&classId=<clazzId>&cpi=<cpi>&workId=54765819&enc=<enc>
+
+GET  该 URL（跟随 302）
+  -> https://mooc1.chaoxing.com/mooc-ans/mooc2/work/dowork
+       ?courseId=<courseId>&classId=<clazzId>&cpi=<cpi>&workId=54765819
+       &answerId=<answerId>&standardEnc=<standardEnc>&enc=<enc>
+  页面 title = 作业作答，约 100KB
+
+两个已解锁作业：
+  * planId=5639752「第1章 企业战略管理概述 作业」workId=54765819：4 道多选 + 2 道填空
+  * planId=5639758「第2章 企业使命、愿景、目标作业」workId=54765822：3 道多选 + 1 道单选 + 2 道填空
+（第3章 / 第5章作业在锁定分组里，未取页面）
+
+## 2. 页面结构（新版，与章节测验页 knowledge/cards 的作业卡片不同）
+
+只有 1 个 form：
+
+<form action="/mooc-ans/work/addStudentWorkNewWeb?_classId=<clazzId>&courseid=<courseId>&token=<token>&totalQuestionNum=<tqn>&wMicroNodeId="
+      method="post" id="submitForm" name="submitForm">
+
+隐藏字段（必须原样回传）：
+  courseId / classId / knowledgeid=0 / cpi / workRelationId=<workId> / workAnswerId=<answerId>
+  jobid=（空）/ standardEnc=<standardEnc> / enc_work=<token> / answerwqbid=<题目id列表>
+  pyFlag=（空 = 提交；1 = 暂存）/ mooc2=1
+
+题目：div.singleQuesId[data=题目id][typeName=题型]
+  * 题型编码在 input[name=answertype<id>] 的 value：0 单选 / 1 多选 / 2 填空 / 3 判断 / 4 简答
+  * 题干：h3.mark_name（"1." + "(多选题)" + <p>题干</p>）。
+    **坑**：<p> 嵌在 <h3> 里是非法 HTML，lxml 会把 h3 提前闭合、题干段落变成兄弟节点；
+    只取 h3 会丢题干（实测第 1 题和两道填空题全丢），必须按 DOM 顺序拼到 div.stem_answer 之前。
+  * 选项：div.stem_answer > div.answerBg[aria-label="A 选项文本"]
+  * 填空题：input[name=tiankongsize<id>] 声明空数；
+    答案按 textarea[name=answerEditor<id><第几空>]（1 起）提交，不提交 answer<id>。
+
+## 3. 提交契约（页面 JS saveAnswer）
+
+  var ajax_url = $("#submitForm").attr("action") + "&pyFlag=" + $("#pyFlag").val();
+  ajax_url += "&ua=" + clientType() + "&formType=post&saveStatus=1&version=1";   // clientType()=pc
+  POST ajax_url，body = form.serialize()（含全部隐藏字段 + 每题 answer<id> / answertype<id>）
+  响应 JSON：{"status": true/false, "msg": ...}
+
+## 4. 关键结论
+
+1. 章节测验用的取题接口 mooc-ans/api/work 对课程级作业返回 **403**（同一 cookie / session 下
+   dowork 页面是 200），不能复用 api/base.py 的 study_work；作业必须走页面 + addStudentWorkNewWeb。
+2. 客观题（单选/多选/判断/填空）走题库，简答题走 api/ai_writer.py；提交前走统一 confirm 门禁。
+3. 提交成功 ≠ 完成：只认 getPlanDataByGroupId 重新读回的 isFinish / planUser.finish。
+4. 页面没有 TiMu/Zy_TItle 结构，章节测验的 decode_questions_info 解析不出题目；
+   新增 api/decode.py 的 decode_homework_page 专门处理。

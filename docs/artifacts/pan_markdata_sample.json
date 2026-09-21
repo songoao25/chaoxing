@@ -1,0 +1,6 @@
+{
+ "markDataStr": "{\"resourceID\":\"0123456789abcdef0123456789abcdef\",\"resourceType\":\"doc\",\"from\":4,\"passportUID\":\"100000001\",\"t\":\"20260916152900\",\"location\":1,\"curPage\":1,\"totalPage\":1,\"ext\":\"{\\\"rwyq_doc\\\":194856526,\\\"pId\\\":5639766,\\\"oId\\\":\\\"0123456789abcdef0123456789abcdef\\\",\\\"mrId\\\":0}\",\"token\":\"<token>\"}",
+ "pagenum": "2",
+ "panUrl": "https://pan-yz.chaoxing.com/screen/v2/file_0123456789abcdef0123456789abcdef?appid=0DE5B57B-2C30-4BD0-B313-7167AD1ECB44&nonce=1528229747&timestamp=1789543739743&ext=%7B%22rwyq_doc%22%3A194856526%2C%22pId%22%3A5639766%2C%22oId%22%3A%220123456789abcdef0123456789abcdef%22%2C%22mrId%22%3A0%7D&signature=<signature>",
+ "_note": "已脱敏：passportUID/token/oId/signature 均为占位值"
+}

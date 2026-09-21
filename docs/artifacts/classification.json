@@ -1,0 +1,1367 @@
+{
+ "teaching_tasks": [
+  {
+   "id": 5026538,
+   "name": "开学第一课",
+   "progress": 1.0,
+   "planFinish": 3,
+   "planCount": 3,
+   "groups": [
+    {
+     "group": "开学第一课",
+     "allow": true,
+     "condition": "所有任务点闯关完成；每个视频完成观看",
+     "plans": [
+      {
+       "planId": 5997666,
+       "type": 10,
+       "typeName": "视频",
+       "name": "让我们打开新世界的大门",
+       "finish": true,
+       "externalDataId": "68bc0d87a58b4c468bd1cfa2a53354b7",
+       "rules": {
+        "enableVideoComplated": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639850,
+       "type": 10,
+       "typeName": "视频",
+       "name": "课程导入",
+       "finish": true,
+       "externalDataId": "1f0accaaacaa4df6b785e95cc2bbda3a",
+       "rules": {
+        "enableVideoWatchDuration": 1,
+        "videoWatchDuration": 2.0,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      }
+     ]
+    },
+    {
+     "group": "课后思考",
+     "allow": true,
+     "condition": "所有任务点闯关完成；完成AI对话",
+     "plans": [
+      {
+       "planId": 5639849,
+       "type": 15,
+       "typeName": "AI实践",
+       "name": "怎样才能通过学习战略管理成为一个CEO",
+       "finish": true,
+       "externalDataId": "1297b5b5-0da8-4f7f-a692-790ec8a3af87",
+       "rules": {
+        "videoWatchDuration": null,
+        "documentWatchDuration": null,
+        "enableFinishAicoach": 1
+       },
+       "allowStudy": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": 5026526,
+   "name": "第1章 企业战略管理概述",
+   "progress": 0.1667,
+   "planFinish": 1,
+   "planCount": 6,
+   "groups": [
+    {
+     "group": "课前初认知",
+     "allow": true,
+     "condition": "所有任务点闯关完成；每个视频完成观看",
+     "plans": [
+      {
+       "planId": 5984716,
+       "type": 10,
+       "typeName": "视频",
+       "name": "我们来学习做一个未来的CEO",
+       "finish": true,
+       "externalDataId": "894509d67bd141478dbc78dcc1b42887",
+       "rules": {
+        "enableVideoComplated": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      }
+     ]
+    },
+    {
+     "group": "课中理论和案例学习",
+     "allow": true,
+     "condition": "所有任务点闯关完成",
+     "plans": [
+      {
+       "planId": 5639750,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业战略管理课程框架",
+       "finish": false,
+       "externalDataId": "1199477652",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639754,
+       "type": 8,
+       "typeName": "章节",
+       "name": "战略相关概念",
+       "finish": false,
+       "externalDataId": "1199477654",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639755,
+       "type": 8,
+       "typeName": "章节",
+       "name": "战略管理相关概念",
+       "finish": false,
+       "externalDataId": "1199477655",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      }
+     ]
+    },
+    {
+     "group": "课后巩固",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639752,
+       "type": 4,
+       "typeName": "作业",
+       "name": "第1章 企业战略管理概述 作业",
+       "finish": false,
+       "externalDataId": "bd0e1fb2e73441069ce0354c74e89f69",
+       "rules": {
+        "enableWorkScore": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639751,
+       "type": 11,
+       "typeName": "文档",
+       "name": "”中国平安“案例",
+       "finish": false,
+       "externalDataId": "abe4fb7482684bfabfe5c124b18b2f8f",
+       "rules": {
+        "videoWatchDuration": null,
+        "documentWatchDuration": 2.0,
+        "enableCompleteRead": 1
+       },
+       "allowStudy": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": 5026527,
+   "name": "第2章 企业愿景、使命、目标",
+   "progress": 0.0,
+   "planFinish": 0,
+   "planCount": 6,
+   "groups": [
+    {
+     "group": "课前思考",
+     "allow": true,
+     "condition": "所有任务点闯关完成；每个视频完成观看",
+     "plans": [
+      {
+       "planId": 6033702,
+       "type": 10,
+       "typeName": "视频",
+       "name": "作为学习者怎么理解企业使命、愿景这些抽象的概念？",
+       "finish": false,
+       "externalDataId": "f279a3a4ca2b46cfa71298f2600f2cdd",
+       "rules": {
+        "enableVideoComplated": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      }
+     ]
+    },
+    {
+     "group": "课中从案例中学理论",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639757,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业使命",
+       "finish": false,
+       "externalDataId": "1199477659",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639760,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业愿景",
+       "finish": false,
+       "externalDataId": "1199477661",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639762,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业目标",
+       "finish": false,
+       "externalDataId": "1199477662",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      }
+     ]
+    },
+    {
+     "group": "课后拓展",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639758,
+       "type": 4,
+       "typeName": "作业",
+       "name": "第2章 企业使命、愿景、目标作业",
+       "finish": false,
+       "externalDataId": "fac74bfe1a3041b5b71bf7632026104b",
+       "rules": {
+        "enableWorkScore": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 7061856,
+       "type": 14,
+       "typeName": "主题讨论",
+       "name": "企业使命、愿景、目标的讨论",
+       "finish": false,
+       "externalDataId": "e2ec2b16d98b4410a60a3b829d2d6eb2",
+       "rules": {
+        "videoWatchDuration": null,
+        "documentWatchDuration": null,
+        "enableReplyDiscuss": 1
+       },
+       "allowStudy": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": 5026528,
+   "name": "第3章 企业外部环境分析",
+   "progress": 0.0,
+   "planFinish": 0,
+   "planCount": 15,
+   "groups": [
+    {
+     "group": "课前先讨论",
+     "allow": true,
+     "condition": "所有任务点闯关完成；每个视频完成观看；每篇文档完成阅读",
+     "plans": [
+      {
+       "planId": 6033701,
+       "type": 10,
+       "typeName": "视频",
+       "name": "关于学习企业外部环境的思考",
+       "finish": false,
+       "externalDataId": "03469a96ee5e4fb3a8a74cab36c85597",
+       "rules": {
+        "enableVideoComplated": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639766,
+       "type": 11,
+       "typeName": "文档",
+       "name": "“科大讯飞”上市十年的变与不变",
+       "finish": false,
+       "externalDataId": "f9cd3e58190848ef8bf6f96ccdc8b8b2",
+       "rules": {
+        "videoWatchDuration": null,
+        "enableDocumentWatchDuration": 1,
+        "documentWatchDuration": 5.0
+       },
+       "allowStudy": true
+      }
+     ]
+    },
+    {
+     "group": "课中看案例学理论",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639764,
+       "type": 8,
+       "typeName": "章节",
+       "name": "宏观环境分析",
+       "finish": false,
+       "externalDataId": "1199477663",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639767,
+       "type": 8,
+       "typeName": "章节",
+       "name": "政治、法律环境分析",
+       "finish": false,
+       "externalDataId": "1199477664",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639769,
+       "type": 8,
+       "typeName": "章节",
+       "name": "经济环境分析",
+       "finish": false,
+       "externalDataId": "1199477665",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639770,
+       "type": 8,
+       "typeName": "章节",
+       "name": "社会文化环境分析",
+       "finish": false,
+       "externalDataId": "1199477666",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639771,
+       "type": 8,
+       "typeName": "章节",
+       "name": "科技环境分析",
+       "finish": false,
+       "externalDataId": "1199477667",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639772,
+       "type": 8,
+       "typeName": "章节",
+       "name": "产业与竞争环境分析",
+       "finish": false,
+       "externalDataId": "1199477668",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639773,
+       "type": 8,
+       "typeName": "章节",
+       "name": "同行业竞争者分析",
+       "finish": false,
+       "externalDataId": "1199477669",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639774,
+       "type": 8,
+       "typeName": "章节",
+       "name": "替代品威胁分析",
+       "finish": false,
+       "externalDataId": "1199477670",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639775,
+       "type": 8,
+       "typeName": "章节",
+       "name": "潜在加入者分析",
+       "finish": false,
+       "externalDataId": "1199477671",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639776,
+       "type": 8,
+       "typeName": "章节",
+       "name": "供应商、买方分析",
+       "finish": false,
+       "externalDataId": "1199477672",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639777,
+       "type": 8,
+       "typeName": "章节",
+       "name": "外部因素评价(EFE)矩阵",
+       "finish": false,
+       "externalDataId": "1199477675",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      }
+     ]
+    },
+    {
+     "group": "课后巩固训练",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639765,
+       "type": 4,
+       "typeName": "作业",
+       "name": "第3章 宏观环境分析作业",
+       "finish": false,
+       "externalDataId": "a7b1962171e34530aa4bac255b454e3c",
+       "rules": {
+        "enableWorkScore": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639768,
+       "type": 14,
+       "typeName": "主题讨论",
+       "name": "决策者对外部环境的洞察",
+       "finish": false,
+       "externalDataId": "54e77496-fa94-457c-9faa-79696eefdab2",
+       "rules": {
+        "videoWatchDuration": null,
+        "documentWatchDuration": null,
+        "enableReplyDiscuss": 1
+       },
+       "allowStudy": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": 5026530,
+   "name": "第4章 企业内部环境分析",
+   "progress": 0.0,
+   "planFinish": 0,
+   "planCount": 14,
+   "groups": [
+    {
+     "group": "课前思考",
+     "allow": true,
+     "condition": "所有任务点闯关完成；每个视频完成观看",
+     "plans": [
+      {
+       "planId": 6044288,
+       "type": 10,
+       "typeName": "视频",
+       "name": "内部环境分析先导",
+       "finish": false,
+       "externalDataId": "9c3112f2c3b448b6a30e4b9093761d45",
+       "rules": {
+        "enableVideoComplated": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      }
+     ]
+    },
+    {
+     "group": "课中理论和案例学习",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639779,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业资源与能力",
+       "finish": false,
+       "externalDataId": "1199477676",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639781,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业资源分析",
+       "finish": false,
+       "externalDataId": "1199477677",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639783,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业能力分析",
+       "finish": false,
+       "externalDataId": "1199477678",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639785,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业核心竞争力",
+       "finish": false,
+       "externalDataId": "1199477679",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639786,
+       "type": 8,
+       "typeName": "章节",
+       "name": "核心竞争力案例分析Ⅰ",
+       "finish": false,
+       "externalDataId": "1199477680",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639787,
+       "type": 8,
+       "typeName": "章节",
+       "name": "核心竞争力案例分析Ⅱ",
+       "finish": false,
+       "externalDataId": "1199477681",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639788,
+       "type": 8,
+       "typeName": "章节",
+       "name": "核心竞争力案例分析Ⅲ",
+       "finish": false,
+       "externalDataId": "1199477682",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639789,
+       "type": 8,
+       "typeName": "章节",
+       "name": "泰康案例Ⅳ",
+       "finish": false,
+       "externalDataId": "1199477683",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639790,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业价值链",
+       "finish": false,
+       "externalDataId": "1199477684",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639791,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业价值链-主体活动",
+       "finish": false,
+       "externalDataId": "1199477686",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639792,
+       "type": 8,
+       "typeName": "章节",
+       "name": "企业价值链-支持活动",
+       "finish": false,
+       "externalDataId": "1199477687",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      }
+     ]
+    },
+    {
+     "group": "课后拓展训练",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639778,
+       "type": 11,
+       "typeName": "文档",
+       "name": "泰康人寿的核心竞争力培育之路",
+       "finish": false,
+       "externalDataId": "88a56324f6e64150a91d50395ef0f98d",
+       "rules": {
+        "videoWatchDuration": null,
+        "enableDocumentWatchDuration": 1,
+        "documentWatchDuration": 10.0
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639784,
+       "type": 15,
+       "typeName": "AI实践",
+       "name": "通过对泰康二十周年打造核心竞争力的解读，回答企业如何才能形成自己的核心竞争力",
+       "finish": false,
+       "externalDataId": "e01c9c82-cd2c-4ec5-8c0e-e2f31ebb6f29",
+       "rules": {
+        "videoWatchDuration": null,
+        "documentWatchDuration": null,
+        "enableAicoach": 1
+       },
+       "allowStudy": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": 5026532,
+   "name": "第5章 企业总体战略",
+   "progress": 0.0,
+   "planFinish": 1,
+   "planCount": 13,
+   "groups": [
+    {
+     "group": "课前思考",
+     "allow": true,
+     "condition": "所有任务点闯关完成；每个视频完成观看",
+     "plans": [
+      {
+       "planId": 6286517,
+       "type": 10,
+       "typeName": "视频",
+       "name": "总体战略",
+       "finish": false,
+       "externalDataId": "ce3ab431ba6c418aaa2e1bbb2b7cb8b2",
+       "rules": {
+        "enableVideoComplated": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639796,
+       "type": 9,
+       "typeName": "思考题",
+       "name": "总体战略是方向性的选择，如何选择方向？",
+       "finish": true,
+       "externalDataId": "bb4d2bebd31e4c95925979a038a3b204",
+       "rules": {
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      }
+     ]
+    },
+    {
+     "group": "课中案例加理论学习",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639793,
+       "type": 8,
+       "typeName": "章节",
+       "name": "专业化战略",
+       "finish": false,
+       "externalDataId": "1199477688",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639798,
+       "type": 8,
+       "typeName": "章节",
+       "name": "专业化战略案例",
+       "finish": false,
+       "externalDataId": "1199477690",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639799,
+       "type": 8,
+       "typeName": "章节",
+       "name": "多元化战略",
+       "finish": false,
+       "externalDataId": "1199477691",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639800,
+       "type": 8,
+       "typeName": "章节",
+       "name": "专业化VS多元化案例分析",
+       "finish": false,
+       "externalDataId": "1199477692",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639801,
+       "type": 8,
+       "typeName": "章节",
+       "name": "一体化战略",
+       "finish": false,
+       "externalDataId": "1199477694",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639802,
+       "type": 8,
+       "typeName": "章节",
+       "name": "纵向一体化战略",
+       "finish": false,
+       "externalDataId": "1199477695",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639803,
+       "type": 8,
+       "typeName": "章节",
+       "name": "前向一体化战略案例",
+       "finish": false,
+       "externalDataId": "1199477696",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639804,
+       "type": 8,
+       "typeName": "章节",
+       "name": "横向一体化战略",
+       "finish": false,
+       "externalDataId": "1199477697",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639805,
+       "type": 8,
+       "typeName": "章节",
+       "name": "横向一体化战略案例",
+       "finish": false,
+       "externalDataId": "1199477698",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      }
+     ]
+    },
+    {
+     "group": "课后拓展提升",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639797,
+       "type": 15,
+       "typeName": "AI实践",
+       "name": "与格力电器总裁董明珠对话",
+       "finish": false,
+       "externalDataId": "b764f13f-f17b-4740-8c0f-7dd7984467b7",
+       "rules": {
+        "videoWatchDuration": null,
+        "documentWatchDuration": null,
+        "enableAicoach": 1
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639795,
+       "type": 4,
+       "typeName": "作业",
+       "name": "总体战略之专业化和多元化对比分析",
+       "finish": false,
+       "externalDataId": "40f0da9ee74945e299a3c6647fc59c63",
+       "rules": {
+        "enableWorkScore": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": 5026534,
+   "name": "第7章 企业国际化战略",
+   "progress": 0.0,
+   "planFinish": 0,
+   "planCount": 9,
+   "groups": [
+    {
+     "group": "课前思考",
+     "allow": true,
+     "condition": "所有任务点闯关完成；每个视频完成观看；每篇文档完成阅读",
+     "plans": [
+      {
+       "planId": 6185082,
+       "type": 10,
+       "typeName": "视频",
+       "name": "国际化战略",
+       "finish": false,
+       "externalDataId": "c9d18346d6f646eea75b60f97d0da9a7",
+       "rules": {
+        "enableVideoComplated": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639819,
+       "type": 11,
+       "typeName": "文档",
+       "name": "吉利汽车的国际化之路",
+       "finish": false,
+       "externalDataId": "265520b93bfb449eb21828e1480c4fe0",
+       "rules": {
+        "videoWatchDuration": null,
+        "enableDocumentWatchDuration": 1,
+        "documentWatchDuration": 10.0
+       },
+       "allowStudy": true
+      }
+     ]
+    },
+    {
+     "group": "课中理论加案例学习",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639818,
+       "type": 8,
+       "typeName": "章节",
+       "name": "国际化战略的背景",
+       "finish": false,
+       "externalDataId": "1199477709",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639820,
+       "type": 8,
+       "typeName": "章节",
+       "name": "国际化战略案例",
+       "finish": false,
+       "externalDataId": "1199477710",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639822,
+       "type": 8,
+       "typeName": "章节",
+       "name": "国际化战略的环境分析",
+       "finish": false,
+       "externalDataId": "1199477711",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639823,
+       "type": 8,
+       "typeName": "章节",
+       "name": "国际贸易体制案例",
+       "finish": false,
+       "externalDataId": "1199477712",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      },
+      {
+       "planId": 5639824,
+       "type": 8,
+       "typeName": "章节",
+       "name": "国际化战略的进入形式",
+       "finish": false,
+       "externalDataId": "1199477713",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": true
+      },
+      {
+       "planId": 5639825,
+       "type": 8,
+       "typeName": "章节",
+       "name": "国际化战略的风险",
+       "finish": false,
+       "externalDataId": "1199477714",
+       "rules": {
+        "enableChapterFinishPercent": 1,
+        "videoWatchDuration": null,
+        "documentWatchDuration": null
+       },
+       "allowStudy": false
+      }
+     ]
+    },
+    {
+     "group": "课后",
+     "allow": false,
+     "condition": "需完成上个分组",
+     "plans": [
+      {
+       "planId": 5639821,
+       "type": 15,
+       "typeName": "AI实践",
+       "name": "关注中美贸易战",
+       "finish": false,
+       "externalDataId": "dcf3f008-6078-4bb0-b0e9-2f8ae5265df5",
+       "rules": {
+        "videoWatchDuration": null,
+        "documentWatchDuration": null,
+        "enableAicoach": 1
+       },
+       "allowStudy": true
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "activities": [
+  {
+   "id": 8000174988959,
+   "type": 45,
+   "nameOne": "《企业战略管理》慕课学习补充提醒",
+   "nameFour": "09-12 10:36",
+   "url": "",
+   "status": 2
+  },
+  {
+   "id": 8000173942262,
+   "type": 45,
+   "nameOne": "《企业战略管理》线上开课温馨提醒",
+   "nameFour": "09-07 22:28",
+   "url": "",
+   "status": 2
+  },
+  {
+   "id": 8000173528732,
+   "type": 2,
+   "nameOne": "手势签到",
+   "nameFour": "09-04 11:46",
+   "url": "https://mobilelearn.chaoxing.com/page/sign/signIn?courseId=1000001&classId=1000002&activeId=8000173528732&fid=0&fromtype=taskEngine&returnType=11",
+   "status": 2
+  }
+ ],
+ "homework": {
+  "msg": "无效的用户",
+  "status": false
+ },
+ "exam": {
+  "msg": "无效的用户",
+  "status": false
+ },
+ "study_data": {
+  "overview": {
+   "error": "Expecting value: line 1 column 1 (char 0)"
+  },
+  "job": {
+   "error": "Expecting value: line 1 column 1 (char 0)"
+  },
+  "work": {
+   "error": "Expecting value: line 1 column 1 (char 0)"
+  },
+  "test": {
+   "error": "Expecting value: line 1 column 1 (char 0)"
+  },
+  "exam": {
+   "error": "Expecting value: line 1 column 1 (char 0)"
+  },
+  "ai-evaluate": {
+   "error": "Expecting value: line 1 column 1 (char 0)"
+  }
+ },
+ "chapters_total": 139,
+ "chapters_sample": [
+  {
+   "id": "1205494254",
+   "title": "1.1 数字人导引：《企业战略管理》是学什么？",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video"
+   ]
+  },
+  {
+   "id": "1197649513",
+   "title": "2.1 企业战略管理课程框架",
+   "jobCount": "2",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video",
+    "document"
+   ]
+  },
+  {
+   "id": "1197649514",
+   "title": "2.2 数字人导引：让我们一起学习成为CEO！",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video"
+   ]
+  },
+  {
+   "id": "1205494254",
+   "title": "1.1 数字人导引：《企业战略管理》是学什么？",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video"
+   ]
+  },
+  {
+   "id": "1197649491",
+   "title": "4.1 数字人导引：为什么要分析宏观环境？",
+   "jobCount": "2",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "document",
+    "video"
+   ]
+  },
+  {
+   "id": "1197649493",
+   "title": "4.3 外部因素评价(EFE)矩阵",
+   "jobCount": "2",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video",
+    "document"
+   ]
+  },
+  {
+   "id": "1197649496",
+   "title": "5.4 企业价值链",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "document"
+   ]
+  },
+  {
+   "id": "1197649526",
+   "title": "6.4.1 纵向一体化战略",
+   "jobCount": "2",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video",
+    "video"
+   ]
+  },
+  {
+   "id": "1197649531",
+   "title": "7.2.1 成本领先战略案例",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video"
+   ]
+  },
+  {
+   "id": "1197649522",
+   "title": "8.5 国际化战略的风险",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video"
+   ]
+  },
+  {
+   "id": "1206258976",
+   "title": "11.1 数字人导引：为什么要战略变革？",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video"
+   ]
+  },
+  {
+   "id": "1199477656",
+   "title": "12.6 战略管理如何做案例分析",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "document"
+   ]
+  },
+  {
+   "id": "1199477669",
+   "title": "12.16 同行业竞争者分析",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video"
+   ]
+  },
+  {
+   "id": "1199477681",
+   "title": "12.26 核心竞争力案例分析Ⅱ",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video"
+   ]
+  },
+  {
+   "id": "1199477694",
+   "title": "12.36 一体化战略",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "document"
+   ]
+  },
+  {
+   "id": "1199477705",
+   "title": "12.46 成本领先战略案例",
+   "jobCount": "1",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video"
+   ]
+  },
+  {
+   "id": "1199477716",
+   "title": "12.56 信息输入阶段",
+   "jobCount": "3",
+   "finished": false,
+   "need_unlock": false,
+   "jobTypes": [
+    "video",
+    "video",
+    "video"
+   ]
+  }
+ ],
+ "chapter_job_type_counter": {
+  "video": 17,
+  "document": 6
+ }
+}

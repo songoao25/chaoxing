@@ -1,0 +1,35 @@
+[
+ {
+  "url": "https://data-xxt.aichaoxing.com/analysis/ac_mark",
+  "params": {
+   "f": "readPoint",
+   "u": "100000001",
+   "d": "{\"r\":\"8de365fa6e1cfadab87524d4d43f21fd\",\"t\":\"doc\",\"l\":1,\"f\":4,\"p\":1,\"tp\":1,\"wc\":0,\"ic\":2,\"v\":2,\"s\":1,\"h\":0,\"ext\":\"{\\\"rwyq_doc\\\":194856526,\\\"pId\\\":5639766,\\\"oId\\\":\\\"8de365fa6e1cfadab87524d4d43f21fd\\\",\\\"mrId\\\":0}\"}",
+   "t": "20260916153057284",
+   "enc": "4fdace9af149df40cac1624dedf70397"
+  },
+  "_note": "已脱敏：uid 为占位值，enc 由脱敏后的参数按同一算法重算"
+ },
+ {
+  "url": "https://data-xxt.aichaoxing.com/analysis/ac_mark",
+  "params": {
+   "f": "readPoint",
+   "u": "100000001",
+   "d": "{\"r\":\"8de365fa6e1cfadab87524d4d43f21fd\",\"t\":\"doc\",\"l\":1,\"f\":4,\"p\":1,\"tp\":1,\"wc\":0,\"ic\":2,\"v\":2,\"s\":2,\"h\":0,\"ext\":\"{\\\"rwyq_doc\\\":194856526,\\\"pId\\\":5639766,\\\"oId\\\":\\\"8de365fa6e1cfadab87524d4d43f21fd\\\",\\\"mrId\\\":0}\"}",
+   "t": "20260916153127303",
+   "enc": "347bd8a5788de37d74f77341bd1240a1"
+  },
+  "_note": "已脱敏：uid 为占位值，enc 由脱敏后的参数按同一算法重算"
+ },
+ {
+  "url": "https://data-xxt.aichaoxing.com/analysis/ac_mark",
+  "params": {
+   "f": "readPoint",
+   "u": "100000001",
+   "d": "{\"r\":\"8de365fa6e1cfadab87524d4d43f21fd\",\"t\":\"doc\",\"l\":1,\"f\":4,\"p\":1,\"tp\":1,\"wc\":0,\"ic\":2,\"v\":2,\"s\":2,\"h\":0,\"ext\":\"{\\\"rwyq_doc\\\":194856526,\\\"pId\\\":5639766,\\\"oId\\\":\\\"8de365fa6e1cfadab87524d4d43f21fd\\\",\\\"mrId\\\":0}\"}",
+   "t": "20260916153157330",
+   "enc": "260aafd116f69677f06697fd54f009e8"
+  },
+  "_note": "已脱敏：uid 为占位值，enc 由脱敏后的参数按同一算法重算"
+ }
+]

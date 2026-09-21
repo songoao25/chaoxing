@@ -1,0 +1,367 @@
+# 任务板（机器可读）——多 Agent 认领用
+# 规则见 AGENTS.md 第 5 节：认领时改 owner + status，收尾时补 evidence。
+version: 1
+updated: 2026-09-16
+repo: chaoxing
+milestone: task-center-parity
+
+statuses: [ready, in_progress, blocked, done, wontfix]
+
+tasks:
+  - id: A-doc-reading-duration
+    title: 打通任务中心的文档阅读时长（2/5/10 分钟）
+    status: blocked
+    priority: P0
+    owner: codex
+    depends_on: [cap-doc-ac-mark]
+    blocked_by: 两轮真实 5 分钟验证均 HTTP 200 但任务引擎仍未累计完成，需直接浏览器请求/平台状态证据
+    context: |
+      文档任务点完成条件是 planBreakthroughSet.documentWatchDuration（分钟）。
+      阅读器每 30 秒向 data-xxt.aichaoxing.com/analysis/ac_mark 发一次 readPoint，
+      服务端据此累计时长。当前实现照发了，但连打 10 分钟 + readEnd 后任务点仍未完成。
+    files:
+      - api/task_center.py          # study_document / _send_read_point / _read_document_points
+      - tools/probe/04_文档阅读打点实验.py
+      - tests/test_task_center.py
+    steps:
+      - 按 CAPTURE-PROTOCOL 抓 2 条不同时间的 ac_mark（Copy as cURL）+ 页面 markDataStr
+      - 对比 d/t/enc，反推 enc（可能是 md5(d+t+固定盐) 或页面内 token 参与）
+      - 在 api/task_center.py 复现签名；保留"失败即不完成"的行为
+      - tools/probe/04 改为可配置 enc，跑通一个 5 分钟文档
+    acceptance: |
+      文档任务点在要求时长（±1 分钟）后 isFinish=true；
+      enc 错误时必须返回 False 并写日志，不得假装完成。
+    evidence:
+      - api/task_center.py：addPoint.js 兼容的 17 位时间戳、encodeURIComponent(d) + 排序参数 MD5 签名
+      - api/task_center.py：补齐浏览器跨域 ac_mark 的 Accept/Referer 请求头；打点 HTTP 失败不计完成
+      - tests/test_task_center.py：脱敏样例签名回归、请求头回归、打点 HTTP 失败不计完成
+      - make lint：当前 123 项离线单测全绿
+      - 真实探针两轮：各 11 次打点均 HTTP 200，readEnd 返回成功，但最终 isFinish=false、任务进度仍为 0/15
+      - 2026-09-21 两次完整真机复验（泰康/吉利，各 600 秒打点 + 结束时补 readEnd，等待 30/60/120 秒复查）：
+        平台仍未计入，isFinish=false；结论：时长类文档的计账缺的不是 readEnd，
+        需要对照阅读器 JS 的页面/滚动事件再查。已加 24 小时本地尝试台账，避免重复消耗真实阅读时间。
+
+  - id: B-chapter-plan-sync
+    title: 章节类任务点完成后的任务引擎同步（并入刷课流程）
+    status: in_progress
+    priority: P0
+    owner: dsh
+    depends_on: [cap-autopull]
+    blocked_by: null
+    context: |
+      数据来源已由 cap-autopull 取证：章节页（isTaskEngineNode=true → window.isEngineNode="1"）
+      的视频打点响应 / /mooc-ans/job/document 响应里带 stuJobInfo，父页面把它 POST 给
+      /userStudyPlan/autoPullChapterScore。CLI 侧现在是：
+      process_chapter(engine_info=True) → 打点带 courseEngineInfo → 捕获 stuJobInfo
+      → sync_chapter_plan() → wait_plan_finished() 复查。
+      真实账号已验收 1 个任务点（5639750，第1章 0.3333 → 0.5）。
+    files:
+      - api/task_center.py
+      - api/base.py                 # video_progress_log / finish_engine_document_job
+      - main.py                     # process_job / process_chapter / _complete_teaching_plan
+      - tools/probe/06_章节类任务点同步实验.py
+      - tests/test_task_center.py
+    steps:
+      - 在 task_center.py 里把章节类型加入 SUPPORTED_PLAN_TYPES（已完成）
+      - base.py 打点带 courseEngineInfo 并捕获 stuJobInfo；文档走 /mooc-ans/job/document（已完成）
+      - main.py 章节分支同步 + 复查（已完成）
+      - 真机验收第1章第二个章节任务点（kid=1199477654，视频需回看 787s）
+      - 文档路径（文档是章节最后一项任务点时）的真机验收
+    acceptance: |
+      章节类任务点在学习完成后，autoPullChapterScore 返回 result=true，
+      且重新读取 getPlanDataByGroupId 时 isFinish=true（唯一完成依据）。
+    evidence:
+      - docs/artifacts/capture_autopull.txt：真实 stuJobInfo + autoPullChapterScore 请求/响应
+      - api/base.py：engine_info 打点参数、stuJobInfo 捕获、curl 指纹回退、到结尾未通过则回看
+      - main.py / api/task_center.py：章节任务点接入刷课流程（SUPPORTED_PLAN_TYPES 含 PLAN_TYPE_CHAPTER）
+      - tests/test_task_center.py + tests/test_platform_fixes.py：133 项离线单测全绿
+      - 真实账号：5639750「企业战略管理课程框架」同步后 isFinish=true，第1章 0.3333 → 0.5
+      - 真实账号（CLI 全链路）：5639751「战略相关概念」回看 787s → stuJobInfo → autoPullChapterScore 被接受 → isFinish=true；第1章 0.5 → 0.6667，第 3 组解锁
+      - 剩余：文档作为"章节最后一项任务点"的路径只有离线单测，未真机验收（见任务 B2）
+
+  - id: C-homework
+    title: 任务中心作业（planType=4）自动作答
+    status: done
+    priority: P1
+    owner: dsh
+    depends_on: [B-chapter-plan-sync]
+    blocked_by: null
+    context: |
+      作业完成条件 enableWorkScore。章节测验的 mooc-ans/api/work 对课程级作业实测 403，
+      不能复用 study_work；新版作业页是 mooc2/work/dowork，提交接口 addStudentWorkNewWeb。
+    files:
+      - api/task_center.py          # study_homework / _fill_homework_answers
+      - api/decode.py               # decode_homework_page（新版页面解析）
+      - main.py                     # planType=4 分派
+      - tests/test_homework.py
+      - tools/probe/10_作业只读取证.py
+    steps:
+      - 真机取证作业学习页与提交表单（已完成，见 capture_homework.txt）
+      - 实现 decode_homework_page + TaskCenter.study_homework（已完成）
+      - 单测覆盖解析/作答/提交/失败分支（已完成）
+    acceptance: 作业提交成功且有分数（≥60），任务点 isFinish=true。
+    evidence:
+      - docs/artifacts/capture_homework.txt：getToStudyUrl → mooc2/work/task → 302 dowork →
+        form#submitForm（addStudentWorkNewWeb + token/totalQuestionNum）；api/work 对同一作业 403
+      - api/decode.py.decode_homework_page：题型在 answertype<id>（0/1/2/3/4）、选项取 aria-label、
+        题干按 DOM 顺序拼到 stem_answer 之前（真实页面 <p> 嵌在 <h3> 里，lxml 提前闭合 h3，只取 h3 会丢题干）
+      - api/task_center.py.study_homework：GET 学习页 → 解析 → 题库/ai_writer 作答 → confirm 门禁 →
+        POST addStudentWorkNewWeb + pyFlag/ua/formType/saveStatus/version；填空题按空提交（build_completion_fields）
+      - tests/test_homework.py：11 项离线回归（解析/题干乱序嵌套/成功提交字段/平台拒绝/无题目/
+        简答无写作器/confirm 无终端 + get_job_list 多页解析与去重）
+      - 2026-09-20 真机：第1章作业（4 多选 + 2 填空）由 CLI 自动作答并提交，平台判 **83.3 分**，
+        复查 isFinish=true（tools/probe/10 --submit-once）
+      - make lint：234 项离线单测全绿
+
+  - id: G-task-count-range
+    title: 任务中心「刷前 N 个教学任务」选择（配置 + CLI + 向导）
+    status: done
+    priority: P0
+    owner: dsh
+    depends_on: []
+    blocked_by: null
+    context: |
+      用户反馈：选了"只刷任务中心"后默认刷全部教学任务，没有像章节那样的数量选择。
+    files:
+      - main.py
+      - setup_wizard.py
+      - config_template.ini
+      - tests/test_task_center.py
+      - tests/test_study_scope.py
+    acceptance: |
+      配置 max_tasks_per_course / --max-tasks / 向导逐门询问都能限制本次处理的教学任务数；
+      被限制没处理的任务计入 limited，不算失败。
+    evidence:
+      - main.py：max_tasks_per_course 解析校验（与 max_points 同一 helper）、run_task_center_phase
+        按课程裁剪 pending、stats["limited"] 与汇总行
+      - setup_wizard.py：choose_courses 逐门问「章节任务点 / 教学任务」两个数量并写入账号配置
+      - tests/test_task_center.py：只刷前 1 个 / 0=全部 / 课程ID:数量 三种限制用例
+      - tests/test_study_scope.py：向导数量问答、配置写出、--yes 透传回归
+      - make lint：234 项离线单测全绿
+
+  - id: D-discussion-and-question
+    title: 思考题（9）自动作答（主题讨论 14 已完成）
+    status: ready
+    priority: P1
+    owner: null
+    depends_on: [B-chapter-plan-sync]
+    blocked_by: 思考题任务点都在锁定分组（第5章 1 个），发帖/提交接口未取证
+    context: |
+      主题讨论（14）已打通：groupweb 话题详情页 + getReplyList + addReplys，
+      真机已回复并被独立审计判定"像真人"（见 evidence）。本任务只剩思考题（9）：
+      完成规则无特殊字段，入口大概率是任务引擎的学习页（类似作业/思考题答题页），
+      需要等含思考题的分组解锁后抓一次取题/提交接口。
+    files:
+      - api/task_center.py
+      - api/ai_writer.py
+      - main.py
+    steps:
+      - 第5章"总体战略"分组解锁后，抓思考题学习页 URL、取题 JSON、提交接口
+      - 实现 study_question(plan)：ai_writer.answer 生成 → 提交 → 复查 isFinish
+      - 单测：生成器输入输出、提交失败不假装成功
+    acceptance: 思考题提交成功，任务点 isFinish=true，文本人工看不像 AI。
+    evidence:
+      - 主题讨论部分（2026-09-20 真机）：第2章「企业使命、愿景、目标的讨论」由 CLI 回复成功，
+        已有回复 20 条 → ai_writer 生成 133 字回复 → addReplys status=true，读回正文一致
+      - 两遍真人化审计：tools/audit 0 硬伤；独立上下文 Agent 结论"像真人，无需重写"
+      - 取证：docs/artifacts/capture_discussion.txt；接口实现见 api/task_center.py study_discussion
+      - 完成同步已复验：回复后约 3 分钟任务引擎 isFinish 翻转（22:28 false → 22:31 true）
+
+  - id: E-ai-practice-high-score
+    title: AI实践（思维阶梯）重答刷到 80~90 分
+    status: done
+    priority: P0
+    owner: dsh
+    depends_on: [cap-ai-practice]
+    blocked_by: null
+    context: |
+      入口：/ai-evaluate/v2/answer?publishRelationUuid=... → think-ladder SPA。
+      init(POST form-urlencoded) → load-data(GET) → main-talk(SSE, 表单 userMessage=...) → submit(POST form-urlencoded 空体)。
+      当前 answerScore=30，remainAnswerCount=98，可反复重答。
+    files:
+      - api/task_center.py          # 新增 study_ai_practice
+      - api/ai_writer.py            # 高分回答生成（可加 mode=exam）
+      - tests/test_task_center.py
+    steps:
+      - 抓一次真实作答：main-talk URL + 表单体 + SSE 前几条 chunk；再抓 submit
+      - 实现：load-data 取 dimensionList → 逐轮 SSE 作答（用 ai_writer 生成）→ submit
+      - 读回 answerScore，<85 就重新 init 再答，最多 5 轮
+      - 单测：SSE 解析、轮次控制、失败回退
+    acceptance: answerScore ≥ 85，且任务点保持 isFinish=true。
+    evidence:
+      - api/task_center.py：入口参数解析、load-data、init 续接、main-talk SSE、submit、**end-report 现算成绩**、分数读回、最多 N 轮重答；只有目标分数和任务状态都明确成功才完成
+      - api/task_center.py：提交后先请求 /ai-ans/ai-evaluate/think/end-report（成绩在这一步才算出来，实测不请求就永远"未评估"）
+      - api/task_center.py：同一道题最多试满一轮选项 + 连续两次没有新消息就收手提交（平台会把最后一道题无限推回）
+      - tests/test_task_center.py：SSE 字段解析、报告成绩解析（含被拆行的 JSON）、HTTP 200 业务失败、提交门禁、低分重答、平均分补答、空转收手
+      - 真机 2026-09-17（企业战略管理·开学第一课·publishRelationUuid 6f2061b1…）：
+        4 次练习各 100 分，练习平均分 81.7，平台成绩字段 answerScore=100，
+        任务 userTaskQualifyStatus=已达标、planFinishCount=3/3
+      - 独立上下文审计（2026-09-17）：结论"部分通过"，指出 1 个阻塞级（确认提示与键盘监听抢 stdin）
+        + 8 个一般问题；全部已修并补上回归（confirm 让位 stdin、报告出分不再长轮询、成绩不回落旧分、
+        未知题型编码不写小作文、失败任务点不再重试、编排级 AI实践正例、审计器禁止编造履历）
+      - make lint：187 项单测全绿
+
+  - id: cap-doc-ac-mark
+    title: 【抓包】文档 readPoint（ac_mark）
+    status: done
+    priority: P0
+    owner: codex
+    depends_on: []
+    blocked_by: null
+    context: 见 CAPTURE-PROTOCOL.md 第 2 节
+    deliverable: docs/artifacts/capture_doc_ac_mark.txt
+    acceptance: |
+      含 ≥2 条不同时间的完整 curl（带 enc）+ 对应页面 markDataStr 内容；
+      两条请求的 t/d/enc 差异清晰可对比。
+    evidence:
+      - docs/artifacts/capture_doc_ac_mark.txt：2 条不同时间的完整等价 cURL + markDataStr（Cookie/token 已脱敏）
+      - docs/artifacts/ac_mark_samples.json：3 条真实脱敏参数样例，enc 可由前端规则复现
+
+  - id: cap-autopull
+    title: 【抓包】章节同步 autoPullChapterScore
+    status: done
+    priority: P0
+    owner: dsh
+    depends_on: []
+    blocked_by: null
+    context: 见 CAPTURE-PROTOCOL.md 第 3 节
+    deliverable: docs/artifacts/capture_autopull.txt
+    acceptance: 含完整 JSON 请求体（uid/finishCount/clazzId/enc/time/jobCount/knowledgeId 真实值）+ 响应。
+    evidence:
+      - 已确认任务中心章节页源码：JSON 体字段为 encryTaskUserId、uid、finishCount、clazzId、enc、time、jobCount、knowledgeId；其中 JSON 使用原始 eTaskUserId，查询参数的编码变量不应直接复用
+      - 已补 api/task_center.py 与 tools/probe/06_章节类任务点同步实验.py 的请求体和响应判定，并加入 3 项离线回归
+      - 受控真实复验：补齐原始 encryTaskUserId 后，服务端错误从“参数信息有误”收敛为“enc不正确”，证明请求体结构已被识别；学习页 URL、utEnc、setlog encode、transfer/final enc、openc、card defaults 等候选值均被拒绝
+      - 2026-09-17 定位到下发方：/ananas/videojs-ext/videojs-ext.min.js 的 sendLog（视频打点响应）与 /ananas/ueditor/documentJob.js 的 finishJob（/mooc-ans/job/document 响应）在 window.parent.parent.isEngineNode=='1' 时把 stuJobInfo 交给 sendStuJobInfoMsg
+      - 真实浏览器（Chrome + Firefox 登录态）抓包：stuJobInfo = {"knowledgeId":1199477652,"uid":"<uid>","finishCount":3,"clazzId":"<clazzId>","enc":"<enc>","time":"<time>","jobCount":3}，autoPullChapterScore → {"code":200,"result":true,"message":"success"}
+      - 同步后复查：5639750「企业战略管理课程框架」isFinish=true，第1章进度 0.3333 → 0.5
+      - 详见 docs/artifacts/capture_autopull.txt（含 requests 403 / curl 200 的客户端指纹对比）
+
+  - id: D0-human-like-history
+    title: 跨篇"骨架指纹"治理：按账号保存历史提交并做去重/换骨架
+    status: ready
+    priority: P1
+    owner: null
+    depends_on: []
+    blocked_by: null
+    context: |
+      五轮独立真人化审计的结论：单篇能过规则，但同一账号连续提交会暴露"骨架指纹"
+      ——"课上＋讲/把＋知识点"开头、同一套示弱短语、结尾都落在一句味道句上。
+      生成侧看不到本账号历史，所以每次都从同一套模板里长出来，靠提示词治不了。
+    files:
+      - api/ai_writer.py
+      - api/task_center.py
+      - tests/test_human_likeness.py
+    steps:
+      - 在 ~/.chaoxing 下按账号保存最近 N 条已提交文本（讨论/思考题/AI实践），只存本地
+      - 生成前把最近的"开头骨架/结尾动作/口癖词"作为禁用项传给 HumanLikeWriter
+      - 生成后与历史做相似度检查，重复就换骨架重写
+      - 离线单测：历史禁词生效、相似度超阈值会重写
+    acceptance: |
+      同一账号连续生成 5 条以上，开头骨架/结尾动作不重复；
+      tests/test_human_likeness.py 覆盖历史去重逻辑；不把历史文本写进仓库。
+    evidence: []
+
+  - id: B2-doc-chapter-sync-verify
+    title: 章节同步的文档路径真机验收
+    status: ready
+    priority: P1
+    owner: null
+    depends_on: []
+    blocked_by: null
+    context: |
+      api/base.py 的 study_document(engine_info=True) 会调 /mooc-ans/job/document
+      并捕获 stuJobInfo，但只过了离线单测：还没有遇到"文档是本章最后一项任务点"的
+      真实场景（第1章第3组的文档「"中国平安"案例」已解锁，可用来验收）。
+    files:
+      - api/base.py
+      - tools/probe/06_章节类任务点同步实验.py
+    steps:
+      - 用第1章第3组的文档任务点（planType=11）跑一次 engine_info=True 的完整链路
+      - 确认 /mooc-ans/job/document 响应里确实带 stuJobInfo，且 autoPullChapterScore 被接受
+      - 确认 /ananas/job/document 与 /mooc-ans/job/document 不会把"没读过的文档"直接判完成
+    acceptance: |
+      文档类章节任务点在 sync 后 isFinish=true；若平台不下发 stuJobInfo，
+      则老老实实报"未同步"并给出证据，不改成假完成。
+    evidence: []
+
+  - id: cap-homework
+    title: 【抓包】作业取题与提交
+    status: blocked
+    priority: P1
+    owner: null
+    depends_on: [B-chapter-plan-sync]
+    blocked_by: 需先解锁含作业的分组
+    deliverable: docs/artifacts/capture_homework.txt
+    acceptance: 含学习页 URL、取题请求/响应、提交请求体（字段名齐全）。
+    evidence: []
+
+  - id: cap-discussion
+    title: 【抓包】讨论列表与发帖
+    status: done
+    priority: P1
+    owner: dsh
+    depends_on: [B-chapter-plan-sync]
+    blocked_by: null
+    deliverable: docs/artifacts/capture_discussion.txt
+    acceptance: 含帖子详情（其他同学回复文本）+ 发帖请求体。
+    evidence:
+      - docs/artifacts/capture_discussion.txt：getToStudyUrl → jumpToTopicDetail →
+        replysList 话题页（window.obj.topic + urlToken）→ getReplyList（20 条真实回复）→
+        POST /pc/invitation/{topicUuid}/addReplys（replyId=-1、topic_content、urlToken、bbsid）
+      - 真机提交一条回复成功，读回正文与生成文本一致
+
+  - id: cap-ai-practice
+    title: 【抓包】AI实践 main-talk 与 submit
+    status: in_progress
+    priority: P0
+    owner: codex
+    depends_on: []
+    blocked_by: null
+    deliverable: docs/artifacts/capture_ai_practice.txt
+    acceptance: 含 main-talk 完整表单体 + SSE 前 5 条 chunk + submit 请求。
+    evidence:
+      - 2026-09-16：通过当前课程 think-ladder 前端 bundle 确认 init/load-data/main-talk/submit 的 URL、参数名、表单类型与 SSE 字段；已做一次受控 main-talk 请求，未提交
+
+  - id: H-docs-registry
+    title: 维护交接文档与任务板（每轮必做）
+    status: done
+    priority: P2
+    owner: codex
+    depends_on: []
+    blocked_by: null
+    context: 每轮开工/收工都要更新 TASKS.yaml 与 SESSION-LOG.md
+    files: [docs/handoff/TASKS.yaml, docs/handoff/TASKS.md, docs/handoff/SESSION-LOG.md]
+    acceptance: 新人能在 5 分钟内从 HANDOFF.md 找到下一步。
+    evidence:
+      - 已同步 README、AGENTS.md、config_template.ini、docs/ARCHITECTURE.md、docs/任务中心与章节分类.md 的当前支持范围、提交模式和未验证边界
+      - 已更新 HANDOFF.md、TASKS.yaml、TASKS.md、SESSION-LOG.md；保留 cap-autopull、cap-ai-practice 与 E 的真实证据阻塞状态
+      - make lint：编译检查 + 123 项离线单测全绿；make status：当前账号任务中心快照可读
+
+  - id: F-wizard-study-scope
+    title: 向导显式选择刷课范围（章节 / 任务中心）
+    status: done
+    priority: P0
+    owner: dsh
+    depends_on: []
+    blocked_by: null
+    context: |
+      章节（目录）和任务中心·教学任务是两套独立入口，但 cx 向导登录后从不询问刷什么，
+      直接吃全局配置默认值（task_center=true）：用户找不到"只刷章节 / 只刷任务中心"的入口，
+      cx --yes 也没有真的跳过向导确认，与文档不符。
+    files:
+      - setup_wizard.py
+      - main.py
+      - tests/test_study_scope.py
+      - config_template.ini
+    acceptance: |
+      向导登录后必须显式选一次范围；选择结果写进本次账号配置；
+      只刷任务中心时不读章节列表；两个开关都关时启动即停止（不静默空跑）。
+    evidence:
+      - setup_wizard.py：`choose_study_scope()` 三选项（回车默认 1=章节+任务中心）、只刷任务中心时跳过
+        "每门课刷几个任务点"、`build_config()` 写入 chapter_study/task_center、确认页显示范围、
+        `cx --yes` 跳过确认并透传给 main.py
+      - main.py：`chapter_study` 配置 + `--chapters/--no-chapters`、`_chapter_study_enabled()`（命令行>配置>默认开）、
+        只刷任务中心时跳过章节读取/刷课与章节学习次数、两开关全关时 hard_stop
+      - tests/test_study_scope.py：14 项离线单测（开关优先级、CLI 参数、配置文件解析、向导映射、
+        写出配置、向导主流程：先问范围再选课 / ask_points / --yes 透传 / 取消不跑）
+      - make lint：201 项离线单测全绿（187 → 201）

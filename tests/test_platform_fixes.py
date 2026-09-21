@@ -656,5 +656,97 @@ class VideoSerialTestCase(unittest.TestCase):
         self.assertGreater(self.counter["max"], 1)
 
 
+class VideoReplayTestCase(unittest.TestCase):
+    """进度已到结尾但平台未通过时，必须从头回看（决 D3：不够就回看）"""
+
+    def test_full_but_unpassed_video_replays_from_start(self):
+        from unittest import mock
+        from api import base as base_mod
+
+        cx = base_mod.Chaoxing()
+        recorded = []
+        state = {"calls": 0}
+
+        def fake_log(session, course, job, job_info, dtoken, duration, playing,
+                     _type="Video", **kwargs):
+            recorded.append(playing)
+            state["calls"] += 1
+            # 第 1 次是"瞬间完成"检查；回看后的第一次心跳就让它通过
+            return state["calls"] >= 2, 200
+
+        class Sess:
+            cookies = {}
+
+            def get(self, url, **kwargs):
+                class R:
+                    status_code = 200
+
+                    @staticmethod
+                    def json():
+                        return {"status": "success", "dtoken": "d", "duration": 100}
+
+                return R()
+
+        job = {"jobid": "j", "objectid": "o", "otherinfo": "nodeId_k",
+               "videoFaceCaptureEnc": "", "attDuration": "", "attDurationEnc": "",
+               "rt": "1", "playTime": 100000, "name": "测试视频"}
+        with mock.patch.object(base_mod.SessionManager, "get_session", return_value=Sess()), \
+             mock.patch.object(cx, "video_progress_log", side_effect=fake_log), \
+             mock.patch.object(base_mod.random, "uniform", return_value=0), \
+             mock.patch.object(base_mod.time, "sleep", return_value=None):
+            result = cx._study_video(
+                {"clazzId": "1", "courseId": "2", "cpi": "3"}, job, {}, 1.0
+            )
+
+        self.assertEqual(result, base_mod.StudyResult.SUCCESS)
+        self.assertEqual(recorded[0], 100)
+        self.assertTrue(
+            any(p < 100 for p in recorded[1:]),
+            "回看后必须从更早的位置重新上报，实际序列: %s" % recorded,
+        )
+
+    def test_video_not_at_end_keeps_normal_playback(self):
+        from unittest import mock
+        from api import base as base_mod
+
+        cx = base_mod.Chaoxing()
+        recorded = []
+        state = {"calls": 0}
+
+        def fake_log(session, course, job, job_info, dtoken, duration, playing,
+                     _type="Video", **kwargs):
+            recorded.append(playing)
+            state["calls"] += 1
+            return state["calls"] >= 2, 200
+
+        class Sess:
+            cookies = {}
+
+            def get(self, url, **kwargs):
+                class R:
+                    status_code = 200
+
+                    @staticmethod
+                    def json():
+                        return {"status": "success", "dtoken": "d", "duration": 100}
+
+                return R()
+
+        job = {"jobid": "j", "objectid": "o", "otherinfo": "nodeId_k",
+               "videoFaceCaptureEnc": "", "attDuration": "", "attDurationEnc": "",
+               "rt": "1", "playTime": 30000, "name": "测试视频"}
+        with mock.patch.object(base_mod.SessionManager, "get_session", return_value=Sess()), \
+             mock.patch.object(cx, "video_progress_log", side_effect=fake_log), \
+             mock.patch.object(base_mod.random, "uniform", return_value=0), \
+             mock.patch.object(base_mod.time, "sleep", return_value=None):
+            result = cx._study_video(
+                {"clazzId": "1", "courseId": "2", "cpi": "3"}, job, {}, 1.0
+            )
+        self.assertEqual(result, base_mod.StudyResult.SUCCESS)
+        # 没有到结尾：第一次心跳仍然是原始进度（30s），不触发回看
+        self.assertEqual(recorded[0], 100)
+        self.assertEqual(recorded[1], 30)
+
+
 if __name__ == "__main__":
     unittest.main()

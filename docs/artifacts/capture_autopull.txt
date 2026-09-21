@@ -1,0 +1,124 @@
+# 抓包证据：任务引擎「章节」任务点同步（autoPullChapterScore）
+
+- 日期：2026-09-17
+- 账号：173****6569（账号已脱敏；uid=<uid>，fid=<fid>）
+- 课程：企业战略管理 courseId=<courseId> clazzId=<clazzId> cpi=<cpi>
+- 任务：教学任务 id=5026526（第1章），章节类任务点 planId=5639750「企业战略管理课程框架」kid=1199477652
+- 抓包方式：本机 Google Chrome（headless，Playwright 驱动）+ Firefox 已登录 cookie；
+  打开 `https://mooc1.chaoxing.com/mooc-ans/mycourse/studentstudy?...&isTaskEngineNode=true`，
+  真实播放 696s 视频到结束。原始记录（含完整日志）保存在执行者本机 /tmp/capture_autopull.json。
+- 脱敏说明：Cookie / p_auth_token / 手机号已全部去除；dtoken、enc 是平台按会话签发的一次性值，
+  这里保留结构作为样例，**不能复用**。
+
+---
+
+## 1. 来源链路（页面源码位置）
+
+| 步骤 | 文件 / 页面 | 关键代码 |
+| --- | --- | --- |
+| 打开章节页 | `/mooc-ans/mycourse/studentstudy?...&isTaskEngineNode=true` | 页面内联脚本：`window.isEngineNode = "1"`；`function sendStuJobInfoMsg(data){ window.opener?.postMessage({module:"KNOWLEDGE", type:'JOB_FINISH_INFO', data}, '*') }` |
+| 视频完成 | `/ananas/videojs-ext/videojs-ext.min.js` 的 `sendLog` 回调 | 打点响应 JSON 里 `allowSendStuJobInfoMsg === true` 且 `window.parent.parent.isEngineNode == '1'` 时，调用 `window.parent.parent.sendStuJobInfoMsg(resp.stuJobInfo)` |
+| 文档完成 | `/ananas/ueditor/documentJob.js` 的 `finishJob()` | `GET /mooc-ans/job/document?jobid=&knowledgeid=&courseid=&clazzid=&jtoken=&checkMicroTopic=true&microTopicId=&courseEngineInfo=true`，响应里同样带 `allowSendStuJobInfoMsg` / `stuJobInfo` |
+| 父页面转发 | `https://task.chaoxing.com/userStudyPlan/myPlanList?encryTaskUserId=...` 内联脚本 | 收到 `content.type === 'JOB_FINISH_INFO' && content.module === 'KNOWLEDGE'` 后，把 `content.data` 的 7 个字段 + `encryTaskUserId` POST 到 `/userStudyPlan/autoPullChapterScore` |
+
+---
+
+## 2. 视频打点响应（章节最后一项任务点完成的那一刻）
+
+请求（浏览器，参数与 CLI 的 `video_progress_log` 完全一致）：
+
+```
+GET https://mooc1.chaoxing.com/mooc-ans/multimedia/log/a/<cpi>/<dtoken>
+    ?clazzId=<clazzId>
+    &playingTime=232
+    &duration=696
+    &clipTime=0_696
+    &objectId=011155377179e72459aae8a97edbfbe8
+    &otherInfo=nodeId_1199477652-cpi_<cpi>-rt_d-ds_0-ff_1-be_0_0-vt_1-v_6-enc_<...>
+    &jobid=1548984627901674
+    &userid=<uid>
+    &isdrag=3
+    &view=pc
+    &enc=<enc>          # = md5([clazzId][userid][jobid][objectId][playingTime*1000][d_yHJ!$pdA~5][duration*1000][0_696])
+    &rt=0.9
+    &videoFaceCaptureEnc=<...>
+    &dtype=Video
+    &_t=<毫秒时间戳>
+    &attDuration=696
+    &attDurationEnc=<...>
+    &courseEngineInfo=true
+```
+
+响应（**重点**：`stuJobInfo` 就是 `autoPullChapterScore` 的请求体来源）：
+
+```json
+{
+  "isPassed": true,
+  "allowSendStuJobInfoMsg": true,
+  "videoTimeLimit": false,
+  "hasJobLimit": false,
+  "stuJobInfo": {
+    "knowledgeId": 1199477652,
+    "uid": "<uid>",
+    "finishCount": 3,
+    "clazzId": "<clazzId>",
+    "enc": "<enc>",
+    "time": "<time>",
+    "jobCount": 3
+  }
+}
+```
+
+## 3. 父页面发出的同步请求
+
+```http
+POST https://task.chaoxing.com/userStudyPlan/autoPullChapterScore
+Content-Type: application/json; charset=UTF-8
+
+{
+  "encryTaskUserId": "<encryTaskUserId>",
+  "uid": "<uid>",
+  "finishCount": 3,
+  "clazzId": "<clazzId>",
+  "enc": "<enc>",
+  "time": "<time>",
+  "jobCount": 3,
+  "knowledgeId": 1199477652
+}
+```
+
+响应：
+
+```json
+{"code": 200, "result": true, "message": "success"}
+```
+
+## 4. 复查结果（唯一完成依据）
+
+```
+GET/POST /userStudyPlan/getPlanDataByGroupId
+  5639750「企业战略管理课程框架」 planType=8  isFinish=true   ← 同步前为 false
+第1章 taskStudyProgress: 0.3333 → 0.5（planFinishCount 2 → 3，planCount 6）
+```
+
+## 5. 踩坑记录：Python requests 打点 403，curl / 浏览器 200
+
+2026-09-17 实测：同一时刻、同一个 URL、同一套查询参数与 Cookie、同一个 User-Agent：
+
+| 客户端 | HTTP | 响应 |
+| --- | --- | --- |
+| Google Chrome（headless，真实播放） | 200 | `{"isPassed":...}` |
+| Python `requests`（urllib3 / OpenSSL） | **403** | `【9011】很抱歉，您没有权限访问这个页面！code=6` |
+| 系统 `curl`（SecureTransport / LibreSSL，HTTP/1.1） | 200 | `{"isPassed":...}` |
+
+结论：这是**客户端指纹级拦截**（TLS/HTTP 客户端特征），不是账号风控、不是参数错误，也不是 HTTP/2 的问题。
+CLI 侧的处理：`api/base.py` 的 `video_progress_log` 在 requests 返回 403 时，用 `_curl_get()`
+以完全相同的参数与 Cookie 走一次 curl（cookie 通过 stdin 传给 curl，不出现在命令行），
+重放成功则继续按正常响应处理；curl 也失败才走原来的验证码/403 分支。
+
+## 6. 尚未取得的部分
+
+- `allowSendStuJobInfoMsg` 是"每次章节完成都会下发"还是"只在未同步时下发"未验证；
+  实现上必须在拿不到 `stuJobInfo` 时**不伪造 enc**，直接等任务引擎复查。
+- 文档路径（`/mooc-ans/job/document` 返回 `stuJobInfo`）只做了源码定位与受控调用，
+  缺少"文档是本章最后一项任务点"时的完整抓包；CLI 已有等价实现但未真机验收。

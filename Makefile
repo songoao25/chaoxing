@@ -1,0 +1,29 @@
+# 常用命令：给人和 Agent 共用
+PY := ./.venv/bin/python
+.PHONY: help test lint compile status classify probes doctor
+
+help:  ## 列出所有命令
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+
+test:  ## 跑全量单测（离线）
+	$(PY) -m unittest discover -s tests -t .
+
+compile:  ## 语法编译检查
+	$(PY) -m compileall -q api main.py tools tests
+
+lint: compile test  ## 提交前必跑：编译 + 单测
+
+status:  ## 当前账号任务中心进度快照（只读）
+	$(PY) tools/probe/02_当前任务状态快照.py
+
+classify:  ## 平台结构分类总表（只读，会抽样请求）
+	$(PY) tools/probe/01_分类总表.py
+
+probes:  ## 编译检查所有探针脚本
+	$(PY) -m py_compile tools/probe/*.py
+
+doctor:  ## 环境自检
+	@echo "python : $$($(PY) -V)"
+	@echo "venv   : $$(test -x $(PY) && echo ok || echo missing)"
+	@echo "data   : $$(test -d $$HOME/.chaoxing && echo $$HOME/.chaoxing || echo 'missing (~/.chaoxing)')"
+	@$(PY) -c "import requests, bs4, loguru, tqdm; print('deps   : ok')"

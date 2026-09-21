@@ -115,7 +115,7 @@ def _check_answer_provider(tiku_config):
             return []
         return [{
             "title": "没有配置答题方式（章节测验会被跳过）",
-            "details": "  所有章节测验 / 单元测验都不会真的作答，会被直接标记完成。\n"
+            "details": "  所有章节测验都不会真的作答，这些任务点会显示未完成。\n"
                        "  需要答题解锁的章节会卡住刷不下去。",
             "fix": "  运行 cx setup 选择答题方式（推荐第 1 项 DeepSeek AI）",
         }]

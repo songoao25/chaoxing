@@ -1,0 +1,60 @@
+# 文档 readPoint（ac_mark）证据
+
+## 来源与脱敏说明
+
+- 课程：企业战略管理；文档：第 3 章“科大讯飞”上市十年的变与不变。
+- 以下参数来自上一轮已保存的真实脱敏样例 `ac_mark_samples.json`，并按其中的完整参数重组成可重放的等价 cURL。
+- 这是参数级证据，不冒充本轮 Firefox DevTools 的直接“Copy as cURL”；本机 Firefox DevTools 当前报 `No such JSProcessActor 'DevToolsProcess'`。
+- Cookie、uid、markDataStr 中的 token 均已脱敏（uid → `<uid>`）；不要将真实 Cookie 或 token 写入仓库。
+
+## 请求 1（约 2026-09-16 15:30:57）
+
+```sh
+curl 'https://data-xxt.aichaoxing.com/analysis/ac_mark' \
+  -G \
+  -H 'Accept: */*' \
+  -H 'Referer: https://pan-yz.chaoxing.com/' \
+  -H 'Cookie: <REDACTED>' \
+  --data-urlencode 'f=readPoint' \
+  --data-urlencode 'u=<uid>' \
+  --data-urlencode 'd={"r":"8de365fa6e1cfadab87524d4d43f21fd","t":"doc","l":1,"f":4,"p":1,"tp":1,"wc":0,"ic":2,"v":2,"s":1,"h":0,"ext":"{\"rwyq_doc\":194856526,\"pId\":5639766,\"oId\":\"8de365fa6e1cfadab87524d4d43f21fd\",\"mrId\":0}"}' \
+  --data-urlencode 't=20260916153057284' \
+  --data-urlencode 'enc=<enc>'
+```
+
+## 请求 2（约 2026-09-16 15:31:27）
+
+```sh
+curl 'https://data-xxt.aichaoxing.com/analysis/ac_mark' \
+  -G \
+  -H 'Accept: */*' \
+  -H 'Referer: https://pan-yz.chaoxing.com/' \
+  -H 'Cookie: <REDACTED>' \
+  --data-urlencode 'f=readPoint' \
+  --data-urlencode 'u=<uid>' \
+  --data-urlencode 'd={"r":"8de365fa6e1cfadab87524d4d43f21fd","t":"doc","l":1,"f":4,"p":1,"tp":1,"wc":0,"ic":2,"v":2,"s":2,"h":0,"ext":"{\"rwyq_doc\":194856526,\"pId\":5639766,\"oId\":\"8de365fa6e1cfadab87524d4d43f21fd\",\"mrId\":0}"}' \
+  --data-urlencode 't=20260916153127303' \
+  --data-urlencode 'enc=<enc>'
+```
+
+## 页面 markDataStr（对应资源）
+
+```json
+{
+  "resourceID": "8de365fa6e1cfadab87524d4d43f21fd",
+  "resourceType": "doc",
+  "from": 4,
+  "passportUID": "<uid>",
+  "t": "20260916152900",
+  "location": 1,
+  "curPage": 1,
+  "totalPage": 1,
+  "ext": "{\"rwyq_doc\":194856526,\"pId\":5639766,\"oId\":\"8de365fa6e1cfadab87524d4d43f21fd\",\"mrId\":0}",
+  "token": "<REDACTED>"
+}
+```
+
+## 对比结论
+
+- 两条请求的 `d` 仅 `s` 从 `1` 变为 `2`，`t` 是 17 位毫秒时间戳，`enc` 随之变化。
+- 对参数名排序后，使用 `encodeURIComponent(d)` 的值与 `f/u/t` 拼接，再追加前端盐 `NrRzLDpWB2JkeodIVAn4`，其 MD5 分别得到上面的两条 `enc`。

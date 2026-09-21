@@ -1,14 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "chaoxing"
 version = "3.1.3"
-description = "超星学习通/超星尔雅/泛雅超星全自动无人值守完成任务点"
+description = "超星学习通/超星雅尔/泛雅超星全自动无人值守完成任务点（命令行，含任务中心）"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.13,<4.0"
 dynamic = ["dependencies"]
 
 [tool.setuptools]
-py-modules = []
+py-modules = ["main", "setup_wizard"]
 
 [tool.setuptools.dynamic]
 dependencies = {file=["requirements.txt"]}

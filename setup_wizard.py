@@ -6,9 +6,10 @@
   1. 检查/配置 DeepSeek API Key（实时验证有效性）
   2. 显示用户列表：选一个直接开始，或加入新账号，或管理账号
   3. 登录（用保存的账密，不用重输）
-  4. 选课（每次都手动选，不沿用上次）
-  5. 逐门课程设置要刷几个任务点（每次都手动填）
-  6. 开始刷课
+  4. 选刷什么：章节（目录）/ 任务中心·教学任务（两套独立入口）
+  5. 选课（每次都手动选，不沿用上次）
+  6. 逐门课程设置本次范围：章节前几个 / 教学任务前几个（不刷的那类不问）
+  7. 开始刷课
 
 安全设计：
   任何时候输入 q / quit / exit 都能立即退出，防止刷错课。
@@ -119,7 +120,8 @@ def ask(prompt, default=None, allow_empty=False):
 
 
 def ask_yes_no(prompt, default_no=True):
-    tip = "  [y/n，q 退出]"
+    # 把默认值写进提示：回车 = 默认（危险动作默认不继续）
+    tip = "  [y/N，q 退出]" if default_no else "  [Y/n，q 退出]"
     ans = _read_line(prompt, tip).lower()
 
     if ans in QUIT_WORDS:
@@ -449,7 +451,7 @@ def setup_answer_mode(force=False):
             m[2] for m in ANSWER_MODES
             if m[1] == provider
         ) or (provider or "不答题")
-        print(f"  答题方式：{label}  （已配置，如需修改请运行 cx setup）")
+        print(f"  答题方式：{label}（已配置，如需修改请运行 cx setup）")
         return provider, existing
 
     cur_key = cfg.get("tiku", "key", fallback="") if cfg.has_section("tiku") else ""
@@ -654,77 +656,64 @@ def ensure_api_key(force=False):
 
 # ==================== 全局偏好 ====================
 
+# 推荐刷课配置：不再逐项询问用户，直接用最稳的一套。
+# 有观看时长要求的视频在代码里会自动 1 倍速，所以这里的 2x 只影响"播完即可"的视频。
+RECOMMENDED_PREFS = {
+    "speed": "2",
+    "jobs": "4",
+    "notopen_action": "continue",
+    "work_max_retries": "3",
+    "add_learning_count": "false",
+    "target_count": "100",
+    "task_center_submit_mode": "auto",
+}
+
+
+def prefs_summary() -> str:
+    """一行显示本次生效的推荐配置（只在启动时显示一遍，不询问）"""
+    return (
+        "  推荐配置：视频 " + RECOMMENDED_PREFS["speed"] + "x · 并发 "
+        + RECOMMENDED_PREFS["jobs"] + " · 未开放跳过 · 答错重做 "
+        + RECOMMENDED_PREFS["work_max_retries"] + " 次 · 提交自动"
+    )
+
+
 def ensure_global_prefs(force=False):
     """
-    全局设置：通知 + 刷课参数。
-    只在"还没配过"时问一次，之后存进 config.ini，不再打扰。
-    force=True（cx setup）时才重新询问。
+    全局设置：直接用推荐默认，不再逐项询问。
+
+    首次运行写入推荐配置；之后每次启动只显示一遍当前配置。
+    force=True（cx setup）同样不问刷课参数，只保留可选的通知配置。
     """
     cfg = read_config()
-    if not force:
-        done = cfg.get("cx", "prefs_done", fallback="") if cfg.has_section("cx") else ""
-        if done == "yes":
-            return
+    done = cfg.get("cx", "prefs_done", fallback="") if cfg.has_section("cx") else ""
 
-    # ---- 通知 ----
-    provider, url, tg = setup_notification(cfg)
+    if done == "yes" and not force:
+        print(prefs_summary())
+        return
 
-    # ---- 刷课参数 ----
-    title("刷课偏好")
-    print("  只问这一次，之后可用 cx setup 修改。")
-    print()
-    print("   ① 视频倍速        1 = 1倍   2 = 2倍 ✓推荐")
-    print("   ② 并发章节数      2   3   4 ✓推荐   6")
-    print("   ③ 未开放章节      1 = 跳过 ✓推荐   2 = 重试")
-    print("   ④ 答错重做次数    0 = 不重做  1  3 ✓推荐  5")
-    print("   ⑤ 章节学习次数    1 = 开启   2 = 不开启 ✓推荐")
-    print()
+    provider, url, tg = "", "", ""
+    if force:
+        # 只有"完成通知"是可选项，cx setup 里还能改；刷课参数不再询问。
+        provider, url, tg = setup_notification(cfg)
 
-    def ask_choice(label, valid, hint):
-        """统一的选项输入：非法就重问，不啰嗦"""
-        while True:
-            val = ask(label)
-            if val in valid:
-                return val
-            print("  ✘ " + hint)
-
-    speed = ask_choice("① 视频倍速", ("1", "2"), "只能填 1 或 2。")
-    jobs = ask_choice("② 并发章节数", ("2", "3", "4", "6"), "只能填 2 / 3 / 4 / 6。")
-    nopen = ask_choice("③ 未开放章节", ("1", "2"), "只能填 1 或 2。")
-    notopen = "continue" if nopen == "1" else "retry"
-    retries = ask_choice("④ 答错重做次数", ("0", "1", "3", "5"), "只能填 0 / 1 / 3 / 5。")
-    lc_choice = ask_choice("⑤ 章节学习次数", ("1", "2"), "只能填 1 或 2。")
-    lc = lc_choice == "1"
-    target = "100"
-    if lc:
-        while True:
-            target = ask("   目标次数（1~9999）")
-            if target.isdigit() and 1 <= int(target) <= 9999:
-                break
-            print("  ✘ 只能填 1~9999。")
-
-    # ---- 保存 ----
     update_config({
         ("tiku", "check_llm_connection"): "true",
-        ("common", "speed"): speed,
-        ("common", "jobs"): jobs,
-        ("common", "notopen_action"): notopen,
-        ("common", "work_max_retries"): retries,
-        ("common", "add_learning_count"): "true" if lc else "false",
-        ("common", "target_count"): target,
+        ("common", "speed"): RECOMMENDED_PREFS["speed"],
+        ("common", "jobs"): RECOMMENDED_PREFS["jobs"],
+        ("common", "notopen_action"): RECOMMENDED_PREFS["notopen_action"],
+        ("common", "work_max_retries"): RECOMMENDED_PREFS["work_max_retries"],
+        ("common", "add_learning_count"): RECOMMENDED_PREFS["add_learning_count"],
+        ("common", "target_count"): RECOMMENDED_PREFS["target_count"],
+        ("common", "task_center_submit_mode"): RECOMMENDED_PREFS["task_center_submit_mode"],
         ("cx", "prefs_done"): "yes",
         ("notification", "provider"): provider or "",
         ("notification", "url"): url or "",
         ("notification", "tg_chat_id"): tg or "XXXXXX",
     })
 
-    title("全局设置已保存")
-    print("  通知   : " + (provider if (provider and url) else "未配置"))
-    print("  倍速   : " + speed)
-    print("  并发   : " + jobs)
-    print("  未开放 : " + ("跳过" if notopen == "continue" else "重试"))
-    print("  答错重做: " + retries + " 次")
-    print("  学习次数: " + ("开启，目标 " + target if lc else "未开启"))
+    title("全局设置已保存（推荐配置）")
+    print(prefs_summary())
     print()
 
 
@@ -780,10 +769,7 @@ def use_existing(acc):
     """用已保存的账号登录（不重输密码，除非失败）"""
     label = acc.get("name") or acc["username"]
     title("登录 " + label)
-    print("  账号：" + acc["username"])
-    if acc.get("name"):
-        print("  姓名：" + acc["name"])
-    print("  （已保存密码，无需重新输入）")
+    print("  账号：" + acc["username"] + "（已保存密码，无需重输）")
 
     username = acc["username"]
     password = acc["password"]
@@ -833,9 +819,71 @@ def manage_accounts():
         print("  ✔ 已删除该账号（含其 cookie）")
 
 
-# ==================== 选课 / 选任务点 ====================
+# ==================== 刷课范围 / 选课 ====================
 
-def choose_courses(cx):
+# 选项 -> (刷章节, 刷任务中心)
+STUDY_SCOPES = {
+    "1": (True, True),
+    "2": (True, False),
+    "3": (False, True),
+}
+
+
+def choose_study_scope():
+    """
+    选择这次刷什么。
+
+    学习通里「章节（目录）」和「任务中心 · 教学任务」是两套互相独立的学习入口，
+    记录不互通，所以这里必须明确选一次，不能让配置文件里的默认值替用户决定。
+
+    返回 (chapters_enabled, task_center_enabled)。
+    """
+    title("刷什么内容")
+    print("  章节（目录）和任务中心的教学任务是两套独立记录，要分开刷。")
+    print()
+    print("   1. 章节 + 任务中心   ✓推荐")
+    print("   2. 只刷章节（目录）")
+    print("   3. 只刷任务中心（教学任务）")
+    print()
+
+    while True:
+        raw = ask("请选择", default="1")
+        if raw in STUDY_SCOPES:
+            break
+        print("  ✘ 只能填 1 / 2 / 3。")
+
+    chapters, task_center = STUDY_SCOPES[raw]
+    if chapters and task_center:
+        print("  → 章节 + 任务中心")
+    elif chapters:
+        print("  → 只刷章节")
+    else:
+        print("  → 只刷任务中心")
+    return chapters, task_center
+
+
+def _ask_count(prompt):
+    """
+    读一个"刷几个"的数量。
+
+    数字 = 只刷前几个未完成的；all / 全部 / 0（或直接回车）= 全部。
+    返回 0 表示全部。
+    """
+    while True:
+        raw = ask(prompt, default="all")
+        low = raw.strip().lower()
+        if low in ("all", "全部", "0"):
+            return 0
+        try:
+            n = int(low)
+            if n < 0:
+                raise ValueError
+            return n
+        except ValueError:
+            print("  ✘ 请填数字（如 3），或填 all 表示全部。")
+
+
+def choose_courses(cx, ask_points=True, ask_tasks=True):
     title("选择课程")
     print("  正在读取课程列表...")
 
@@ -886,49 +934,63 @@ def choose_courses(cx):
         chosen = uniq
 
     print("  已选：" + "、".join(c["title"] for c in chosen))
-    print()
 
-    # 逐门课程分别问（每次都必须明确输入，不沿用上次）
-    title("每门课刷几个任务点")
-    print("  填数字 = 只刷前几个未完成章节    填 all = 全部刷完")
+    # 两类都不刷的课程不存在；只刷一类时另一类就别问了
+    if not ask_points and not ask_tasks:
+        return [(c, 0, 0) for c in chosen]
+
+    title("每门课刷多少")
+    if ask_points:
+        print("  章节：数字 = 刷前几章，all = 全部")
+    if ask_tasks:
+        print("  教学任务：数字 = 刷前几个，all = 全部")
+    if ask_points and ask_tasks:
+        print("  两类互不影响。")
     print()
 
     plan = []
     for c in chosen:
-        while True:
-            raw = ask(_pad(c["title"], 24))
-            low = raw.strip().lower()
-            if low in ("all", "全部", "0"):
-                n = 0
-                break
-            try:
-                n = int(low)
-                if n < 0:
-                    raise ValueError
-                break
-            except ValueError:
-                print("  ✘ 请填数字（如 3），或填 all 表示全部。")
-        print("     " + ("→ 全部刷完" if n == 0 else ("→ 刷前 " + str(n) + " 个")))
-        plan.append((c, n))
+        print("  " + c["title"])
+        chapter_n = 0
+        task_n = 0
+        if ask_points:
+            chapter_n = _ask_count("章节（all=全部）")
+            print("    → " + ("全部章节" if chapter_n == 0 else ("前 " + str(chapter_n) + " 章")))
+        if ask_tasks:
+            task_n = _ask_count("教学任务（all=全部）")
+            print("    → " + ("全部教学任务" if task_n == 0
+                               else ("前 " + str(task_n) + " 个教学任务")))
+        plan.append((c, chapter_n, task_n))
 
     return plan
 
 
 # ==================== 主流程 ====================
 
-def build_config(username, password, plan):
+def build_config(username, password, plan, chapters_enabled=True, task_center_enabled=True):
     """写出本次要用的配置（用账号专属文件，不污染全局配置）"""
     paths.backup_config()
     text = _read_config_text()
 
-    course_ids = ",".join(str(c["courseId"]) for c, _ in plan)
-    mp = ",".join(str(c["courseId"]) + ":" + str(n) for c, n in plan)
+    course_ids = ",".join(str(c["courseId"]) for c, *_ in plan)
+    mp = ",".join(str(c["courseId"]) + ":" + str(chapter_n) for c, chapter_n, _ in plan)
+    mt = ",".join(str(c["courseId"]) + ":" + str(task_n) for c, _, task_n in plan)
 
     text = replace_value(text, "common", "username", username)
     text = replace_value(text, "common", "password", password)
     text = replace_value(text, "common", "course_list", course_ids)
     text = replace_value(text, "common", "notopen_action", "continue")
+    # 刷课参数用推荐值：向导不再逐项询问（用户要求"直接按默认最优"）
+    text = replace_value(text, "common", "speed", RECOMMENDED_PREFS["speed"])
+    text = replace_value(text, "common", "jobs", RECOMMENDED_PREFS["jobs"])
+    text = replace_value(text, "common", "work_max_retries", RECOMMENDED_PREFS["work_max_retries"])
+    text = replace_value(text, "common", "task_center_submit_mode",
+                         RECOMMENDED_PREFS["task_center_submit_mode"])
+    # 刷课范围：向导里选了什么就写什么，不再吃全局配置的默认值
+    text = replace_value(text, "common", "task_center", "true" if task_center_enabled else "false")
+    text = replace_value(text, "common", "chapter_study", "true" if chapters_enabled else "false")
     text = replace_value(text, "common", "max_points_per_course", mp)
+    text = replace_value(text, "common", "max_tasks_per_course", mt)
     text = replace_value(text, "common", "use_cookies", "false")
     # 保留 check_llm_connection=true：main.py 启动时会再验证一次 Key。
     # 本流程虽然刚验证过，但保持这道兜底更安全 —— 万一是旧配置/Key 中途失效，
@@ -1019,7 +1081,10 @@ def ask_after_run(label, cancelled=False):
 def _main_inner(force_setup=False):
     title("超星刷课")
     print()
-    print("  提示：任何时候输入 q 并回车，可以立即退出，不会刷任何课。")
+    print("  提示：输入 q 回车可随时退出（不会刷任何课）。")
+
+    # cx --yes：跳过向导最后的人工确认，并把 --yes 传给 main.py 的启动检查
+    auto_yes = any(a in ("--yes", "-y") for a in sys.argv[1:])
 
     # 1. 答题方式：已配置则静默沿用，只有 cx setup 才会重新询问
     ensure_api_key(force=force_setup)
@@ -1045,21 +1110,41 @@ def _main_inner(force_setup=False):
             title("继续刷课")
             print("  当前账号：" + label + "（" + username + "）")
 
-        # ---- 选课 + 逐门设置任务点数 ----
-        plan = choose_courses(cx)
+        # ---- 选刷课范围：章节（目录）/ 任务中心·教学任务 ----
+        chapters_enabled, task_center_enabled = choose_study_scope()
+
+        # ---- 选课 + 逐门设置本次范围（不刷的那一类不问） ----
+        plan = choose_courses(cx, ask_points=chapters_enabled, ask_tasks=task_center_enabled)
 
         # ---- 写该用户专属配置 ----
-        user_config = build_config(username, password, plan)
+        user_config = build_config(username, password, plan,
+                                   chapters_enabled, task_center_enabled)
 
         # ---- 最终确认 ----
+        if chapters_enabled and task_center_enabled:
+            scope_text = "章节 + 任务中心"
+        elif chapters_enabled:
+            scope_text = "只刷章节"
+        else:
+            scope_text = "只刷任务中心"
         title("请确认")
         print("  用户  " + label + "（" + username + "）")
+        print("  范围  " + scope_text)
         print("  课程")
-        for c, n in plan:
-            detail = "全部刷完" if n == 0 else ("刷前 " + str(n) + " 个任务点")
+        for c, chapter_n, task_n in plan:
+            if chapters_enabled and task_center_enabled:
+                cp = "章节全部" if chapter_n == 0 else ("章节前 " + str(chapter_n) + " 个")
+                tp = "教学任务全部" if task_n == 0 else ("教学任务前 " + str(task_n) + " 个")
+                detail = cp + " · " + tp
+            elif chapters_enabled:
+                detail = "全部刷完" if chapter_n == 0 else ("刷前 " + str(chapter_n) + " 个任务点")
+            else:
+                detail = "全部教学任务" if task_n == 0 else ("刷前 " + str(task_n) + " 个教学任务")
             print("        " + _pad(c["title"], 24) + detail)
         print()
-        if not ask_yes_no("确认开始刷课吗？", default_no=False):
+        if auto_yes:
+            print("  （--yes：跳过确认，直接开始）")
+        elif not ask_yes_no("确认开始刷课吗？（回车＝取消）", default_no=True):
             print("  已取消，本次不会刷任何课。")
             # 取消了不直接退出，问用户下一步
             action = ask_after_run(label, cancelled=True)
@@ -1075,7 +1160,7 @@ def _main_inner(force_setup=False):
         # ---- 开刷 ----
         # 关键：清掉上一轮可能残留的终止标志，否则新一轮会立刻停止
         interrupt.reset()
-        sys.argv = ["main.py", "-c", user_config]
+        sys.argv = ["main.py", "-c", user_config] + (["--yes"] if auto_yes else [])
         run_main()
 
         # ---- 刷完问下一步 ----
