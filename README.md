@@ -126,6 +126,44 @@ The wizard writes `~/.chaoxing/config.ini` for you; `config_template.ini` in the
 | `python main.py -c config.ini` | Run directly from `~/.chaoxing/config.ini` |
 | `python main.py -u <phone> -p <password> -l <ids>` | Run with an explicit account and courses. Avoid `-p` in a shared terminal — it lands in your shell history; the wizard or a config file is safer. |
 
+### What the numbers mean
+
+A number is **how many *unfinished* task points to do in this run** — already-finished ones are always skipped and never re-done.
+
+> Example: a course has 300 sections and the first 150 are already complete. Typing `150` means "do the next 150 unfinished points" (sections 151–300). It does **not** mean "only look at the first 150".
+
+`all` (or just Enter) means "finish everything that is still unfinished". Chapters and Task Center tasks are counted separately.
+
+### Pre-run scan (always on)
+
+Before every run the tool scans what is still missing — no checkbox, no extra prompt:
+
+```text
+  开始前扫描
+  ──────────────────────────────────────────────
+  企业战略管理
+    章节      139 节 · 已完成 37 · 待刷 102，从「1.1 数字人导引」接着刷
+    教学任务  7 个 · 已完成 2 · 待完成 3 · 未解锁 1
+    待完成    作业 1 · 主题讨论 1 · AI实践 1
+    提醒      · 1 个作业没做，本次会自动完成（简答题要等老师批改）
+    提醒      · 1 个讨论还没回复，本次会自动回复
+    提醒      · 还有 章节 1 被前面的分组锁着，完成前面的任务后会自动解锁
+  ──────────────────────────────────────────────
+```
+
+It only reads; nothing is submitted during the scan, and a scan failure never blocks the run.
+
+### Study scope
+
+| Choice | What runs |
+| --- | --- |
+| 1. 章节 + 任务中心 | Both entries (recommended) |
+| 2. 只刷章节 | Chapters only |
+| 3. 只刷任务中心 | Task Center teaching tasks only |
+| 4. 只刷讨论 | Only topic discussions (`planType=14`); everything else in the Task Center is skipped this run. Also available as `--only-discussion` |
+
+Topic discussions are part of the Task Center (they are one task-point type, not a separate menu item in the platform), so option 1/3 already includes them.
+
 ### Answering
 
 | Choice in the wizard | Config `provider` | Notes |

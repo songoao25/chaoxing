@@ -8,6 +8,8 @@
 ## [Unreleased]
 
 ### Added
+- Pre-run scan (always on, read-only): before every run the tool reports what is still unfinished — chapters, teaching tasks, locked groups, unsupported types, missing homework and discussions.
+- "只刷讨论" study scope (wizard option 4 / `--only-discussion`): only topic discussions are processed in this run.
 - Live answer trace: every question is printed as it is answered (`1. 选择  A`, `4. 简答  …（41 字）`) and written to the normal run log; discussion replies are shown in full.
 - Review step for AI-written content: every submitted short answer, homework essay, discussion reply and AI-practice answer is logged to `~/.chaoxing/reviews/` (daily Markdown + JSONL index) and can be browsed with `./cx review` (`--days N`, `--all`, `--list`).
 - Local submission ledger (`~/.chaoxing/submissions.json`) to avoid duplicate homework submissions and repeated document reading.
@@ -16,6 +18,7 @@
 - Probe configuration via `tools/probe/local.env` (gitignored) instead of hard-coded accounts.
 
 ### Changed
+- The number you type now clearly means "how many unfinished task points to do" (finished ones are always skipped); the wizard and README say so explicitly.
 - Console cleanup: one startup header instead of duplicated lines, condensed 403/captcha messages, quieter notification hints, and a one-line summary for failures.
 - Default parallel tasks lowered from 4 to 2 (fewer captcha/403 triggers); existing configs are migrated once.
 - Console/log noise reduction: the q-key hint prints once per run, chapter progress lines fit ~80 columns, AI-writer retries and per-question details are debug-only, long videos/documents print one progress line, and failures collapse into a single summary line.

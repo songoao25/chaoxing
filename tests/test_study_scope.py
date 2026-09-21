@@ -89,9 +89,10 @@ class WizardScopeTestCase(unittest.TestCase):
     """向导里的范围选择与写出的账号配置"""
 
     def test_scope_table(self):
-        self.assertEqual(wizard.STUDY_SCOPES["1"], (True, True))
-        self.assertEqual(wizard.STUDY_SCOPES["2"], (True, False))
-        self.assertEqual(wizard.STUDY_SCOPES["3"], (False, True))
+        self.assertEqual(wizard.STUDY_SCOPES["1"], (True, True, False))
+        self.assertEqual(wizard.STUDY_SCOPES["2"], (True, False, False))
+        self.assertEqual(wizard.STUDY_SCOPES["3"], (False, True, False))
+        self.assertEqual(wizard.STUDY_SCOPES["4"], (False, True, True))   # 只刷讨论
 
     def test_choose_scope_mapping(self):
         for choice, expect in wizard.STUDY_SCOPES.items():
@@ -104,7 +105,7 @@ class WizardScopeTestCase(unittest.TestCase):
         with mock.patch.object(wizard, "ask",
                                side_effect=lambda *a, **k: next(answers)), \
              mock.patch("builtins.print"):
-            self.assertEqual(wizard.choose_study_scope(), (True, False))
+            self.assertEqual(wizard.choose_study_scope(), (True, False, False))
 
     def test_choose_courses_skips_points_for_task_center_only(self):
         course = {"courseId": 1, "clazzId": 2, "title": "测试课"}
@@ -250,10 +251,10 @@ class WizardDisplayTestCase(unittest.TestCase):
     def test_key_information_is_shown(self):
         out = self._render(["1", "1", "2", "all", "n", "3"])   # 章节 + 任务中心
         self.assertIn("刷什么内容", out)
-        self.assertIn("章节：数字 = 刷前几章，all = 全部", out)
-        self.assertIn("教学任务：数字 = 刷前几个，all = 全部", out)
+        self.assertIn("数字 = 本次刷多少个「还没完成」的，已完成的自动跳过、不会重刷。", out)
+        self.assertIn("all 或直接回车 = 没完成的全部刷完。", out)
         self.assertIn("范围  章节 + 任务中心", out)
-        self.assertIn("章节前 2 个 · 教学任务全部", out)
+        self.assertIn("章节 2 个未完成 · 教学任务全部", out)
 
 
 class WizardFlowTestCase(unittest.TestCase):
@@ -269,8 +270,9 @@ class WizardFlowTestCase(unittest.TestCase):
             return [(course, 0, 0)]
 
         def fake_build_config(username, password, plan,
-                              chapters_enabled=True, task_center_enabled=True):
-            seen["scope"] = (chapters_enabled, task_center_enabled)
+                              chapters_enabled=True, task_center_enabled=True,
+                              only_discussion=False):
+            seen["scope"] = (chapters_enabled, task_center_enabled, only_discussion)
             return "/tmp/cx-test-run.ini"
 
         def fake_run_main():
@@ -291,26 +293,26 @@ class WizardFlowTestCase(unittest.TestCase):
         return seen
 
     def test_task_center_only_forwards_yes(self):
-        seen = self._run_flow(["setup_wizard.py", "--yes"], (False, True))
+        seen = self._run_flow(["setup_wizard.py", "--yes"], (False, True, False))
         self.assertFalse(seen["ask_points"])
         self.assertTrue(seen["ask_tasks"])
-        self.assertEqual(seen["scope"], (False, True))
+        self.assertEqual(seen["scope"], (False, True, False))
         self.assertEqual(seen["argv"], ["main.py", "-c", "/tmp/cx-test-run.ini", "--yes"])
 
     def test_chapters_and_task_center_without_yes(self):
-        seen = self._run_flow(["setup_wizard.py"], (True, True), submit_answer=True)
+        seen = self._run_flow(["setup_wizard.py"], (True, True, False), submit_answer=True)
         self.assertTrue(seen["ask_points"])
         self.assertTrue(seen["ask_tasks"])
-        self.assertEqual(seen["scope"], (True, True))
+        self.assertEqual(seen["scope"], (True, True, False))
         self.assertEqual(seen["argv"], ["main.py", "-c", "/tmp/cx-test-run.ini"])
 
     def test_chapters_only_does_not_ask_tasks(self):
-        seen = self._run_flow(["setup_wizard.py"], (True, False), submit_answer=True)
+        seen = self._run_flow(["setup_wizard.py"], (True, False, False), submit_answer=True)
         self.assertTrue(seen["ask_points"])
         self.assertFalse(seen["ask_tasks"])
 
     def test_cancel_does_not_run_main(self):
-        seen = self._run_flow(["setup_wizard.py"], (True, False), submit_answer=False)
+        seen = self._run_flow(["setup_wizard.py"], (True, False, False), submit_answer=False)
         self.assertNotIn("argv", seen)
 
 

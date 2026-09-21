@@ -15,7 +15,7 @@ from api.base import Chaoxing, Account, StudyResult
 from api.exceptions import LoginError, InputFormatError
 from api.configfile import read_config_file
 from api.guard import check_before_run, hard_stop, UserAbort
-from api import interrupt
+from api import interrupt, scan
 from api import paths
 from api.display import ChapterProgress, course_plan_summary, safe_console
 from api.logger import set_quiet as set_console_quiet
@@ -203,6 +203,10 @@ def parse_args():
     )
     parser.add_argument(
         "--retry-interval", type=float, default=1.0, help="重试等待时间, 单位秒 (默认1.0)"
+    )
+    parser.add_argument(
+        "--only-discussion", action="store_true",
+        help="只刷任务中心里的主题讨论（评论区），其它类型本次跳过",
     )
 
     parser.add_argument(
@@ -1101,7 +1105,8 @@ def _complete_teaching_plan(tc: TaskCenter, chaoxing: Chaoxing, course: dict, pl
 
 
 def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, task: dict,
-                           config: dict, point_map: dict) -> tuple:
+                           config: dict, point_map: dict,
+                           only_discussion: bool = False, stats: dict = None) -> tuple:
     """
     按分组顺序推进一个教学任务。
 
@@ -1120,6 +1125,7 @@ def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, tas
     if hasattr(tc, "waiting_confirmation"):
         tc.waiting_confirmation = False
 
+    skipped_other_ids = set()      # 只刷讨论时，同一计划多轮扫描只计一次
     for _ in range(TASK_CENTER_MAX_ROUNDS):
         if interrupt.should_stop():
             return False, unsupported
@@ -1135,6 +1141,7 @@ def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, tas
         skipped_failed = 0
         progressed = False
         saw_plan_data = False
+        skipped_other = 0
         for group in groups:
             plans = tc.get_plans(info["encryTaskUserId"], group.get("encryptGroupId", ""))
             if getattr(tc, "last_plan_read_failed", False):
@@ -1150,6 +1157,12 @@ def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, tas
                 if interrupt.should_stop():
                     return False, unsupported
                 plan_key = str(plan.get("planId"))
+                if only_discussion and int(plan.get("planType") or -1) != PLAN_TYPE_DISCUSS:
+                    if plan_key not in skipped_other_ids:
+                        skipped_other_ids.add(plan_key)
+                        if stats is not None:
+                            stats["skipped_other"] = stats.get("skipped_other", 0) + 1
+                    continue
                 if plan_key in failed_plans:
                     skipped_failed += 1
                     continue
@@ -1205,8 +1218,11 @@ def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, tas
                 locked_remaining += sum(1 for plan in plans if not tc.plan_finished(plan))
                 continue
             for plan in plans:
-                if not tc.plan_finished(plan):
-                    remaining += 1
+                if tc.plan_finished(plan):
+                    continue
+                if only_discussion and int(plan.get("planType") or -1) != PLAN_TYPE_DISCUSS:
+                    continue
+                remaining += 1
         if remaining == 0 and locked_remaining == 0 and saw_plan_data:
             if hasattr(tc, "last_outcome"):
                 tc.last_outcome = TaskOutcome.COMPLETED
@@ -1217,7 +1233,7 @@ def _process_teaching_task(tc: TaskCenter, chaoxing: Chaoxing, course: dict, tas
 
 
 def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
-                           max_tasks=None) -> dict:
+                           max_tasks=None, only_discussion: bool = False) -> dict:
     """
     任务中心 -> 教学任务。
 
@@ -1245,6 +1261,7 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
         "locked": 0,
         "read_failed": 0,
         "limited": 0,
+        "skipped_other": 0,     # 只刷讨论时被跳过的其它类型
     }
 
     for course in course_task:
@@ -1289,7 +1306,8 @@ def run_task_center_phase(chaoxing: Chaoxing, course_task: list, config: dict,
             stats["tasks"] += 1
             try:
                 ok, unsupported = _process_teaching_task(
-                    tc, chaoxing, course, task, config, point_map
+                    tc, chaoxing, course, task, config, point_map,
+                    only_discussion=only_discussion, stats=stats,
                 )
             except Exception as e:
                 logger.error("处理教学任务出错: {} - {}: {}", task.get("name", "?"),
@@ -1341,7 +1359,7 @@ def _start_interrupt(hint_shown: bool) -> bool:
 
 
 def _run_task_center_quiet(chaoxing: Chaoxing, course_task: list, config: dict,
-                           max_tasks=None) -> dict:
+                           max_tasks=None, only_discussion: bool = False) -> dict:
     """
     任务中心阶段包一层控制台静音。
 
@@ -1350,7 +1368,8 @@ def _run_task_center_quiet(chaoxing: Chaoxing, course_task: list, config: dict,
     """
     set_console_quiet(True)
     try:
-        return run_task_center_phase(chaoxing, course_task, config, max_tasks)
+        return run_task_center_phase(chaoxing, course_task, config, max_tasks,
+                                     only_discussion=only_discussion)
     finally:
         set_console_quiet(False)
 
@@ -1372,6 +1391,8 @@ def _print_task_center_summary(stats: dict):
         text += f" · 读取失败 {stats['read_failed']} 门课"
     if stats.get("limited"):
         text += f" · 按设置跳过 {stats['limited']} 个（下次继续）"
+    if stats.get("skipped_other"):
+        text += f" · 只刷讨论：跳过其它类型 {stats['skipped_other']} 个"
     print(text)
 
 
@@ -1398,6 +1419,13 @@ def main():
 
         # 刷课范围：章节（目录）和任务中心可以各自关闭，但不能两个都关
         chapters_enabled = _chapter_study_enabled(common_config, args)
+        # 只刷讨论（任务中心里的主题讨论，planType=14）：默认关闭，可在向导里选第 4 项
+        only_discussion = bool(getattr(args, "only_discussion", False)) or str(
+            common_config.get("only_discussion", "") or ""
+        ).strip().lower() in ("1", "true", "yes", "on")
+        if only_discussion:
+            chapters_enabled = False
+            print("  本次只刷主题讨论（其它类型自动跳过）")
         if not chapters_enabled and not _task_center_enabled(common_config, args):
             hard_stop(
                 "章节和任务中心都被关掉了，没有可以刷的内容",
@@ -1475,6 +1503,7 @@ def main():
         tasks = []
         # 一个章节都没读到的课程：不能当成"已经刷完"，否则解析出问题时会误报"无需刷课"
         unreadable_courses = []
+        scan_rows = []          # 开始前扫描：章节侧数据（复用这里已读到的章节）
         if not chapters_enabled:
             logger.info("chapter_study=false：跳过章节（目录），只处理任务中心")
             print("  已选择只刷任务中心：跳过章节（目录）")
@@ -1491,6 +1520,7 @@ def main():
 
             if not all_points:
                 unreadable_courses.append(course["title"])
+                scan_rows.append(scan.chapter_row(course, [], error="读不到章节"))
                 logger.error("课程[{}] 没有读到任何章节", course["title"])
                 print("  ⚠ " + course["title"] + "：没有读到任何章节（可能是页面结构变化或网络异常）")
                 continue
@@ -1505,10 +1535,25 @@ def main():
                 course["title"], len(all_points), len(finished), len(pending), len(selected)
             )
             print("  " + course["title"] + "：" + course_plan_summary(finished, pending, len(selected)))
+            scan_rows.append(scan.chapter_row(course, all_points))
 
             for i, point in enumerate(selected):
                 task = ChapterTask(point=point, index=i, course=course)
                 tasks.append(task)
+
+        # ---- 开始前扫描（默认开启、无需勾选）：把漏刷的东西一次说清楚 ----
+        try:
+            print()
+            report = scan.run(
+                chaoxing, course_task, common_config, scan_rows,
+                chapters_enabled, _task_center_enabled(common_config, args),
+                only_discussion=only_discussion,
+            )
+            if report:
+                print(report)
+                print()
+        except Exception as e:
+            logger.debug("开始前扫描失败（不影响刷课）: {}", e)
 
         # 所有课程都已经刷完：不用再走后面的刷课流程，也不用让用户白等
         if not tasks:
@@ -1540,6 +1585,7 @@ def main():
                     tc_stats = _run_task_center_quiet(
                         chaoxing, course_task, common_config,
                         (max_tasks_map, max_tasks_default),
+                        only_discussion=only_discussion,
                     )
                     _print_task_center_summary(tc_stats)
                 except Exception as e:
@@ -1647,6 +1693,7 @@ def main():
                 tc_stats = _run_task_center_quiet(
                     chaoxing, course_task, common_config,
                     (max_tasks_map, max_tasks_default),
+                    only_discussion=only_discussion,
                 )
                 _print_task_center_summary(tc_stats)
             except Exception as e:

@@ -831,9 +831,10 @@ def manage_accounts():
 
 # 选项 -> (刷章节, 刷任务中心)
 STUDY_SCOPES = {
-    "1": (True, True),
-    "2": (True, False),
-    "3": (False, True),
+    "1": (True, True, False),
+    "2": (True, False, False),
+    "3": (False, True, False),
+    "4": (False, True, True),     # 只刷主题讨论（评论区）
 }
 
 
@@ -852,22 +853,25 @@ def choose_study_scope():
     print("   1. 章节 + 任务中心   ✓推荐")
     print("   2. 只刷章节（目录）")
     print("   3. 只刷任务中心（教学任务）")
+    print("   4. 只刷讨论（评论区）")
     print()
 
     while True:
         raw = ask("请选择", default="1")
         if raw in STUDY_SCOPES:
             break
-        print("  ✘ 只能填 1 / 2 / 3。")
+        print("  ✘ 只能填 1 / 2 / 3 / 4。")
 
-    chapters, task_center = STUDY_SCOPES[raw]
-    if chapters and task_center:
+    chapters, task_center, only_discussion = STUDY_SCOPES[raw]
+    if only_discussion:
+        print("  → 只刷讨论（任务中心里的主题讨论）")
+    elif chapters and task_center:
         print("  → 章节 + 任务中心")
     elif chapters:
         print("  → 只刷章节")
     else:
         print("  → 只刷任务中心")
-    return chapters, task_center
+    return chapters, task_center, only_discussion
 
 
 def _ask_count(prompt):
@@ -948,12 +952,11 @@ def choose_courses(cx, ask_points=True, ask_tasks=True):
         return [(c, 0, 0) for c in chosen]
 
     title("每门课刷多少")
-    if ask_points:
-        print("  章节：数字 = 刷前几章，all = 全部")
-    if ask_tasks:
-        print("  教学任务：数字 = 刷前几个，all = 全部")
+    print("  数字 = 本次刷多少个「还没完成」的，已完成的自动跳过、不会重刷。")
+    print("  例：共 300 节、前 150 节已完成，填 150 = 把后面 150 节刷完。")
+    print("  all 或直接回车 = 没完成的全部刷完。")
     if ask_points and ask_tasks:
-        print("  两类互不影响。")
+        print("  章节和教学任务各算各的，互不影响。")
     print()
 
     plan = []
@@ -962,12 +965,14 @@ def choose_courses(cx, ask_points=True, ask_tasks=True):
         chapter_n = 0
         task_n = 0
         if ask_points:
-            chapter_n = _ask_count("章节（all=全部）")
-            print("    → " + ("全部章节" if chapter_n == 0 else ("前 " + str(chapter_n) + " 章")))
+            chapter_n = _ask_count("章节：本次刷多少个未完成任务点")
+            print("    → " + ("没完成的章节全部刷完" if chapter_n == 0
+                               else ("从第一节未完成开始，往后刷 " + str(chapter_n)
+                                     + " 个（已完成的自动跳过）")))
         if ask_tasks:
-            task_n = _ask_count("教学任务（all=全部）")
-            print("    → " + ("全部教学任务" if task_n == 0
-                               else ("前 " + str(task_n) + " 个教学任务")))
+            task_n = _ask_count("教学任务：本次刷多少个未完成教学任务")
+            print("    → " + ("没完成的教学任务全部刷完" if task_n == 0
+                               else ("从第一个未完成开始，往后刷 " + str(task_n) + " 个")))
         plan.append((c, chapter_n, task_n))
 
     return plan
@@ -975,7 +980,8 @@ def choose_courses(cx, ask_points=True, ask_tasks=True):
 
 # ==================== 主流程 ====================
 
-def build_config(username, password, plan, chapters_enabled=True, task_center_enabled=True):
+def build_config(username, password, plan, chapters_enabled=True, task_center_enabled=True,
+                 only_discussion=False):
     """写出本次要用的配置（用账号专属文件，不污染全局配置）"""
     paths.backup_config()
     text = _read_config_text()
@@ -997,6 +1003,8 @@ def build_config(username, password, plan, chapters_enabled=True, task_center_en
     # 刷课范围：向导里选了什么就写什么，不再吃全局配置的默认值
     text = replace_value(text, "common", "task_center", "true" if task_center_enabled else "false")
     text = replace_value(text, "common", "chapter_study", "true" if chapters_enabled else "false")
+    text = replace_value(text, "common", "only_discussion",
+                         "true" if only_discussion else "false")
     text = replace_value(text, "common", "max_points_per_course", mp)
     text = replace_value(text, "common", "max_tasks_per_course", mt)
     text = replace_value(text, "common", "use_cookies", "false")
@@ -1119,17 +1127,19 @@ def _main_inner(force_setup=False):
             print("  当前账号：" + label + "（" + username + "）")
 
         # ---- 选刷课范围：章节（目录）/ 任务中心·教学任务 ----
-        chapters_enabled, task_center_enabled = choose_study_scope()
+        chapters_enabled, task_center_enabled, only_discussion = choose_study_scope()
 
         # ---- 选课 + 逐门设置本次范围（不刷的那一类不问） ----
         plan = choose_courses(cx, ask_points=chapters_enabled, ask_tasks=task_center_enabled)
 
         # ---- 写该用户专属配置 ----
         user_config = build_config(username, password, plan,
-                                   chapters_enabled, task_center_enabled)
+                                   chapters_enabled, task_center_enabled, only_discussion)
 
         # ---- 最终确认 ----
-        if chapters_enabled and task_center_enabled:
+        if only_discussion:
+            scope_text = "只刷讨论（评论区）"
+        elif chapters_enabled and task_center_enabled:
             scope_text = "章节 + 任务中心"
         elif chapters_enabled:
             scope_text = "只刷章节"
@@ -1143,14 +1153,16 @@ def _main_inner(force_setup=False):
         print("  范围  " + scope_text)
         print("  课程")
         for c, chapter_n, task_n in plan:
-            if chapters_enabled and task_center_enabled:
-                cp = "章节全部" if chapter_n == 0 else ("章节前 " + str(chapter_n) + " 个")
-                tp = "教学任务全部" if task_n == 0 else ("教学任务前 " + str(task_n) + " 个")
+            cp = "章节全部" if chapter_n == 0 else ("章节 " + str(chapter_n) + " 个未完成")
+            tp = "教学任务全部" if task_n == 0 else ("教学任务 " + str(task_n) + " 个未完成")
+            if only_discussion:
+                detail = "只刷讨论"
+            elif chapters_enabled and task_center_enabled:
                 detail = cp + " · " + tp
             elif chapters_enabled:
-                detail = "全部刷完" if chapter_n == 0 else ("刷前 " + str(chapter_n) + " 个任务点")
+                detail = cp
             else:
-                detail = "全部教学任务" if task_n == 0 else ("刷前 " + str(task_n) + " 个教学任务")
+                detail = tp
             print("        " + _pad(c["title"], 24) + detail)
         print()
         if auto_yes:
