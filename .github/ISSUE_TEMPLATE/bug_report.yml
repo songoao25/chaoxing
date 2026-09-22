@@ -1,96 +1,96 @@
 name: Bug report
-description: 报告可复现的刷课、答题或任务中心问题
+description: Report a reproducible problem with brushing, answering or the Task Center
 title: "[Bug] "
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        请**不要**粘贴 cookie、账号密码、API Key、完整日志或含 token 的抓包内容。
-        日志请只附与问题相关的脱敏片段（`~/.chaoxing/chaoxing.log`）。
+        Please do **not** paste cookies, passwords, API keys, full logs or captures containing tokens.
+        Attach only the few sanitized log lines related to the problem (`~/.chaoxing/chaoxing.log`).
   - type: input
     id: python
     attributes:
-      label: Python 版本
+      label: Python version
       placeholder: "3.13.5 / 3.14.0"
     validations:
       required: true
   - type: input
     id: os
     attributes:
-      label: 操作系统
+      label: Operating system
       placeholder: macOS 15 / Windows 11 / Ubuntu 24.04
     validations:
       required: true
   - type: dropdown
     id: entry
     attributes:
-      label: 运行入口
+      label: How you started it
       options:
-        - ./cx（交互式向导）
+        - ./cx (interactive wizard)
         - cx setup / cx --yes
         - python main.py -c config.ini
-        - python main.py 命令行参数
-        - python setup_wizard.py（Windows）
-        - 其它
+        - python main.py with command-line flags
+        - python setup_wizard.py (Windows)
+        - Other
     validations:
       required: true
   - type: dropdown
     id: area
     attributes:
-      label: 出问题的范围
+      label: Where it went wrong
       options:
-        - 登录 / cookie
-        - 章节（视频 / 文档 / 阅读 / 测验 / 直播）
-        - 任务中心 · 视频
-        - 任务中心 · 文档
-        - 任务中心 · 作业
-        - 任务中心 · AI 实践
-        - 任务中心 · 主题讨论
-        - 任务中心 · 章节同步
-        - 答题 / 题库 / AI
-        - 通知推送
-        - 其它
+        - Login / cookies
+        - Chapters (video / document / reading / quiz / live)
+        - Task Center - video
+        - Task Center - document
+        - Task Center - homework
+        - Task Center - AI practice
+        - Task Center - topic discussion
+        - Task Center - chapter sync
+        - Answering / question bank / AI
+        - Notifications
+        - Other
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: 重现步骤
-      description: 请写清选了什么课程、刷什么内容、第几步出错。
+      label: Steps to reproduce
+      description: Tell us which course you picked, what you chose to brush, and which step failed.
       placeholder: |
-        1. 运行 ./cx
-        2. 选择「章节 + 任务中心」
+        1. Run ./cx
+        2. Choose "chapters + Task Center"
         3. ...
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: 期望结果
+      label: Expected result
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: 实际结果
-      description: 控制台提示、平台状态截图描述或脱敏后的日志片段。
+      label: Actual result
+      description: Console output, a description of the platform status, or a sanitized log excerpt.
     validations:
       required: true
   - type: textarea
     id: log
     attributes:
-      label: 脱敏日志片段（可选）
-      description: 只粘贴相关几行，务必删除手机号、cookie、token、课程 ID。
+      label: Sanitized log excerpt (optional)
+      description: Paste only the relevant lines, and remove phone numbers, cookies, tokens and course ids.
       render: text
   - type: checkboxes
     id: confirm
     attributes:
-      label: 提交前确认
+      label: Before submitting
       options:
-        - label: 我已搜索过 Issues，没有重复报告
+        - label: I searched the issues and this is not a duplicate
           required: true
-        - label: 我已删除所有 cookie、账号、API Key 与完整日志
+        - label: I removed every cookie, account number, API key and full log
           required: true
-        - label: 我已尝试重新运行一次，问题仍可复现
+        - label: I tried running it again and the problem is still reproducible
           required: false

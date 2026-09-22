@@ -1,98 +1,88 @@
 # Changelog
 
-本项目的所有重要变更都记录在此文件。
+All notable changes to this project are documented here.
 
-格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
-本分支是 [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing) 的扩展分支；更早的历史属于上游项目。
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the version numbers follow [Semantic Versioning](https://semver.org/).
+This branch is an extension fork of [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing); earlier history belongs to the upstream project.
 
 ## [Unreleased]
 
 ### Added
+
 - Discussion mode 2: `./cx discuss` lists every thread of the course board and lets you pick which post to reply to (`--list-topics` lists only). Both discussion modes share the same reply pipeline.
-- Pre-run scan (always on, read-only): before every run the tool reports what is still unfinished — chapters, teaching tasks, locked groups, unsupported types, missing homework and discussions.
-- "只刷讨论" study scope (wizard option 4 / `--only-discussion`): only topic discussions are processed in this run.
-- Live answer trace: every question is printed as it is answered (`1. 选择  A`, `4. 简答  …（41 字）`) and written to the normal run log; discussion replies are shown in full.
+- Pre-run scan (always on, read-only): before every run the tool reports what is still unfinished — chapters, teaching tasks, locked groups, unsupported types, and missing homework and discussions.
+- "Discussions only" study scope (wizard option 4 / `--only-discussion`): only discussions are processed in this run.
+- Live answer trace: every question is printed as it is answered (`1. choice  A`, `4. short answer  ... (41 chars)`) and written to the normal run log; discussion replies are shown in full.
 - Review step for AI-written content: every submitted short answer, homework essay, discussion reply and AI-practice answer is logged to `~/.chaoxing/reviews/` (daily Markdown + JSONL index) and can be browsed with `./cx review` (`--days N`, `--all`, `--list`).
 - Local submission ledger (`~/.chaoxing/submissions.json`) to avoid duplicate homework submissions and repeated document reading.
 - `api/llm.py`: adaptive thinking policy (auto / on / off) with automatic fallback and reasoning fallback.
-- README (English + 中文), CONTRIBUTING, SECURITY, SUPPORT, CODE_OF_CONDUCT, issue forms, dependabot.
+- `api/scan.py` (pre-run scan) and `api/discussion.py` (discussion board).
+- README (English + Chinese), CONTRIBUTING, SECURITY, SUPPORT, CODE_OF_CONDUCT, issue forms and Dependabot.
 - Probe configuration via `tools/probe/local.env` (gitignored) instead of hard-coded accounts.
 
 ### Changed
-- The wizard now asks only what the chosen scope needs ("只刷讨论" no longer asks about task counts); a new "讨论怎么刷" step picks between automatic task discussions and picking threads on the board.
+
+- The wizard asks only what the chosen scope needs ("discussions only" no longer asks about task counts); a new step picks between automatic task discussions and picking threads on the board.
 - Discussion-board flow rebuilt: read-only count → pick threads (`1,3,5` / `1-3` / `all`) → per-thread draft → `y/n` confirmation → send one by one.
 - All y/n prompts use lowercase `[y/n]` consistently.
-- The number you type now clearly means "how many unfinished task points to do" (finished ones are always skipped); the wizard and README say so explicitly.
+- The number you type clearly means "how many unfinished task points to do" (finished ones are always skipped); the wizard and README say so explicitly.
 - Console cleanup: one startup header instead of duplicated lines, condensed 403/captcha messages, quieter notification hints, and a one-line summary for failures.
 - Default parallel tasks lowered from 4 to 2 (fewer captcha/403 triggers); existing configs are migrated once.
-- Console/log noise reduction: the q-key hint prints once per run, chapter progress lines fit ~80 columns, AI-writer retries and per-question details are debug-only, long videos/documents print one progress line, and failures collapse into a single summary line.
+- Log noise reduction: the q-key hint prints once per run, chapter progress lines fit ~80 columns, AI-writer retries and per-question details are debug-only, long videos and documents print one progress line.
 - Log file defaults to DEBUG; set `CX_LOG_LEVEL=TRACE` for full request-level tracing.
-- AI answering: thinking defaults to `auto` (V4.1 flash reasons by default), objective questions use 3-sample majority voting, prompts ask for option letters, and answer parsing accepts JSON / code fences / plain text.
-- Live sessions now run in real time (1x), honour `q`/Ctrl+C, and return failure when a heartbeat fails.
-- Document tasks: "finish reading" documents complete; duration-only documents are reported unfinished (platform was not observed counting 600 s + readEnd) and are not re-read for 24 h.
+- AI answering: thinking defaults to `auto` (V4.1 flash reasons by default), objective questions use 3-sample majority voting, prompts ask for option letters, and answer parsing accepts JSON, code fences or plain text.
+- Live sessions run in real time (1x), honour `q`/Ctrl+C, and return failure when a heartbeat fails.
+- Document tasks: "finish reading" documents complete; duration-only documents are reported unfinished (the platform was not observed counting 600 s + readEnd) and are not re-read for 24 h.
 - Wizard: Enter on the final confirmation cancels instead of starting the run.
 - Tests always use a temporary `CX_DATA_HOME`.
 
 ### Fixed
-- Discussion board no longer reports success when nothing was sent (returns real `sent/skipped` counts to the console and notifications).
-- "只刷讨论" no longer prints "只刷任务中心" wording; the scope, its explanation and the confirmation page each appear once.
-- `--yes` no longer auto-sends discussion replies (posting AI text publicly always asks per post); the send prompt now defaults to **skip** on Enter.
-- Choosing a course without a discussion board now asks before switching instead of switching silently.
-- Scan report shows the course name for teaching tasks; the Task Center summary wraps at 76 columns; discussion previews are clipped.
-- Courses with no teaching tasks now say "没有找到教学任务" instead of "都已刷完".
-- First run asks once about optional notifications (Enter = skip).
-- "只刷讨论" could be blocked by the startup check because the run config wrote `task_center = false`; it now always keeps the Task Center path enabled.
-- `skip_discussion` was referenced but never assigned, so the whole Task Center phase failed with a NameError (reported as "read failed"). Now defined from the discussion mode.
-- Answer-mode table was unpacked in the wrong order: question-bank modes asked for a DeepSeek key, and choosing "no quizzes" at the key step discarded the just-entered token. Both fixed.
-- Pre-run scan mixed units ("9 teaching tasks · 62 done") — now "9 teaching tasks · 77 task points (62 done · 9 pending · 6 locked)".
-- Discussion board count now says "at least N (first 10 pages read)" when capped, and you can keep picking after a batch.
-- Flow coherence: the confirmation page now shows the discussion choice, the run header says "章节任务点", board mode no longer claims teaching tasks are done, and the pre-run scan's reminders match the selected scope/mode.
-- Wizard input robustness: every choice prompt now has a retry cap and a safe default, so piped/non-interactive input can never hang the wizard.
-- New AI-practice subtype "situational dialogue" (`/mobile/situationalDialogue/*`) is detected and reported as unsupported instead of a confusing "missing parameters" warning.
+
+- Discussion board no longer reports success when nothing was sent (it returns real `sent`/`skipped` counts to the console and to notifications).
+- "Discussions only" no longer prints "Task Center only" wording; the scope, its explanation and the confirmation page each appear once.
+- `--yes` no longer auto-sends discussion replies (posting AI text publicly always asks per post).
+- "Discussions only" was blocked by the startup check because the run config wrote `task_center = false`; the Task Center path now always stays enabled for it.
+- `skip_discussion` was referenced but never assigned, so the whole Task Center phase failed with a NameError (reported as "read failed").
+- The answer-mode table was unpacked in the wrong order: question-bank modes asked for a DeepSeek key, and choosing "no quizzes" at the key step discarded the just-entered token.
 - Task Center phase interrupted by `q` no longer reports "all done".
 - Chapter quizzes without a question bank are no longer recorded as completed.
+- Unknown card types are no longer silently dropped (they used to make a chapter look like an empty, completed one).
+- Chapter documents are no longer treated as successful on HTTP 200 alone.
 - `tqdm.format_sizeof` global patch is always restored.
-- Removed dead `--auto-sign` flag, dead `app.py`, and unused `celery` / `flask` / `argparse` / `chardet` dependencies.
-- Repository-wide privacy scrub: accounts, uids, course parameters, tokens and `__pycache__` removed from the working tree.
+- Removed the dead `--auto-sign` flag, dead `app.py`, and unused `celery` / `flask` / `argparse` / `chardet` dependencies.
+- Repository-wide privacy scrub: accounts, user ids, course parameters, tokens, real names and `__pycache__` removed from the working tree.
 
 ### Security
+
 - All packet-capture samples are sanitized; `.gitignore` protects `tools/probe/local.env` and `*.har`.
-
-### Added
-
-- 任务中心 · 教学任务：视频（含真实观看时长规则）、章节同步、AI 实践、作业、主题讨论。
-- `./cx` 交互式向导：登录后显式选择「刷什么内容」，并逐门选择章节任务点 / 教学任务数量。
-- 任务中心作业：选择题 / 判断题 / 填空题走题库，简答题走 `api/ai_writer.py`。
-- 主题讨论：读取已有回复做风格参考，生成一条不重复的回复并提交。
-- AI 实践：提交后请求 end-report 让平台现算成绩；支持目标分与补答轮数。
-
-### Changed
-
-- 任务中心提交模式默认 `auto`（后台自动提交），可配置为 `confirm` 逐次确认。
-- 刷课参数不再逐项追问，启动只显示一行推荐配置。
-
-### Fixed
-
-- 多选题字母串漏选、选项图片丢失、成绩判定不可信等问题。
-- 目录课程解析与 mArg 解析加固；视频上报卡死增加重报上限。
-- 命令行模式读取用户配置里的题库设置。
 
 ### Known issues
 
-- 任务中心「文档」：打点已接入，但平台计账尚未被观察到（⚠️）。
-- 任务中心「思考题」：不支持，需手动完成（❌）；课堂活动 / 签到同样不支持。
-- 任务中心按分组顺序解锁：被不支持的任务点卡住时，后续分组不会解锁。
+- Task Center documents: heartbeats are wired, but the platform has not been observed counting duration-only documents (⚠️).
+- Task Center thinking questions are not supported and must be finished manually (❌); classroom activities and check-in are not supported either.
+- Task Center groups unlock in order: an unsupported task point blocks every later group.
 
 ## [3.1.3] - 2026-09-20
 
 ### Added
 
-- 多账号：cookie 与配置按手机号隔离在 `~/.chaoxing/`（目录 `0700`、文件 `0600`）。
-- 答题方式：DeepSeek AI / 言溪题库 / GO题 / 手动答题 / 不答题，支持多题库兜底链。
-- 可选通知：Bark / ServerChan / Telegram / Qmsg，在开始、完成、中断、出错时推送。
-- 章节（目录）全部任务点：视频、文档、阅读、章节测验、直播。
+- Multiple accounts: cookies and configuration are isolated per phone number under `~/.chaoxing/` (directory `0700`, files `0600`).
+- Answering modes: DeepSeek AI, a question bank, GO, manual, or no answering at all, with fallback chains.
+- Optional notifications: Bark, ServerChan, Telegram or Qmsg, pushed on start, finish, interrupt and error.
+- Chapters (table of contents): every task point — video, document, reading, chapter quiz, live.
+
+### Changed
+
+- Task Center submit mode defaults to `auto` (submits in the background); set it to `confirm` to approve every submission.
+- Brushing parameters are no longer asked one by one; startup prints a single recommended-config line.
+
+### Fixed
+
+- Multi-choice letter strings were missing options, option images were lost, and score detection was unreliable.
+- Chapter parsing and mArg parsing hardened; video reporting got a retry cap instead of hanging.
+- Command-line mode now reads the question-bank settings from the user configuration.
 
 ### Notes
 
-- 本版本以 `./cx` 为推荐入口；`cx setup` 重新配置，`cx --yes` 跳过确认。
-- 离线单测使用标准库 `unittest`（当前 245 项），CI 见 [`.github/workflows/tests.yml`](.github/workflows/tests.yml)。
+- This version recommends `./cx` as the entry point; `cx setup` reconfigures, `cx --yes` skips the confirmation.
+- Offline unit tests use the standard library `unittest` (335 tests); CI is defined in [`.github/workflows/tests.yml`](.github/workflows/tests.yml).

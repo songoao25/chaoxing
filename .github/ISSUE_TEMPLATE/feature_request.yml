@@ -1,40 +1,40 @@
 name: Feature request
-description: 提议与刷课、任务中心或答题直接相关的改进
+description: Suggest an improvement directly related to brushing, the Task Center or answering
 title: "[Feature] "
 labels: [enhancement]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: 要解决的问题
-      description: 你遇到了什么场景，现有行为哪里不够用？
+      label: Problem to solve
+      description: What situation did you hit, and where does the current behaviour fall short?
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: 建议方案
+      label: Proposed solution
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: 备选方案（可选）
+      label: Alternatives considered (optional)
   - type: textarea
     id: boundary
     attributes:
-      label: 边界与合规说明
+      label: Scope and compliance
       description: |
-        请说明是否涉及真实账号验证、平台接口改动或新的第三方服务。
-        本项目不接受：伪造学习时长、绕过验证码/访问控制、伪造平台完成状态、商业化用途。
+        Say whether this needs verification with a real account, changes to platform APIs, or a new third-party service.
+        This project does not accept: forged study time, bypassing captchas or access controls, faking platform completion status, or commercial use.
     validations:
       required: true
   - type: checkboxes
     id: confirm
     attributes:
-      label: 提交前确认
+      label: Before submitting
       options:
-        - label: 我已搜索过 Issues，没有重复提议
+        - label: I searched the issues and this is not a duplicate
           required: true
-        - label: 该需求不涉及伪造学习时长或平台完成状态
+        - label: This request does not involve forging study time or platform completion status
           required: true

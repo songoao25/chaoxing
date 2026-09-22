@@ -1,41 +1,41 @@
-# 行为准则（Code of Conduct）
+# Code of Conduct
 
-## 我们的承诺
+## Our pledge
 
-为了营造开放、友好、安全的协作环境，我们承诺：无论年龄、体型、残疾、种族、性别认同与表达、经验水平、教育背景、社会经济地位、国籍、个人外貌、宗教或性取向，参与者在本项目中的体验不受骚扰。
+To keep this project an open, friendly and safe place to collaborate, we pledge that participation is free of harassment regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, religion or sexual orientation.
 
-## 我们的标准
+## Our standards
 
-有助于创造积极环境的行为包括：
+Behaviour that helps create a positive environment:
 
-- 使用友好、包容的语言；
-- 尊重不同的观点和经验；
-- 优雅地接受建设性批评；
-- 关注对社区最有利的事；
-- 对其他社区成员表示同理心。
+- Using friendly and inclusive language.
+- Respecting different viewpoints and experiences.
+- Accepting constructive criticism gracefully.
+- Focusing on what is best for the community.
+- Showing empathy towards other community members.
 
-不可接受的行为包括：
+Unacceptable behaviour:
 
-- 使用性化语言或性暗示；
-- 挑衅、侮辱或贬低性评论，人身攻击或政治攻击；
-- 公开或私下的骚扰；
-- 未经明确许可发布他人的私人信息（包括 cookie、账号、日志等）；
-- 其他在专业场合被合理认为不恰当的行为。
+- Sexualised language or imagery.
+- Trolling, insulting or derogatory comments, personal or political attacks.
+- Public or private harassment.
+- Publishing someone else's private information (including cookies, account numbers or logs) without explicit permission.
+- Any other conduct that would reasonably be considered inappropriate in a professional setting.
 
-## 我们的责任
+## Our responsibilities
 
-维护者负责澄清可接受行为的标准，并会对任何不可接受的行为采取适当、公正的纠正措施。维护者可以删除不合规内容，并在必要时限制参与者继续参与项目。
+Maintainers clarify the standards of acceptable behaviour and take appropriate, fair corrective action in response to unacceptable behaviour. They may remove non-compliant content and, when necessary, limit further participation.
 
-## 适用范围
+## Scope
 
-本行为准则适用于项目空间、公共空间，以及代表项目或社区时的一切场合。
+This Code of Conduct applies in project spaces, in public spaces, and whenever someone represents the project or its community.
 
-## 执行
+## Enforcement
 
-可向维护者（[songoao25](https://github.com/songoao25)）报告滥用、骚扰或其他不可接受的行为。我们会审查并调查所有投诉，并做出必要且适当的回应。维护者有义务对事件报告者保密。
+Report abuse, harassment or other unacceptable behaviour to the maintainer ([songoao25](https://github.com/songoao25)). All complaints are reviewed and investigated, and a necessary and appropriate response will follow. Maintainers are obliged to keep the reporter's identity confidential.
 
-安全问题请按 [SECURITY.md](SECURITY.md) 处理，不要在公开 Issue 中披露凭据。
+For security issues follow [SECURITY.md](SECURITY.md) instead of disclosing credentials in a public issue.
 
-## 参考
+## Attribution
 
-本行为准则改编自 [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 版。
+This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/) version 2.1.

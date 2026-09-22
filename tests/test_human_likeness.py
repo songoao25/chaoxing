@@ -22,7 +22,7 @@ import importlib.util  # noqa: E402
 
 _AUDIT_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "tools", "audit", "01_真人化审计.py",
+    "tools", "audit", "01_human_likeness_audit.py",
 )
 _spec = importlib.util.spec_from_file_location("human_audit", _AUDIT_PATH)
 human_audit = importlib.util.module_from_spec(_spec)

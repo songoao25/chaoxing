@@ -8,9 +8,9 @@
   既是自曝 AI，也确实不像人在答题。这个审计器就是防止同类问题再出现。
 
 用法：
-  python tools/audit/01_真人化审计.py                    # 审计内置样例文件
-  python tools/audit/01_真人化审计.py --samples x.json    # 审计指定样例
-  python tools/audit/01_真人化审计.py --selftest          # 只跑规则自检
+  python tools/audit/01_human_likeness_audit.py                    # 审计内置样例文件
+  python tools/audit/01_human_likeness_audit.py --samples x.json    # 审计指定样例
+  python tools/audit/01_human_likeness_audit.py --selftest          # 只跑规则自检
 
 样例 JSON：[{"kind": "思考题|作业简答|主题讨论|AI实践开放题|AI实践客观题", "prompt": "...", "text": "..."}]
 """

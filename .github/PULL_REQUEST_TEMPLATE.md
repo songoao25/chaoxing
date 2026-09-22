@@ -1,27 +1,27 @@
-## 变更说明
+## What changed
 
-<!-- 说明做了什么、为什么需要。README 和代码注释面向用户，不写内部过程流水账。 -->
+<!-- What did you change and why? Keep README and code comments user-facing; no internal process logs. -->
 
-## 用户可见变化
+## User-visible changes
 
-<!-- 如有 CLI 参数、配置项、刷课行为或文档变化，请写一句面向用户的 release note；没有则留空。 -->
+<!-- If CLI flags, config keys, brushing behaviour or docs changed, write one user-facing release note. Otherwise leave empty. -->
 
-## 验证
+## Verification
 
-- [ ] `make lint`（编译检查 + 全量离线单测）
-- [ ] 如改了行为，已在 `tests/` 补上离线单测（不联网、不碰真实账号）
-- [ ] 已检查失败、跳过和"平台未确认完成"时的提示是否如实
-- [ ] 如涉及真实账号验证，已注明账号脱敏信息与验证日期
-- [ ] 如涉及未验证的链路，已在文档中明确标注
-- [ ] 提交信息使用了 Conventional Commit 前缀（`feat:` / `fix:` / `docs:` / `test:` / `chore:`）
+- [ ] `make lint` (compile check + full offline unit tests)
+- [ ] Behaviour changes come with an offline test under `tests/` (no network, no real account)
+- [ ] Failure, skip and "platform has not confirmed" messages are still honest
+- [ ] If verified against a real account: sanitized account info and the verification date are noted
+- [ ] Unverified paths are clearly marked in the docs
+- [ ] Commit messages use a Conventional Commit prefix (`feat:` / `fix:` / `docs:` / `test:` / `chore:`)
 
-## 安全与隐私
+## Security and privacy
 
-- [ ] 没有提交 cookie、账号密码、API Key、`config.ini`、`accounts/` 或日志
-- [ ] 新增的抓包样例已脱敏（无 token / cookie）
-- [ ] 没有伪造学习时长、心跳或平台完成状态
-- [ ] 没有把「跳过」记成「完成」
+- [ ] No cookies, passwords, API keys, `config.ini`, `accounts/` or logs are committed
+- [ ] New capture samples are sanitized (no token, no cookie)
+- [ ] No forged study time, heartbeats or platform completion status
+- [ ] Nothing "skipped" is recorded as "done"
 
-## 关联
+## Related
 
 <!-- Refs: TASKS#xxx / Closes #xxx -->

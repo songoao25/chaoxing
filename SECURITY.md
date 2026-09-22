@@ -1,30 +1,30 @@
-# 安全策略（Security Policy）
+# Security Policy
 
-## 支持的版本
+## Supported versions
 
-| 版本 | 支持状态 |
+| Version | Supported |
 | --- | --- |
-| 3.1.x | ✅ 积极维护 |
-| 更早版本 | ❌ 不再支持 |
+| 3.1.x | ✅ Actively maintained |
+| Older | ❌ No longer supported |
 
-## 报告漏洞
+## Reporting a vulnerability
 
-如果发现安全漏洞，**请不要公开提交 Issue**，请通过以下方式私下报告：
+Please **do not open a public issue** for a security problem. Report it privately:
 
-1. 在 GitHub 上创建一个 **Private security advisory**：仓库主页 → **Security** 标签页 → **Report a vulnerability**；
-2. 或联系维护者 [@songoao25](https://github.com/songoao25)，说明「有安全事项需私下沟通」。
+1. Open a **private security advisory** on GitHub: repository page → **Security** tab → **Report a vulnerability**.
+2. Or contact the maintainer [@songoao25](https://github.com/songoao25) and say you have a security matter to discuss privately.
 
-我们会尽快确认收到报告、评估严重程度，修复后发布补丁版本并在 [CHANGELOG.md](CHANGELOG.md) 中记录。
+We will acknowledge the report as soon as possible, assess the severity, and ship a patch release with a note in [CHANGELOG.md](CHANGELOG.md).
 
-## 安全承诺
+## Security commitments
 
-- 不收集、不上传任何用户数据；
-- 账号、cookie、配置只存放在本机 `~/.chaoxing/`（目录 `0700`，凭据文件 `0600`）；
-- 仓库内所有抓包样例均已脱敏，不含 cookie 与 token；
-- 不包含硬编码密钥或敏感信息；
-- 不提供访问控制绕过；登录只使用你提供的凭据，并用本机 OCR 识别登录验证码。
+- No user data is collected or uploaded.
+- Accounts, cookies and configuration stay on your machine under `~/.chaoxing/` (directory `0700`, credential files `0600`).
+- Every capture sample in this repository is sanitized: no cookies, no tokens.
+- No hard-coded keys or secrets.
+- No access-control bypass. Login only uses the credentials you provide, and login captchas are recognised locally with OCR.
 
-## 请不要提交的内容
+## Please never commit
 
-Cookie、账号密码、API Key、`~/.chaoxing/` 下的任何文件、含 token 的抓包或日志。
-提 Issue 或 PR 前请先检查一遍；如果不慎已提交，请立即修改平台密码并撤销相关 Key。
+Cookies, account passwords, API keys, anything under `~/.chaoxing/`, and any capture or log containing a token.
+Check before opening an issue or a pull request. If you committed one by accident, change the password and revoke the key immediately.

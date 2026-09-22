@@ -128,7 +128,7 @@ make status   # 任务中心进度快照
   开放题的正文上下文里彻底移除 `preAppendContent`/`_recent_feedback`。
 
 ### 真人化审计（两轮独立，结论已落地为规则与回归）
-- 新增 `tools/audit/01_真人化审计.py`：硬伤 + 软提醒两级。
+- 新增 `tools/audit/01_human_likeness_audit.py`：硬伤 + 软提醒两级。
   硬伤：平台话术回显、markdown/emoji/列表、AI 连接词、结尾金句、无来源的假具体、
   口癖分布过密、全是均匀长句、整批指纹雷同；软提醒：缺人味/缺例子/偏长/过于顺滑。
 - 第一轮独立审计（独立上下文 Agent）：4 篇里只有 1 篇"像真人"，
@@ -146,7 +146,7 @@ make status   # 任务中心进度快照
 
 ### 验证
 - `make lint`：编译 + 158 项离线单测全绿（新增 `tests/test_human_likeness.py` 12 项常驻回归）。
-- `python tools/audit/01_真人化审计.py --selftest`：反例 5 处命中、正例 0 处，通过。
+- `python tools/audit/01_human_likeness_audit.py --selftest`：反例 5 处命中、正例 0 处，通过。
 
 ### 第三、四轮独立审计（修复后终验）
 - 第三轮（独立上下文）：判定 样例1 可疑（偏像真人）、样例2 可疑（模板最重）、**样例3 明显不是真人**、样例4 像真人。
@@ -156,7 +156,7 @@ make status   # 任务中心进度快照
   - `api/ai_writer.py` 自检新增：三层排比/对偶收尾、编造的个人琐事、显式模板连接词；
     重写时会把"这一版用多了的口癖词"点名禁用；提示词要求句子长短拉开（至少一句 12 字以内）。
   - `discussion()`：没有同学回复时明确要求"写能独立成立的回复，不许出现楼上/那个例子"。
-  - `tools/audit/01_真人化审计.py` 同步这些硬伤规则 + 跨篇结构雷同检测；样例支持 `has_context` 标记。
+  - `tools/audit/01_human_likeness_audit.py` 同步这些硬伤规则 + 跨篇结构雷同检测；样例支持 `has_context` 标记。
   - `tests/test_human_likeness.py` 扩到 17 项回归。
 - 修复后第一遍审计：**硬伤 0、软提醒 1**（仅"作业简答 200 字以上没有人味"，属正式答题的正常现象）。
 - 第四轮独立审计（终验）已发起，结论待回。
@@ -271,7 +271,7 @@ make status   # 任务中心进度快照
 补上履历/在职经历规则、换掉 fixtures、新增反例用例 `test_flags_fabricated_resume`。
 
 **验证**
-- `make lint` → **187 项单测全绿**；`tools/audit/01_真人化审计.py --selftest` 通过。
+- `make lint` → **187 项单测全绿**；`tools/audit/01_human_likeness_audit.py --selftest` 通过。
 - 真机走 main.py 生产路径：`main._complete_teaching_plan` 对 AI实践 任务点连跑两轮
   （每轮 100 分，练习平均分 84.3 → 86.2），`wait_plan_finished` 复查 `isFinish=True`，
   返回 True / `TaskOutcome.COMPLETED`；`main._process_teaching_task` 整任务重跑幂等（返回 True）。
@@ -428,7 +428,7 @@ make status   # 任务中心进度快照
   PLAN_TYPE_DISCUSS 加入 SUPPORTED_PLAN_TYPES；main.py 增加 planType=14 分派。
 - api/ai_writer.py：discussion 提示词禁止引用/复述具体楼层；FAKE_PERSONAL 增加兼职/打工规则，
   并把“编造个人经历”从软提醒升级为硬失败（重写 3 次仍在编造就抛错、不提交）。
-- tools/audit/01_真人化审计.py：补同样的兼职/打工规则；tests/test_human_likeness.py 加反例。
+- tools/audit/01_human_likeness_audit.py：补同样的兼职/打工规则；tests/test_human_likeness.py 加反例。
 - 防重复：同一话题自己已回复过就直接返回，不再发第二条（重复运行不刷讨论区）。
 
 ### 验证
