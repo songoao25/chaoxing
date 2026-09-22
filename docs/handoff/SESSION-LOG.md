@@ -2,10 +2,22 @@
 
 > 每轮 Agent 开工/收工都追加一条。格式：时间 / Agent / 做了什么 / 用什么命令验证 / 结论。
 
+## 2026-09-21 · codex（I-discussion-revision-and-scope-isolation，进行中）
+
+- 用户反馈讨论区草稿只能发送或跳过，无法当场按简短意见重写；并指出连续刷课后，上轮的讨论区选择会污染下一轮「只刷章节」的提示。
+- 已认领 I：将把讨论草稿改成“预览 → 发送 / 跳过 / 输入方向重写 / 退出”，并将无任务中心的本轮范围显式写成 `discussion_mode=none`，以离线连续两轮回归防止状态泄漏。
+
+### 收尾
+
+- 讨论区每条草稿现在显示“`y` 发送 / `r` 按提示重写 / 回车跳过 / `q` 退出”。按 `r` 后可输入最多 120 字的优化方向；系统把上一稿和方向交给原有真人化审计链路重新生成，并再次预览。任何版本都必须得到明确 `y` 才会提交。
+- 修复跨轮范围污染：向导在「只刷章节」时写 `discussion_mode=none`；运行时还会把旧/手改配置中残留的 `board` 降为 `none`。因此它不会扫描、分派或提示讨论区。
+- 覆盖讨论区重写、重写后跳过零提交、长度限制、写作上下文，以及「讨论区 → 继续同账号 → 只刷章节」连续两轮状态传递。
+- 验证：`make lint` 全绿（335 项离线单测），`git diff --check` 通过。未做真实平台提交或发送任何讨论回复。
+
 ## 2026-09-16 · dsh（DeepSeek Harness，无浏览器操控）
 
 ### 侦察（只读）
-- 通过本地 cookie（`~/.chaoxing/accounts/cookies/173****6569.txt`；账号已脱敏）直接调接口，
+- 通过本地 cookie（`~/.chaoxing/accounts/cookies/138****0000.txt`；账号已脱敏）直接调接口，
   摸清任务中心全部结构：`taskSignupList → getGroupData → getPlanDataByGroupId → getToStudyUrl`。
 - 用 `curl` 拉取新版泛雅前端 bundle（`fanyav3`/`think-ladder`）反解出接口清单。
 - 产物：`docs/artifacts/classification.json`、`group_plans_sample.json`、`ac_mark_samples.json`、
@@ -17,9 +29,9 @@
 - `api/ai_writer.py`：去 AI 味问答/讨论生成（参考已有回复、控制长度、清洗模板腔）。
 - `main.py`：`run_task_center_phase` 编排 + `task_center` 配置 + `--task-center/--no-task-center`。
 - `api/base.py`：修复 `knowledge/cards` 新版多页解析（`mArg = $mArg`）。
-- 文档：`docs/任务中心与章节分类.md`、`docs/交接文档.md`（后移为 `docs/handoff/DEEP-DIVE-教学任务适配.md`）。
+- 文档：`docs/PLATFORM-NOTES.md`、`docs/交接文档.md`（后移为 `docs/handoff/DEEP-DIVE-task-center.md`）。
 
-### 真机验证（账号 173****6569 / 企业战略管理）
+### 真机验证（账号 138****0000 / 示例课程）
 - 视频：72s 视频 2 倍速完成 ✅；160s 视频 2 倍速 + 心跳未完成，1 倍速后完成 ✅
   → 得出"有观看时长要求必须 1 倍速"。
 - 章节：`process_chapter` 修好后能读到任务点；但任务引擎不认已完成章节（任务 B）。
@@ -81,7 +93,7 @@ make status   # 任务中心进度快照
   `stuJobInfo={"knowledgeId":1199477652,"uid":"<uid>","finishCount":3,"clazzId":"<clazzId>",
   "enc":"<enc>","time":"<time>","jobCount":3}`，
   `autoPullChapterScore → {"code":200,"result":true,"message":"success"}`。
-- 复议：第1章 `0.3333 → 0.5`，`企业战略管理课程框架` `isFinish=true`。
+- 复议：第1章 `0.3333 → 0.5`，`示例课程课程框架` `isFinish=true`。
 - 证据落库：`docs/artifacts/capture_autopull.txt`；`cap-autopull` 转 done。
 
 ### 实现（章节类任务点并入刷课流程）
@@ -103,7 +115,7 @@ make status   # 任务中心进度快照
   回看逻辑、chapter 任务点同步三分支）。
 - 真机：第1章第二个章节任务点（kid=1199477654）由 CLI 完整跑通 —— 视频从头回看 787s（1 倍速）→
   平台下发 `stuJobInfo` → `autoPullChapterScore` 被接受 → 复查 `isFinish=true`；
-  第1章进度 `0.5 → 0.6667`（4/6），第 3 组（作业 + 文档「"中国平安"案例」）随之解锁。
+  第1章进度 `0.5 → 0.6667`（4/6），第 3 组（作业 + 文档「文档任务C」）随之解锁。
 
 ## 2026-09-17 · dsh（AI实践：格式纠正 + 两轮独立真人化审计）
 
@@ -216,7 +228,7 @@ make status   # 任务中心进度快照
 
 ### 验证
 - `make lint`：编译 + **178 项单测全绿**。
-- 真机（企业战略管理 · 开学第一课 · publishRelationUuid `6f2061b1…`）：
+- 真机（示例课程 · 开学第一课 · publishRelationUuid `6f2061b1…`）：
   连续 4 次练习各 **100 分**，练习记录 `[100, 100, 100, 100, 60, 30]`，
   **练习平均分 81.7**，平台成绩字段 `answerScore=100`，任务 `userTaskQualifyStatus=已达标`、3/3。
 - 全程走生产代码路径（`TaskCenter.study_ai_practice`），提交门禁保持 `confirm` 默认、`auto` 才自动提交。
@@ -420,7 +432,7 @@ make status   # 任务中心进度快照
 - 防重复：同一话题自己已回复过就直接返回，不再发第二条（重复运行不刷讨论区）。
 
 ### 验证
-- 真机（2026-09-20）：第2章「企业使命、愿景、目标的讨论」由 CLI 回复成功，读回正文与生成文本一致
+- 真机（2026-09-20）：第2章「讨论任务B」由 CLI 回复成功，读回正文与生成文本一致
   （133 字，接口 status=true）。
 - 两遍真人化审计：tools/audit 0 硬伤 0 提醒；独立上下文 Agent 结论“像真人，无需重写”。
 - tests/test_discussion.py 9 项 + 编排分派/审计规则回归；make lint 245 项全绿。
@@ -435,9 +447,9 @@ make status   # 任务中心进度快照
 
 ### 发言审计（用户要求：测试期间到底发过哪些评论）
 - 平台读回（只读 getReplyList，按本账号 puid 过滤）：
-  * 第2章「企业使命、愿景、目标的讨论」：本账号发言 **1 条**
+  * 第2章「讨论任务B」：本账号发言 **1 条**
     uuid=<reply-uuid>、第300楼、isFinish=true；
-  * 第3章「决策者对外部环境的洞察」：本账号发言 **0 条**、isFinish=false；
+  * 第3章「讨论任务A」：本账号发言 **0 条**、isFinish=false；
   * 其余讨论任务点都在锁定分组，未取页面、未发送。
 - 三条 dry-run 草稿（含“奶茶店兼职”“第七条”等未通过硬伤的版本）只在本地生成，
   tools/probe/11 的 --dry-reply 模式不调用提交，平台上一个字都没发。
@@ -467,7 +479,7 @@ make status   # 任务中心进度快照
   git 全部未提交、含 token 的 JSON 取证未忽略、pyc 里残留真实 uid。
 
 ### 隐私脱敏（公开仓库要求，全仓 0 残留）
-- 文档（11 个文件）与取证样例：手机号→173****6569、uid/姓名/课程参数→占位符、token/enc→占位符；
+- 文档（11 个文件）与取证样例：手机号→138****0000、uid/姓名/课程参数→占位符、token/enc→占位符；
   ac_mark_samples.json 的 enc 按脱敏后参数重算（保持回归价值）。
 - 11 个探针改为读 tools/probe/local.env（gitignored）+ 环境变量，仓库不再写死账号/课程；
   新增 local.env.example 模板。
@@ -487,8 +499,8 @@ make status   # 任务中心进度快照
   Dockerfile 改为可用的向导入口 + .dockerignore。
 
 ### 文档路径专项（用户反馈"文件阅读没完成"）
-- 真机实验：泰康/吉利（10 分钟时长类）各 600 秒打点 + 结束时补 readEnd → isFinish 仍为 false（两次）；
-  中国平安（completeRead）与科大讯飞（5 分钟）已完成。
+- 真机实验：某企业/某车企（10 分钟时长类）各 600 秒打点 + 结束时补 readEnd → isFinish 仍为 false（两次）；
+  某保险公司（completeRead）与某科技公司（5 分钟）已完成。
 - 结论：缺的不是 readEnd，可能是阅读器 JS 的页面/滚动事件参与计账；已如实写入 README/分类文档/TASKS/HANDOFF，
   并加 24 小时尝试台账，不再重复消耗真实阅读时间。
 
@@ -513,15 +525,15 @@ make status   # 任务中心进度快照
   实测一次完整运行 5.6 万行里绝大部分是逐心跳/逐题 TRACE。
 
 ### 读日志做全流程审计：没完成的到底是什么
-- 第3章「决策者对外部环境的洞察」主题讨论：上次运行（09-20 21:29）时程序还不支持讨论，
+- 第3章「讨论任务A」主题讨论：上次运行（09-20 21:29）时程序还不支持讨论，
   日志明确写“教学任务点类型暂不支持”。现在已支持，任务可学，下次运行会完成。
-- 第5章「总体战略之专业化和多元化对比分析」作业：这是一道**简答题**作业，
+- 第5章「作业任务A」作业：这是一道**简答题**作业，
   日志显示 00:10:40 已提交成功，但平台 score=0.0、enableWorkScore=60 → **等老师批改**才会达标；
   不是提交失败（对比第1/2/3章作业 83.3 / 66.6 / 100.0 都已完成）。
-- 第5章「与格力电器总裁董明珠对话」AI实践：入口 302 到 `/mooc2-ans-vue/situationalDialogue`，
+- 第5章「AI实践任务A」AI实践：入口 302 到 `/mooc2-ans-vue/situationalDialogue`，
   **新版情景对话**（没有 aiEnc），与思维阶梯是两套接口 → 新缺口 `TASKS#H-ai-situational`，
   现在会明确提示“暂不支持，请到 App 手动完成”，不再报令人困惑的“缺少参数”。
-- 文档（泰康/吉利/TCL）：时长类文档平台不计入（D35 两次 600 秒实验证据）。
+- 文档（某企业/某车企/某家电企业）：时长类文档平台不计入（D35 两次 600 秒实验证据）。
 - 第7/8/9章的章节类/AI实践任务点：**分组未解锁**（顺序闯关），不是程序问题。
 - 第8/9章可学的视频：上次运行没跑到（运行结束时还没轮到）。
 - 思考题：本课程当前没有待做的；代码仍不支持。签到/课堂活动：未适配。
@@ -592,12 +604,12 @@ make status   # 任务中心进度快照
 ### 验证
 - make lint：编译 + 287 项离线单测全绿（tests/test_review.py 新增实时留痕用例）。
 - 预览（作业 4 题 + 讨论）：
-    作答 · 总体战略之专业化和多元化对比分析（4 题）
+    作答 · 作业任务A（4 题）
        1. 选择  以下属于波特五力竞…  A
        2. 多选  外部环境分析的内容有  ABC
        3. 判断  多元化一定优于专业化  对
        4. 简答  你更支持哪种战略  我更倾向先把主业做扎实，等现金流稳…（41 字）
-    讨论 · 决策者对外部环境的洞察
+    讨论 · 讨论任务A
       老师讲的那个例子我印象挺深，……还得看技术路线。
 
 ## 2026-09-21 · dsh（数量语义澄清 + 开始前扫描 + 只刷讨论，D41）
@@ -630,7 +642,7 @@ make status   # 任务中心进度快照
   列表接口：`GET /pc/topic/topiclist/{bbsid}/getTopicList?folder_uuid=&page=1&pageSize=20`
   `&kw=&last_reply_time=&searchType=&authMappId=&isSetTop=1` → JSON（datas/title/content/
   createrName/reply_count/ftime/lastReply/uuid）。
-- 实机 `main.py --list-topics`：企业战略管理讨论区第 1 页 20 条帖子正常列出。
+- 实机 `main.py --list-topics`：示例课程讨论区第 1 页 20 条帖子正常列出。
 
 ### 实现
 - `api/discussion.py`：normalize_topic / fetch_topics / resolve_bbsid / render_topics / discuss_cli。
@@ -712,7 +724,7 @@ make status   # 任务中心进度快照
 ### 真机烟测（只刷讨论 · 讨论区挑帖）
 - 修复后实跑：不再 hard_stop、不再 NameError，扫描/列表/交互提示全部正常（列表处等待输入，未回复任何帖子）。
 - ⚠️ 第一次烟测用的临时配置把 discussion_mode 插到了 [cx] 段（旧配置没有该键，脚本追加到了文件末尾），
-  导致程序按默认 task 模式运行，**真实回复了第3章「决策者对外部环境的洞察」这条讨论**（内容就是平时会发的普通回复）。
+  导致程序按默认 task 模式运行，**真实回复了第3章「讨论任务A」这条讨论**（内容就是平时会发的普通回复）。
   第二次用正确配置复跑即按讨论区模式执行（只读列表）。
 
 ### 验证
@@ -743,3 +755,24 @@ make status   # 任务中心进度快照
 
 ### 验证
 - make lint：326 项离线单测全绿（更新/新增讨论区返回值、--yes 不群发、首跑问通知等用例）。
+
+## 2026-09-21 · dsh（README 中英文分离 + 隐私通用化，D47）
+
+### 隐私替换（全仓 21+7 个文件）
+- 真实姓名：徐飞阳/范钟贤/饶海燕/李欣桐 → 张三/李四/王五；班级名里的老师姓名 → 示例班级。
+- 真实课程名：企业战略管理 → 示例课程（README、docs、tests、取证样例、probe 注释）。
+- 真实任务/案例名：泰康/吉利/中国平安/科大讯飞/TCL/中国电信/董明珠 → 任务A…/某企业…。
+- 手机号：173****6569 → 138****0000，132****9876 → 139****0000。
+- 代码里的两处：api/accounts.py 文档示例姓名；api/ai_writer.py 提示词写死的课程名（改为"本课程"）。
+- 校验：全仓 grep 这些词 0 命中。
+
+### README 中英文分离
+- README.md 全英文重写：控制台示例译为英文，并在开头注明"CLI 实际输出为中文，示例为译文"；
+  语言切换标签 English | Chinese；最终 **中文字符数 = 0**。
+- README.zh-CN.md 同步为同结构中文版：两份都是 31 节 / 416 行 / 14 张表且行数逐一致，
+  代码块 22 个围栏成对。
+- 顺手修掉英文 README 里一个落单的代码围栏（会把 <details> 段落吞进代码块）。
+- 中文文件名文档改英文名并更新引用：docs/PLATFORM-NOTES.md、docs/handoff/DEEP-DIVE-task-center.md。
+
+### 验证
+- make lint：335 项全绿（3.14）；make test-313：335 项全绿（3.13）。

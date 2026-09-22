@@ -386,7 +386,8 @@ class HumanLikeWriter:
         return self._generate_text(user, max_chars, require_course_anchor=True)
 
     def discussion(self, topic: str, requirement: str = "", existing_posts=None,
-                   max_chars: int = 180) -> str:
+                   max_chars: int = 180, revision_hint: str = "",
+                   previous_reply: str = "") -> str:
         """给主题讨论写一条回复：目标"班里中等水平"的普通回复，不显眼也不掉队。
 
         用户实测反馈：太机灵、太有个人风格（"要我说…我甚至觉得…"）反而不像普通同学。
@@ -396,6 +397,8 @@ class HumanLikeWriter:
         user = (
             "讨论主题：" + topic + "\n"
             + ("老师的要求：" + requirement + "\n" if requirement else "")
+            + ("上一版草稿：\n" + str(previous_reply).strip() + "\n" if previous_reply else "")
+            + ("用户希望这样调整：" + str(revision_hint).strip() + "\n" if revision_hint else "")
             + ("同学们已经发过的回复：\n" + refs + "\n" if refs else "")
             + "请再写一条 " + str(max(30, max_chars - 50)) + "~" + str(max_chars) + " 字的回复：\n"
               "- 目标是班里**中等水平**：直接回答老师的问题，一句明确观点 + 一两条"
@@ -412,6 +415,8 @@ class HumanLikeWriter:
                  "不要出现“楼上/前面那位/那个例子”这类指代别人发言的说法；\n")
               + "- 不要编造个人经历（兼职/实习/打工/任职），没有真实经历就写课程里的说法、"
                 "公开案例或假设句（\u201c如果\u2026\u201d），也不要认领小组/班级经历。"
+              + ("\n- 必须吸收用户的调整方向，重新写一版完整正文；不要解释改了哪里，也不要照抄上一版。"
+                 if revision_hint or previous_reply else "")
         )
         return self._generate_text(user, max_chars)
 
@@ -422,7 +427,7 @@ class HumanLikeWriter:
             "AI 实践题目：" + str(question or "") + "\n"
             + ("实践要求：" + str(requirement) + "\n" if requirement else "")
             + ("当前维度/知识点：" + str(context) + "\n" if context else "")
-            + "请结合企业战略管理的概念和一个具体场景回答，说明你的判断和可能的取舍。"
+            + "请结合课程里的概念和一个具体场景回答，说明你的判断和可能的取舍。"
               "没有真实经历就写成假设句或课堂案例，不要编造实习/职位/数据。"
               "结尾不要总结升华，可以停在一处还不确定的地方。"
               "回答要自然、具体、连贯，控制在 180~" + str(max(240, max_chars))
@@ -470,7 +475,7 @@ class HumanLikeWriter:
             raise ValueError("选择题没有有效选项")
         mode = "多选，可选择一个或多个" if multiple else "单选，只选择一个"
         user = (
-            "课程测验题（企业战略管理）。\n"
+            "课程测验题。\n"
             "题目：" + str(question or "") + "\n"
             + ("考点提示：" + context + "\n" if context else "")
             + "选项：\n" + "\n".join(option_lines) + "\n"
@@ -489,7 +494,7 @@ class HumanLikeWriter:
             return "".join(letters) or None
 
         voted = self._vote(
-            "你是《企业战略管理》课程的答题助手，只依据课程理论作答，"
+            "你是这门课程的答题助手，只依据课程理论作答，"
             "以选出标准答案为目标，不要靠选项格式或长度猜。",
             user,
             parse,
@@ -573,7 +578,7 @@ class HumanLikeWriter:
     def choose_judgement(self, question: str, context: str = "", exclude=None) -> str:
         """为 AI 实践判断题返回平台使用的“对”或“错”。"""
         user = (
-            "课程判断题（企业战略管理）。\n"
+            "课程判断题。\n"
             "题目：" + str(question or "") + "\n"
             + ("考点提示：" + context + "\n" if context else "")
             + "作答要求：先依据课程概念判断这句话成立不成立，"
@@ -592,7 +597,7 @@ class HumanLikeWriter:
             return None
 
         answer = self._vote(
-            "你是《企业战略管理》课程的答题助手，严格依据课程理论判断正误。",
+            "你是这门课程的答题助手，严格依据课程理论判断正误。",
             user,
             parse,
             temperature=0.3,

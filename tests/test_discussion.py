@@ -29,7 +29,7 @@ DISCUSS_PAGE = """
 <script>
 window.obj = {
   user:{"puid":100000001},
-  topic:{"fid":1336,"title":"企业使命、愿景、目标的讨论","uuid":"topic-uuid-1",
+  topic:{"fid":1336,"title":"讨论任务B","uuid":"topic-uuid-1",
          "content":"企业使命、愿景、目标是高层管理者制定的，你认为企业普通员工需要了解这些吗？谈谈你的想法。"},
   circle:{"bbsid":"bbs-1"},
   urlToken:'token-abc',
@@ -101,7 +101,7 @@ class DiscussionDecodeTestCase(unittest.TestCase):
     def test_extracts_token_title_content(self):
         info = tc_mod._extract_discussion_topic(DISCUSS_PAGE)
         self.assertEqual(info["url_token"], "token-abc")
-        self.assertEqual(info["title"], "企业使命、愿景、目标的讨论")
+        self.assertEqual(info["title"], "讨论任务B")
         self.assertIn("普通员工需要了解", info["content"])
 
     def test_missing_token_is_empty(self):
@@ -123,7 +123,7 @@ class StudyDiscussionTestCase(unittest.TestCase):
 
     def test_replies_with_reference_and_correct_payload(self):
         tc, writer = self._tc()
-        ok = tc.study_discussion(STUDY_URL, {"name": "企业使命、愿景、目标的讨论"},
+        ok = tc.study_discussion(STUDY_URL, {"name": "讨论任务B"},
                                  {"courseId": "1000001", "clazzId": "1000002"})
         self.assertTrue(ok)
         self.assertEqual(writer.existing, [r["content"] for r in REPLIES["datas"]])

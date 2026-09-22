@@ -70,7 +70,7 @@ class FakeTaskCenter:
 
 class ScanRenderTestCase(unittest.TestCase):
     def test_chapter_row_counts(self):
-        row = scan.chapter_row({"title": "企业战略管理"},
+        row = scan.chapter_row({"title": "示例课程"},
                                [{"has_finished": True, "title": "1.1"},
                                 {"has_finished": False, "title": "2.1"}])
         self.assertEqual(row["total"], 2)
@@ -79,11 +79,11 @@ class ScanRenderTestCase(unittest.TestCase):
         self.assertEqual(row["first"], "2.1")
 
     def test_report_mentions_missing_items(self):
-        chapter_rows = [scan.chapter_row({"title": "企业战略管理"},
+        chapter_rows = [scan.chapter_row({"title": "示例课程"},
                                          [{"has_finished": True, "title": "1.1"},
                                           {"has_finished": False, "title": "2.1"}])]
         tc_rows = [{
-            "title": "企业战略管理", "tasks": 3, "done": 1, "todo": 1, "locked": 1,
+            "title": "示例课程", "tasks": 3, "done": 1, "todo": 1, "locked": 1,
             "by_type": {"作业": 1}, "locked_by_type": {"主题讨论": 1},
             "unsupported": ["思考题"], "error": "",
         }]
@@ -103,7 +103,7 @@ class ScanRenderTestCase(unittest.TestCase):
         ]}
         fake = FakeTaskCenter(groups, plans, finished_ids=["1"])
         with mock.patch("api.task_center.TaskCenter", return_value=fake):
-            rows = scan.scan_task_center(object(), [{"title": "企业战略管理"}], {})
+            rows = scan.scan_task_center(object(), [{"title": "示例课程"}], {})
         row = rows[0]
         self.assertEqual(row["done"], 1)
         self.assertEqual(row["todo"], 1)          # 只有讨论是可学的待完成

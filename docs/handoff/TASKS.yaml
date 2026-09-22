@@ -8,6 +8,39 @@ milestone: task-center-parity
 statuses: [ready, in_progress, blocked, done, wontfix]
 
 tasks:
+  - id: I-discussion-revision-and-scope-isolation
+    title: 讨论区草稿重写与跨轮刷课范围隔离
+    status: done
+    priority: P0
+    owner: codex
+    depends_on: []
+    blocked_by: null
+    context: |
+      讨论区挑帖模式的草稿目前只能发送或跳过；用户需要在不满意时输入简短优化方向，
+      当场重新生成、再次预览再决定。连续刷课时每一轮范围必须完全由本轮选择决定：
+      上一轮的讨论区模式不能影响下一轮「只刷章节」的运行、扫描或提示。
+    files:
+      - api/ai_writer.py
+      - api/task_center.py
+      - api/discussion.py
+      - setup_wizard.py
+      - main.py
+      - tests/test_discussion_board.py
+      - tests/test_study_scope.py
+      - docs/handoff/TASKS.yaml
+      - docs/handoff/SESSION-LOG.md
+    acceptance: |
+      每条讨论草稿可选发送、跳过、退出或按用户输入的优化方向重写；重写不得提交原草稿。
+      新一轮只刷章节时配置和运行态均为 discussion_mode=none，不出现讨论区模式提示或分派。
+      覆盖连续两轮的离线回归，并通过 make lint。
+    evidence:
+      - api/discussion.py：每条草稿现在可选发送、跳过、退出或 r 按简短方向重写；重写只生成/预览，不会提交旧稿或未确认的新稿，方向最多 120 字。
+      - api/ai_writer.py + api/task_center.py：将上一稿和用户方向传给真人化写作器；普通自动主题讨论保持原调用形态，兼容旧写作器。
+      - setup_wizard.py：本轮不启用任务中心时显式写 discussion_mode=none；main.py 对旧/手改配置也在运行时降为 none。
+      - tests/test_discussion_board.py：覆盖重写预览、跳过后零提交、方向长度限制、写作器上下文。
+      - tests/test_study_scope.py：覆盖讨论区轮次后继续并选择只刷章节、配置清理和运行时旧状态隔离。
+      - make lint：335 项离线单测全绿；git diff --check 通过。
+
   - id: A-doc-reading-duration
     title: 打通任务中心的文档阅读时长（2/5/10 分钟）
     status: blocked
@@ -37,7 +70,7 @@ tasks:
       - tests/test_task_center.py：脱敏样例签名回归、请求头回归、打点 HTTP 失败不计完成
       - make lint：当前 123 项离线单测全绿
       - 真实探针两轮：各 11 次打点均 HTTP 200，readEnd 返回成功，但最终 isFinish=false、任务进度仍为 0/15
-      - 2026-09-21 两次完整真机复验（泰康/吉利，各 600 秒打点 + 结束时补 readEnd，等待 30/60/120 秒复查）：
+      - 2026-09-21 两次完整真机复验（某企业/某车企，各 600 秒打点 + 结束时补 readEnd，等待 30/60/120 秒复查）：
         平台仍未计入，isFinish=false；结论：时长类文档的计账缺的不是 readEnd，
         需要对照阅读器 JS 的页面/滚动事件再查。已加 24 小时本地尝试台账，避免重复消耗真实阅读时间。
 
@@ -75,7 +108,7 @@ tasks:
       - api/base.py：engine_info 打点参数、stuJobInfo 捕获、curl 指纹回退、到结尾未通过则回看
       - main.py / api/task_center.py：章节任务点接入刷课流程（SUPPORTED_PLAN_TYPES 含 PLAN_TYPE_CHAPTER）
       - tests/test_task_center.py + tests/test_platform_fixes.py：133 项离线单测全绿
-      - 真实账号：5639750「企业战略管理课程框架」同步后 isFinish=true，第1章 0.3333 → 0.5
+      - 真实账号：5639750「示例课程课程框架」同步后 isFinish=true，第1章 0.3333 → 0.5
       - 真实账号（CLI 全链路）：5639751「战略相关概念」回看 787s → stuJobInfo → autoPullChapterScore 被接受 → isFinish=true；第1章 0.5 → 0.6667，第 3 组解锁
       - 剩余：文档作为"章节最后一项任务点"的路径只有离线单测，未真机验收（见任务 B2）
 
@@ -161,7 +194,7 @@ tasks:
       - 单测：生成器输入输出、提交失败不假装成功
     acceptance: 思考题提交成功，任务点 isFinish=true，文本人工看不像 AI。
     evidence:
-      - 主题讨论部分（2026-09-20 真机）：第2章「企业使命、愿景、目标的讨论」由 CLI 回复成功，
+      - 主题讨论部分（2026-09-20 真机）：第2章「讨论任务B」由 CLI 回复成功，
         已有回复 20 条 → ai_writer 生成 133 字回复 → addReplys status=true，读回正文一致
       - 两遍真人化审计：tools/audit 0 硬伤；独立上下文 Agent 结论"像真人，无需重写"
       - 取证：docs/artifacts/capture_discussion.txt；接口实现见 api/task_center.py study_discussion
@@ -175,7 +208,7 @@ tasks:
     depends_on: []
     blocked_by: null
     context: |
-      第5章「与格力电器总裁董明珠对话」属于情景对话：getToStudyUrl →
+      第5章「AI实践任务A」属于情景对话：getToStudyUrl →
       /ai-evaluate/v2/answer?...&publishRelationUuid=...&__from=taskEngine →
       302 到 /mooc2-ans-vue/situationalDialogue?courseid=&clazzid=&cpi=&publishRelationUuid=
       （没有 aiEnc，和思维阶梯不是同一套）。SPA bundle 里的接口族：
@@ -219,7 +252,7 @@ tasks:
       - api/task_center.py：提交后先请求 /ai-ans/ai-evaluate/think/end-report（成绩在这一步才算出来，实测不请求就永远"未评估"）
       - api/task_center.py：同一道题最多试满一轮选项 + 连续两次没有新消息就收手提交（平台会把最后一道题无限推回）
       - tests/test_task_center.py：SSE 字段解析、报告成绩解析（含被拆行的 JSON）、HTTP 200 业务失败、提交门禁、低分重答、平均分补答、空转收手
-      - 真机 2026-09-17（企业战略管理·开学第一课·publishRelationUuid 6f2061b1…）：
+      - 真机 2026-09-17（示例课程·开学第一课·publishRelationUuid 6f2061b1…）：
         4 次练习各 100 分，练习平均分 81.7，平台成绩字段 answerScore=100，
         任务 userTaskQualifyStatus=已达标、planFinishCount=3/3
       - 独立上下文审计（2026-09-17）：结论"部分通过"，指出 1 个阻塞级（确认提示与键盘监听抢 stdin）
@@ -259,7 +292,7 @@ tasks:
       - 受控真实复验：补齐原始 encryTaskUserId 后，服务端错误从“参数信息有误”收敛为“enc不正确”，证明请求体结构已被识别；学习页 URL、utEnc、setlog encode、transfer/final enc、openc、card defaults 等候选值均被拒绝
       - 2026-09-17 定位到下发方：/ananas/videojs-ext/videojs-ext.min.js 的 sendLog（视频打点响应）与 /ananas/ueditor/documentJob.js 的 finishJob（/mooc-ans/job/document 响应）在 window.parent.parent.isEngineNode=='1' 时把 stuJobInfo 交给 sendStuJobInfoMsg
       - 真实浏览器（Chrome + Firefox 登录态）抓包：stuJobInfo = {"knowledgeId":1199477652,"uid":"<uid>","finishCount":3,"clazzId":"<clazzId>","enc":"<enc>","time":"<time>","jobCount":3}，autoPullChapterScore → {"code":200,"result":true,"message":"success"}
-      - 同步后复查：5639750「企业战略管理课程框架」isFinish=true，第1章进度 0.3333 → 0.5
+      - 同步后复查：5639750「示例课程课程框架」isFinish=true，第1章进度 0.3333 → 0.5
       - 详见 docs/artifacts/capture_autopull.txt（含 requests 403 / curl 200 的客户端指纹对比）
 
   - id: D0-human-like-history
@@ -297,7 +330,7 @@ tasks:
     context: |
       api/base.py 的 study_document(engine_info=True) 会调 /mooc-ans/job/document
       并捕获 stuJobInfo，但只过了离线单测：还没有遇到"文档是本章最后一项任务点"的
-      真实场景（第1章第3组的文档「"中国平安"案例」已解锁，可用来验收）。
+      真实场景（第1章第3组的文档「文档任务C」已解锁，可用来验收）。
     files:
       - api/base.py
       - tools/probe/06_章节类任务点同步实验.py
@@ -359,7 +392,7 @@ tasks:
     files: [docs/handoff/TASKS.yaml, docs/handoff/TASKS.md, docs/handoff/SESSION-LOG.md]
     acceptance: 新人能在 5 分钟内从 HANDOFF.md 找到下一步。
     evidence:
-      - 已同步 README、AGENTS.md、config_template.ini、docs/ARCHITECTURE.md、docs/任务中心与章节分类.md 的当前支持范围、提交模式和未验证边界
+      - 已同步 README、AGENTS.md、config_template.ini、docs/ARCHITECTURE.md、docs/PLATFORM-NOTES.md 的当前支持范围、提交模式和未验证边界
       - 已更新 HANDOFF.md、TASKS.yaml、TASKS.md、SESSION-LOG.md；保留 cap-autopull、cap-ai-practice 与 E 的真实证据阻塞状态
       - make lint：编译检查 + 123 项离线单测全绿；make status：当前账号任务中心快照可读
 

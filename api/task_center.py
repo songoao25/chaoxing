@@ -26,7 +26,7 @@
             POST /pc/invitation/{topicUuid}/addReplys；文本有硬伤（编造经历等）直接不提交。
 其余类型（思考题）目前不做，会明确写日志提示手动完成，绝不会假装成功。
 
-结构分类和实测结论见 docs/任务中心与章节分类.md。
+结构分类和实测结论见 docs/PLATFORM-NOTES.md。
 接口全部是只读探测出来的，任何一步失败都只影响该任务点，不会影响章节刷课。
 """
 
@@ -1777,7 +1777,8 @@ class TaskCenter:
                 f"&uuid={quote(str(topic_uuid))}&classId={quote(class_id)}")
 
     def draft_reply(self, bbsid: str, topic_uuid: str, course: Optional[dict] = None,
-                    name: str = "", referer: str = "") -> Optional[dict]:
+                    name: str = "", referer: str = "", revision_hint: str = "",
+                    previous_reply: str = "") -> Optional[dict]:
         """只生成回复草稿，**不提交**。
 
         讨论区模式（自己挑帖子）要先给用户看草稿、确认之后再发，所以拆出这一步。
@@ -1819,7 +1820,16 @@ class TaskCenter:
 
         topic = (topic_info["title"] + "\n" + topic_info["content"]).strip()
         try:
-            reply = writer.discussion(topic, existing_posts=existing, max_chars=180)
+            # 保持普通主题讨论的原调用形态；只有用户明确要求重写时才传新上下文。
+            # 这样第三方/旧版写作器仍能继续用于原有的自动讨论流程。
+            if revision_hint or previous_reply:
+                reply = writer.discussion(
+                    topic, existing_posts=existing, max_chars=180,
+                    revision_hint=str(revision_hint or "").strip()[:120],
+                    previous_reply=str(previous_reply or "").strip()[:360],
+                )
+            else:
+                reply = writer.discussion(topic, existing_posts=existing, max_chars=180)
         except Exception as e:
             logger.warning(
                 "主题讨论生成回复失败（AI 味/编造内容反复出现），本次不提交: {} - {}", name, e

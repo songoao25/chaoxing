@@ -1,6 +1,6 @@
 # 【脱敏】任务中心 -> 主题讨论 真实取证（2026-09-20）
 
-> 账号 173****6569（账号已脱敏）/ 企业战略管理 courseId=<courseId>、clazzId=<clazzId>、cpi=<cpi>。
+> 账号 138****0000（账号已脱敏）/ 示例课程 courseId=<courseId>、clazzId=<clazzId>、cpi=<cpi>。
 > cookie / urlToken / uuid 一律脱敏成 <...>，只保留结构。
 
 ## 1. 入口链路
@@ -15,14 +15,14 @@ GET  该 URL（跟随 302）
   页面 title = 话题详情（约 135KB）
 
 已解锁的话题（2026-09-20）：
-  * 第2章「企业使命、愿景、目标的讨论」uuid=<...>，已有 20 条同学回复
-  * 第3章「决策者对外部环境的洞察」uuid=<...>
+  * 第2章「讨论任务B」uuid=<...>，已有 20 条同学回复
+  * 第3章「讨论任务A」uuid=<...>
 
 ## 2. 页面里的数据（window.obj，JS 字面量不是 JSON）
 
   window.obj = {
     user:{puid:...},
-    topic:{... title:企业使命、愿景、目标的讨论, uuid:<topic-uuid>,
+    topic:{... title:讨论任务B, uuid:<topic-uuid>,
            content:企业使命、愿景、目标是高层管理者制定的，你认为企业普通员工需要了解这些吗？谈谈你的想法。, ...},
     circle:{... bbsid:<bbsid> ...},
     urlToken:<32 位十六进制>,      // 每次提交后服务端会换一个新的

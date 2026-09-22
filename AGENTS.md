@@ -101,7 +101,7 @@ make test-313    # 用 CI 同版本（3.13）再跑一遍：本地可能是 3.14
 - 详细交接：`docs/handoff/HANDOFF.md`
 - 任务板：`docs/handoff/TASKS.yaml`（机器可读） / `TASKS.md`（人读）
 - 浏览器抓包 SOP：`docs/handoff/CAPTURE-PROTOCOL.md`
-- 平台结构分类：`docs/任务中心与章节分类.md`
+- 平台结构分类：`docs/PLATFORM-NOTES.md`
 
 ## 7. 文档索引
 
@@ -113,7 +113,7 @@ make test-313    # 用 CI 同版本（3.13）再跑一遍：本地可能是 3.14
 | `docs/handoff/SESSION-LOG.md` | 想知道上一轮 Agent 干了什么 |
 | `docs/ARCHITECTURE.md` | 改架构、加新任务点类型 |
 | `docs/RUNBOOK.md` | 真实账号验证、排查故障 |
-| `docs/任务中心与章节分类.md` | 需要平台接口细节 / 完成规则 |
+| `docs/PLATFORM-NOTES.md` | 需要平台接口细节 / 完成规则 |
 
 ## 8. 提交规范
 

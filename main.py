@@ -973,6 +973,19 @@ def _chapter_study_enabled(common_config: dict, args) -> bool:
     return bool(value)
 
 
+def _discussion_mode_for_run(common_config: dict, task_center_enabled: bool,
+                             only_discussion: bool) -> str:
+    """把讨论处理方式约束在本轮的任务中心范围内。
+
+    向导每轮都会重写范围，但旧账号配置、手改配置或 CLI 覆盖仍可能留下 board。
+    当本轮不跑任务中心时，把它降为 none，确保章节流程没有讨论区分派或提示。
+    """
+    if not (task_center_enabled or only_discussion):
+        return "none"
+    mode = str(common_config.get("discussion_mode", "") or "task").strip().lower()
+    return mode if mode in ("task", "board") else "task"
+
+
 def _teaching_task_finished(task: dict) -> bool:
     """教学任务在列表里的完成进度（1.0 = 全部刷完）"""
     try:
@@ -1507,19 +1520,22 @@ def main():
         only_discussion = bool(getattr(args, "only_discussion", False)) or str(
             common_config.get("only_discussion", "") or ""
         ).strip().lower() in ("1", "true", "yes", "on")
-        # 讨论的两种刷法：task=任务里的主题讨论（自动）；board=讨论区挑帖（手动）
-        discussion_mode = str(common_config.get("discussion_mode", "") or "task").strip().lower()
-        if discussion_mode not in ("task", "board"):
-            discussion_mode = "task"
-        board_mode = discussion_mode == "board"
-        # 讨论走讨论区模式时，任务中心里不再自动刷主题讨论（改由讨论区流程处理）
-        skip_discussion = board_mode
+        task_center_enabled = _task_center_enabled(common_config, args)
         if only_discussion:
             chapters_enabled = False
             # 只刷讨论走的是任务中心那条链路：这里强制打开，避免"两个都关"被启动检查拦下
             common_config["task_center"] = "true"
+            task_center_enabled = True
+        # 讨论的两种刷法只在任务中心范围内有效；纯章节轮必须是 none。
+        discussion_mode = _discussion_mode_for_run(
+            common_config, task_center_enabled, only_discussion
+        )
+        board_mode = discussion_mode == "board"
+        # 讨论走讨论区模式时，任务中心里不再自动刷主题讨论（改由讨论区流程处理）
+        skip_discussion = board_mode
+        if only_discussion:
             print("  本次只刷讨论（" + ("讨论区挑帖" if board_mode else "任务里的主题讨论") + "）")
-        if not chapters_enabled and not _task_center_enabled(common_config, args):
+        if not chapters_enabled and not task_center_enabled:
             hard_stop(
                 "章节和任务中心都被关掉了，没有可以刷的内容",
                 "  当前配置：chapter_study = false、task_center = false",

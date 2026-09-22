@@ -357,7 +357,7 @@ class GroupUnlockTestCase(unittest.TestCase):
         return FakeTC()
 
     def _course(self):
-        return {"title": "企业战略管理", "courseId": "1", "clazzId": "2", "cpi": "3"}
+        return {"title": "示例课程", "courseId": "1", "clazzId": "2", "cpi": "3"}
 
     def test_runs_all_groups_in_order(self):
         plans = [

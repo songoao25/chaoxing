@@ -1080,8 +1080,10 @@ def build_config(username, password, plan, chapters_enabled=True, task_center_en
     text = replace_value(text, "common", "chapter_study", "true" if chapters_enabled else "false")
     text = replace_value(text, "common", "only_discussion",
                          "true" if only_discussion else "false")
-    text = replace_value(text, "common", "discussion_mode",
-                         discussion_mode or "task")
+    # 没有任务中心的本轮不存在讨论处理方式。显式写 none，避免上一轮的讨论区选择
+    # 在下一轮「只刷章节」时被误读成仍要进讨论区。
+    mode = discussion_mode if (task_center_enabled or only_discussion) else "none"
+    text = replace_value(text, "common", "discussion_mode", mode or "task")
     text = replace_value(text, "common", "max_points_per_course", mp)
     text = replace_value(text, "common", "max_tasks_per_course", mt)
     text = replace_value(text, "common", "use_cookies", "false")

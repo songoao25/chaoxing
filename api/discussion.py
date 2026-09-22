@@ -23,6 +23,7 @@ TOPIC_LIST_PATH = "/pc/topic/topiclist/{bbsid}/getTopicList"
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGES = 10
 SEND_INTERVAL_SECONDS = 1.5
+MAX_REVISION_HINT_LENGTH = 120
 
 
 def clip_text(text, limit: int = 20) -> str:
@@ -200,6 +201,18 @@ def _ask(prompt: str) -> str:
         return "q"
 
 
+def _revision_hint() -> str:
+    """读取一条简短重写方向；空白也允许，表示换一种写法。"""
+    hint = _ask("      说说怎么改（如“更短一点、少讲案例”；回车＝换一种写法） ")
+    if hint.lower() in ("q", "quit", "exit"):
+        return "q"
+    hint = hint.strip()
+    if len(hint) > MAX_REVISION_HINT_LENGTH:
+        print(f"      · 优化方向过长，只取前 {MAX_REVISION_HINT_LENGTH} 个字")
+        hint = hint[:MAX_REVISION_HINT_LENGTH]
+    return hint or "换一种更自然、直接的说法，不要沿用上一版的句式。"
+
+
 def _pick_course(courses: list, list_only: bool) -> Optional[dict]:
     if len(courses) == 1 or list_only:
         return courses[0]
@@ -342,31 +355,54 @@ def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
             skipped += 1
             print()
             continue
-        print("      " + "─" * 44)
-        for line in textwrap.wrap(draft["reply"], width=60):
-            print("      " + line)
-        print("      " + "─" * 44)
-        # 安全默认：回车 = 跳过；只有明确 y 才发到公开讨论区
-        answer = _ask("      发送这条吗？[y 发送 · 回车跳过 · q 退出] ")
-        if answer.lower() in ("q", "quit", "exit"):
+        while True:
+            print("      " + "─" * 44)
+            for line in textwrap.wrap(draft["reply"], width=60):
+                print("      " + line)
+            print("      " + "─" * 44)
+            # 安全默认：回车 = 跳过；r 只重写草稿，绝不提交任何版本。
+            answer = _ask("      怎么处理？[y 发送 · r 按提示重写 · 回车跳过 · q 退出] ")
+            if answer.lower() in ("q", "quit", "exit"):
+                print()
+                print(f"  已停止：发送 {sent} 条 · 跳过 {skipped} 条")
+                return {"ok": True, "sent": sent, "skipped": skipped, "reason": "用户中途退出"}
+            if answer.lower() in ("r", "rewrite", "改", "重写"):
+                hint = _revision_hint()
+                if hint == "q":
+                    print()
+                    print(f"  已停止：发送 {sent} 条 · 跳过 {skipped} 条")
+                    return {"ok": True, "sent": sent, "skipped": skipped, "reason": "用户中途退出"}
+                revised = tc.draft_reply(
+                    bbsid, topic["uuid"], course=course, name=name,
+                    revision_hint=hint, previous_reply=draft["reply"],
+                )
+                if revised is None:
+                    print("      ✘ 没能重写草稿，保留这一版供你决定")
+                    continue
+                if revised.get("has_replied"):
+                    print("      · 你之前已经回复过这条，跳过（不重复发）")
+                    skipped += 1
+                    print()
+                    break
+                draft = revised
+                print("      · 已按你的方向重写，请再看一眼")
+                continue
+            if answer.lower() not in ("y", "yes", "是", "1"):
+                print("      · 已跳过这条")
+                skipped += 1
+                print()
+                break
+            ok = tc.submit_reply(bbsid, topic["uuid"], course=course, name=name,
+                                 topic_info=draft["topic_info"], reply=draft["reply"],
+                                 referer=draft["referer"], echo=False)
+            if ok:
+                print("      ✓ 已发送")
+                sent += 1
+            else:
+                print("      ✘ 发送失败（详见运行日志）")
+                skipped += 1
             print()
-            print(f"  已停止：发送 {sent} 条 · 跳过 {skipped} 条")
-            return {"ok": True, "sent": sent, "skipped": skipped, "reason": "用户中途退出"}
-        if answer.lower() not in ("y", "yes", "是", "1"):
-            print("      · 已跳过这条")
-            skipped += 1
-            print()
-            continue
-        ok = tc.submit_reply(bbsid, topic["uuid"], course=course, name=name,
-                             topic_info=draft["topic_info"], reply=draft["reply"],
-                             referer=draft["referer"], echo=False)
-        if ok:
-            print("      ✓ 已发送")
-            sent += 1
-        else:
-            print("      ✘ 发送失败（详见运行日志）")
-            skipped += 1
-        print()
+            break
         if index < len(chosen):
             time.sleep(SEND_INTERVAL_SECONDS)
 

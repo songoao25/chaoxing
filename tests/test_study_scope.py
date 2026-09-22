@@ -211,6 +211,38 @@ class WizardScopeTestCase(unittest.TestCase):
         self.assertEqual(cfg.get("common", "chapter_study"), "false")
         self.assertEqual(cfg.get("common", "task_center"), "true")
 
+    def test_chapters_only_clears_previous_discussion_mode(self):
+        """连续下一轮只刷章节时，绝不能把上一轮 board 留在运行配置里。"""
+        plan = [({"courseId": 1, "clazzId": 2, "title": "测试课"}, 1, 0)]
+        path = wizard.build_config("13800000003", "pw", plan,
+                                   chapters_enabled=True, task_center_enabled=False,
+                                   discussion_mode="board")
+        cfg = configparser.ConfigParser()
+        cfg.read(path, encoding="utf8")
+        self.assertEqual(cfg.get("common", "discussion_mode"), "none")
+
+
+class DiscussionScopeIsolationTestCase(unittest.TestCase):
+    """运行时也必须隔离旧配置，而不仅依赖向导正确写文件。"""
+
+    def test_chapter_only_ignores_stale_board_setting(self):
+        self.assertEqual(
+            main_mod._discussion_mode_for_run({"discussion_mode": "board"}, False, False),
+            "none",
+        )
+
+    def test_task_center_keeps_explicit_board_setting(self):
+        self.assertEqual(
+            main_mod._discussion_mode_for_run({"discussion_mode": "board"}, True, False),
+            "board",
+        )
+
+    def test_invalid_discussion_mode_falls_back_to_task(self):
+        self.assertEqual(
+            main_mod._discussion_mode_for_run({"discussion_mode": "unexpected"}, True, False),
+            "task",
+        )
+
     def test_build_config_uses_recommended_defaults(self):
         """向导不再逐项问配置：写出的运行配置直接用推荐值"""
         plan = [({"courseId": 1, "clazzId": 2, "title": "测试课"}, 3, 2)]
@@ -289,7 +321,7 @@ class WizardDisplayTestCase(unittest.TestCase):
     def _render(self, inputs):
         import io
         from contextlib import redirect_stdout
-        course = {"courseId": 1, "clazzId": 2, "title": "企业战略管理"}
+        course = {"courseId": 1, "clazzId": 2, "title": "示例课程"}
         answers = iter(inputs)
 
         def fake_input(prompt=""):
@@ -395,6 +427,46 @@ class WizardFlowTestCase(unittest.TestCase):
     def test_cancel_does_not_run_main(self):
         seen = self._run_flow(["setup_wizard.py"], (True, False, False, ""), submit_answer=False)
         self.assertNotIn("argv", seen)
+
+    def test_continue_after_board_round_uses_fresh_chapter_only_scope(self):
+        """“继续刷其他课程”必须重新取本轮范围，不能沿用上一轮讨论区模式。"""
+        course = {"courseId": 1, "clazzId": 2, "title": "测试课"}
+        scopes = iter([(False, False, True, "board"), (True, False, False, "")])
+        actions = iter(["again", "exit"])
+        written = []
+        ran = []
+
+        def fake_choose_courses(cx, **kwargs):
+            return [(course, 0, 0)]
+
+        def fake_build_config(username, password, plan, chapters_enabled=True,
+                              task_center_enabled=True, only_discussion=False,
+                              discussion_mode="task"):
+            written.append((chapters_enabled, task_center_enabled,
+                            only_discussion, discussion_mode))
+            return "/tmp/cx-test-run.ini"
+
+        def fake_run_main():
+            ran.append(list(sys.argv))
+
+        with mock.patch.object(wizard, "ensure_api_key"), \
+             mock.patch.object(wizard, "ensure_global_prefs"), \
+             mock.patch.object(wizard, "pick_user",
+                               return_value=("13800000000", "pw", mock.Mock(), "测试用户")), \
+             mock.patch.object(wizard, "choose_study_scope", side_effect=lambda: next(scopes)), \
+             mock.patch.object(wizard, "choose_courses", side_effect=fake_choose_courses), \
+             mock.patch.object(wizard, "build_config", side_effect=fake_build_config), \
+             mock.patch.object(wizard, "ask_after_run", side_effect=lambda *a, **k: next(actions)), \
+             mock.patch.object(wizard, "ask_yes_no", return_value=True), \
+             mock.patch.object(sys, "argv", ["setup_wizard.py"]), \
+             mock.patch.dict(sys.modules, {"main": mock.Mock(main=fake_run_main)}):
+            self.assertEqual(wizard._main_inner(), 0)
+
+        self.assertEqual(written, [
+            (False, False, True, "board"),
+            (True, False, False, ""),
+        ])
+        self.assertEqual(len(ran), 2)
 
 
 if __name__ == "__main__":

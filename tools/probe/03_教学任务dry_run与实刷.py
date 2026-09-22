@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-真机验证：用已保存的 cookie（账号（本机 local.env） / 企业战略管理）跑一遍任务中心逻辑。
+真机验证：用已保存的 cookie（账号（本机 local.env） / 示例课程）跑一遍任务中心逻辑。
 
     python /tmp/cx_live_task_center.py dry     # 只读，列任务/分组/任务点/学习地址
     python /tmp/cx_live_task_center.py apply   # 真刷一个教学任务（开学第一课）

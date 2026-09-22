@@ -20,19 +20,19 @@ from api import review  # noqa: E402
 class ReviewLogTestCase(unittest.TestCase):
     def test_record_and_load_roundtrip(self):
         item = review.record("讨论回复", "我觉得波特五力里最难判断的是替代品。",
-                             course="企业战略管理", task="决策者对外部环境的洞察")
+                             course="示例课程", task="讨论任务A")
         self.assertIsNotNone(item)
         items = review.load()
         self.assertTrue(items)
         latest = items[0]
         self.assertEqual(latest["kind"], "讨论回复")
-        self.assertEqual(latest["course"], "企业战略管理")
+        self.assertEqual(latest["course"], "示例课程")
         self.assertIn("替代品", latest["text"])
         self.assertEqual(latest["chars"], len(latest["text"]))
 
     def test_markdown_file_keeps_human_readable_copy(self):
         review.record("作业简答", "我倾向于先把主业做扎实，再考虑多元化。",
-                      course="企业战略管理", task="总体战略对比分析")
+                      course="示例课程", task="总体战略对比分析")
         path = review.markdown_path()
         self.assertTrue(os.path.exists(path))
         body = open(path, encoding="utf-8").read()
@@ -46,16 +46,16 @@ class ReviewLogTestCase(unittest.TestCase):
 
     def test_render_index_lists_items(self):
         review.record("测验简答", "企业应该根据自身资源做权变选择。",
-                      course="企业战略管理", task="1.2 章节测验")
+                      course="示例课程", task="1.2 章节测验")
         text = review.render_index(review.load(limit=1))
         self.assertIn("测验简答", text)
-        self.assertIn("企业战略管理", text)
+        self.assertIn("示例课程", text)
 
     def test_render_item_wraps_and_shows_meta(self):
         long_text = "这是一段比较长的回答。" * 12
-        review.record("AI实践作答", long_text, course="企业战略管理", task="与董明珠对话")
+        review.record("AI实践作答", long_text, course="示例课程", task="AI实践任务A")
         text = review.render_item(review.load(limit=1)[0], "[1/1]")
-        self.assertIn("与董明珠对话", text)
+        self.assertIn("AI实践任务A", text)
         self.assertIn("AI实践作答", text)
         for line in text.splitlines():
             self.assertLessEqual(len(line), 80)
@@ -101,14 +101,14 @@ class HomeworkShortAnswerHookTestCase(unittest.TestCase):
         questions = [{"id": 7, "type": "shortanswer", "title": "你更支持哪种战略？",
                       "options": "", "answerField": {}}]
         with mock.patch("api.task_center.review.record") as recorder:
-            failure = tc._fill_homework_answers(questions, course={"title": "企业战略管理"},
+            failure = tc._fill_homework_answers(questions, course={"title": "示例课程"},
                                                 task_name="总体战略对比分析")
         self.assertIsNone(failure)
         self.assertTrue(recorder.called)
         args, kwargs = recorder.call_args
         self.assertEqual(args[0], "作业简答")
         self.assertIn("专业化", args[1])
-        self.assertEqual(kwargs.get("course"), "企业战略管理")
+        self.assertEqual(kwargs.get("course"), "示例课程")
         self.assertEqual(kwargs.get("task"), "总体战略对比分析")
 
 
@@ -153,7 +153,7 @@ class LiveTraceTestCase(unittest.TestCase):
              "options": "", "answerField": {}},
         ]
         with mock.patch("api.task_center.emit") as emitter:
-            failure = tc._fill_homework_answers(questions, course={"title": "企业战略管理"},
+            failure = tc._fill_homework_answers(questions, course={"title": "示例课程"},
                                                 task_name="总体战略对比分析")
         self.assertIsNone(failure)
         printed = [str(c.args[0]) for c in emitter.call_args_list if c.args]

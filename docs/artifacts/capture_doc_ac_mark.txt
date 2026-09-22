@@ -2,7 +2,7 @@
 
 ## 来源与脱敏说明
 
-- 课程：企业战略管理；文档：第 3 章“科大讯飞”上市十年的变与不变。
+- 课程：示例课程；文档：第 3 章文档任务F。
 - 以下参数来自上一轮已保存的真实脱敏样例 `ac_mark_samples.json`，并按其中的完整参数重组成可重放的等价 cURL。
 - 这是参数级证据，不冒充本轮 Firefox DevTools 的直接“Copy as cURL”；本机 Firefox DevTools 当前报 `No such JSProcessActor 'DevToolsProcess'`。
 - Cookie、uid、markDataStr 中的 token 均已脱敏（uid → `<uid>`）；不要将真实 Cookie 或 token 写入仓库。

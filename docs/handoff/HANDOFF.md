@@ -51,15 +51,15 @@
 cd /path/to/chaoxing
 make doctor          # 环境自检
     make lint            # 确认当前代码是绿的（当前 274 项离线单测）
-make status          # 看账号当前进度（只读，会用到 173****6569 的 cookie；账号已脱敏）
+make status          # 看账号当前进度（只读，会用到 138****0000 的 cookie；账号已脱敏）
 ```
 
-当前基线（2026-09-20，账号 173****6569 / 企业战略管理；来自 `tools/probe/02` 只读快照 + 本轮真机提交）：
+当前基线（2026-09-20，账号 138****0000 / 示例课程；来自 `tools/probe/02` 只读快照 + 本轮真机提交）：
 
 | 教学任务 | 进度 | 备注 |
 | --- | --- | --- |
 | 开学第一课 | 3/3 ✅ | 含 AI实践：4 次练习各 **100 分**，练习平均分 **81.7**，平台成绩字段 `answerScore=100`，`已达标` |
-| 第1章 企业战略管理概述 | 5/6 | 两个章节任务点由 CLI 同步成功；**作业由 CLI 自动作答提交，平台判 83.3 分、isFinish=true**；剩 1 个文档任务点 |
+| 第1章 示例课程概述 | 5/6 | 两个章节任务点由 CLI 同步成功；**作业由 CLI 自动作答提交，平台判 83.3 分、isFinish=true**；剩 1 个文档任务点 |
 | 第2章 企业愿景、使命、目标 | 4/6 | 任务中心 21 秒视频 + 章节视频已完成；作业已解锁可自动作答（本次未提交）；剩主题讨论 |
 | 第3章 企业外部环境分析 | 2/15 | 第 1 组章节可学；作业/讨论在锁定分组 |
 | 第4章 企业内部环境分析 | 0/14 | 第 1 组视频可学；文档 10 分钟 |
@@ -88,7 +88,7 @@ make status          # 看账号当前进度（只读，会用到 173****6569 �
 | 14 | AI实践的判分是**平台自己的大模型**，会自相矛盾（标准答案判错、判断题"错""对"都判错）；且知识点答完后平台仍会把最后一题推回来而**不再收录作答**（`messageList` 不增长） | 真机实测：同一题"错/对"来回换十几次；整局曾拖到 112 题、空转 23 分钟 |
 | 11 | 章节类任务点的同步数据 `stuJobInfo` 由**平台下发**：章节页 `isTaskEngineNode=true` → `window.isEngineNode="1"`；视频打点响应 / `/mooc-ans/job/document` 响应里带 `stuJobInfo`，父页面 POST `autoPullChapterScore` | 真实浏览器抓包 + 同步后引擎复查，见 `docs/artifacts/capture_autopull.txt` |
 | 12 | mooc 视频打点在部分网络下按**客户端指纹**拦截：同一 URL/参数/Cookie/UA，Chrome 200、curl 200、Python requests **403**；且 `playTime` 到结尾但未通过时必须在结尾反复重报是没用的，要**从头回看**（浏览器从 0 播到 ~232s 才通过） | 2026-09-17 实测；CLI 已加 curl 回退（决 D12）与回看逻辑（决 D13） |
-| 18 | AI实践有**两套互不通用**的接口：思维阶梯（think-ladder，入口 302 带 aiEnc）与新版**情景对话**（situationalDialogue，无 aiEnc，接口族 /mobile/situationalDialogue/*）。当前只适配了思维阶梯；遇到情景对话会明确提示手动完成，不假装成功 | 2026-09-21 只读取证（第5章「与格力电器总裁董明珠对话」）；任务见 TASKS#H-ai-situational |
+| 18 | AI实践有**两套互不通用**的接口：思维阶梯（think-ladder，入口 302 带 aiEnc）与新版**情景对话**（situationalDialogue，无 aiEnc，接口族 /mobile/situationalDialogue/*）。当前只适配了思维阶梯；遇到情景对话会明确提示手动完成，不假装成功 | 2026-09-21 只读取证（第5章「AI实践任务A」）；任务见 TASKS#H-ai-situational |
 | 15 | 任务中心作业走**新版学习页**：`getToStudyUrl` → `mooc2/work/task`（302 到 `dowork`）；章节测验的 `mooc-ans/api/work` 对课程级作业返回 **403**，作业提交接口是 `addStudentWorkNewWeb`。题型在 `input[name=answertype<id>]`（0 单选/1 多选/2 填空/3 判断/4 简答），题干要按 DOM 顺序拼——真实页面把 `<p>` 嵌在 `<h3>` 里属非法 HTML，lxml 会提前闭合 h3 | 2026-09-20 真机取证 `docs/artifacts/capture_homework.txt`；第1章作业自动作答提交后平台判 **83.3** 分、`isFinish=true` |
 
 ---
@@ -107,7 +107,7 @@ make status          # 看账号当前进度（只读，会用到 173****6569 �
 
 | 阻塞 | 缺什么 | 下一步第一条命令/动作 |
 | --- | --- | --- |
-| 文档时长 | 已两次真机复验（泰康/吉利各 600 秒打点 + readEnd）：平台仍未计入 | 已停止重复消耗真实阅读时间；同一文档 24 小时内不重复读。下一步：用浏览器 DevTools 对照阅读器 JS 的完整行为（是否有页面/滚动事件参与计账） |
+| 文档时长 | 已两次真机复验（某企业/某车企各 600 秒打点 + readEnd）：平台仍未计入 | 已停止重复消耗真实阅读时间；同一文档 24 小时内不重复读。下一步：用浏览器 DevTools 对照阅读器 JS 的完整行为（是否有页面/滚动事件参与计账） |
 | 章节同步 | 第1章第二个章节任务点的真机验收（视频需回看 787s） | `./.venv/bin/python tools/probe/06_章节类任务点同步实验.py --kid 1199477654` |
 | 思考题 | 取题/提交接口（第5章分组解锁后） | 抓思考题学习页 → `capture_question.txt` |
 | 主题讨论完成同步 | ✅ 已复验：回复后约 3 分钟 `isFinish` 翻转（22:28 false → 22:31 true）；复查命令 `tools/probe/11_主题讨论只读取证.py --check-finish` | 无需额外同步接口；上游 `wait_plan_finished` 的等待+复查正好覆盖这个延迟 |
@@ -138,7 +138,7 @@ make status          # 看账号当前进度（只读，会用到 173****6569 �
 ## 7. 整体验收标准（Definition of Done）
 
 1. `make lint` 全绿，新增功能带离线单测。
-2. 用账号 173****6569 跑 `./cx --yes`（或 `python main.py -c ~/.chaoxing/config.ini`），
+2. 用账号 138****0000 跑 `./cx --yes`（或 `python main.py -c ~/.chaoxing/config.ini`），
    在**不打开浏览器**的情况下：
    - 7 个教学任务全部推进到 `taskStudyProgress = 1.0`；
    - 作业分数 ≥ 60；AI实践评分 ≥ 85；讨论/思考题提交成功且内容像真人；
@@ -163,6 +163,6 @@ make status          # 看账号当前进度（只读，会用到 173****6569 �
 - `docs/handoff/CAPTURE-PROTOCOL.md` — 浏览器抓包 SOP
 - `docs/handoff/DECISIONS.md` — 已做决策
 - `docs/handoff/SESSION-LOG.md` — 上一轮 Agent 时间线
-- `docs/handoff/DEEP-DIVE-教学任务适配.md` — 详细版交接（原 `docs/交接文档.md`）
-- `docs/任务中心与章节分类.md` — 平台结构分类与接口表
+- `docs/handoff/DEEP-DIVE-task-center.md` — 详细版交接（原 `docs/交接文档.md`）
+- `docs/PLATFORM-NOTES.md` — 平台结构分类与接口表
 - `docs/ARCHITECTURE.md` / `docs/RUNBOOK.md`

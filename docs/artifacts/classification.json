@@ -67,7 +67,7 @@
   },
   {
    "id": 5026526,
-   "name": "第1章 企业战略管理概述",
+   "name": "第1章 示例课程概述",
    "progress": 0.1667,
    "planFinish": 1,
    "planCount": 6,
@@ -102,7 +102,7 @@
        "planId": 5639750,
        "type": 8,
        "typeName": "章节",
-       "name": "企业战略管理课程框架",
+       "name": "示例课程课程框架",
        "finish": false,
        "externalDataId": "1199477652",
        "rules": {
@@ -151,7 +151,7 @@
        "planId": 5639752,
        "type": 4,
        "typeName": "作业",
-       "name": "第1章 企业战略管理概述 作业",
+       "name": "第1章 示例课程概述 作业",
        "finish": false,
        "externalDataId": "bd0e1fb2e73441069ce0354c74e89f69",
        "rules": {
@@ -165,7 +165,7 @@
        "planId": 5639751,
        "type": 11,
        "typeName": "文档",
-       "name": "”中国平安“案例",
+       "name": "文档任务C",
        "finish": false,
        "externalDataId": "abe4fb7482684bfabfe5c124b18b2f8f",
        "rules": {
@@ -279,7 +279,7 @@
        "planId": 7061856,
        "type": 14,
        "typeName": "主题讨论",
-       "name": "企业使命、愿景、目标的讨论",
+       "name": "讨论任务B",
        "finish": false,
        "externalDataId": "e2ec2b16d98b4410a60a3b829d2d6eb2",
        "rules": {
@@ -323,7 +323,7 @@
        "planId": 5639766,
        "type": 11,
        "typeName": "文档",
-       "name": "“科大讯飞”上市十年的变与不变",
+       "name": "文档任务F",
        "finish": false,
        "externalDataId": "f9cd3e58190848ef8bf6f96ccdc8b8b2",
        "rules": {
@@ -505,7 +505,7 @@
        "planId": 5639765,
        "type": 4,
        "typeName": "作业",
-       "name": "第3章 宏观环境分析作业",
+       "name": "作业任务B",
        "finish": false,
        "externalDataId": "a7b1962171e34530aa4bac255b454e3c",
        "rules": {
@@ -519,7 +519,7 @@
        "planId": 5639768,
        "type": 14,
        "typeName": "主题讨论",
-       "name": "决策者对外部环境的洞察",
+       "name": "讨论任务A",
        "finish": false,
        "externalDataId": "54e77496-fa94-457c-9faa-79696eefdab2",
        "rules": {
@@ -668,7 +668,7 @@
        "planId": 5639789,
        "type": 8,
        "typeName": "章节",
-       "name": "泰康案例Ⅳ",
+       "name": "案例企业Ⅳ",
        "finish": false,
        "externalDataId": "1199477683",
        "rules": {
@@ -731,7 +731,7 @@
        "planId": 5639778,
        "type": 11,
        "typeName": "文档",
-       "name": "泰康人寿的核心竞争力培育之路",
+       "name": "文档任务A",
        "finish": false,
        "externalDataId": "88a56324f6e64150a91d50395ef0f98d",
        "rules": {
@@ -745,7 +745,7 @@
        "planId": 5639784,
        "type": 15,
        "typeName": "AI实践",
-       "name": "通过对泰康二十周年打造核心竞争力的解读，回答企业如何才能形成自己的核心竞争力",
+       "name": "通过对案例企业二十周年打造核心竞争力的解读，回答企业如何才能形成自己的核心竞争力",
        "finish": false,
        "externalDataId": "e01c9c82-cd2c-4ec5-8c0e-e2f31ebb6f29",
        "rules": {
@@ -942,7 +942,7 @@
        "planId": 5639797,
        "type": 15,
        "typeName": "AI实践",
-       "name": "与格力电器总裁董明珠对话",
+       "name": "AI实践任务A",
        "finish": false,
        "externalDataId": "b764f13f-f17b-4740-8c0f-7dd7984467b7",
        "rules": {
@@ -956,7 +956,7 @@
        "planId": 5639795,
        "type": 4,
        "typeName": "作业",
-       "name": "总体战略之专业化和多元化对比分析",
+       "name": "作业任务A",
        "finish": false,
        "externalDataId": "40f0da9ee74945e299a3c6647fc59c63",
        "rules": {
@@ -1000,7 +1000,7 @@
        "planId": 5639819,
        "type": 11,
        "typeName": "文档",
-       "name": "吉利汽车的国际化之路",
+       "name": "文档任务B",
        "finish": false,
        "externalDataId": "265520b93bfb449eb21828e1480c4fe0",
        "rules": {
@@ -1112,7 +1112,7 @@
        "planId": 5639821,
        "type": 15,
        "typeName": "AI实践",
-       "name": "关注中美贸易战",
+       "name": "AI实践任务B",
        "finish": false,
        "externalDataId": "dcf3f008-6078-4bb0-b0e9-2f8ae5265df5",
        "rules": {
@@ -1131,7 +1131,7 @@
   {
    "id": 8000174988959,
    "type": 45,
-   "nameOne": "《企业战略管理》慕课学习补充提醒",
+   "nameOne": "《示例课程》慕课学习补充提醒",
    "nameFour": "09-12 10:36",
    "url": "",
    "status": 2
@@ -1139,7 +1139,7 @@
   {
    "id": 8000173942262,
    "type": 45,
-   "nameOne": "《企业战略管理》线上开课温馨提醒",
+   "nameOne": "《示例课程》线上开课温馨提醒",
    "nameFour": "09-07 22:28",
    "url": "",
    "status": 2
@@ -1185,7 +1185,7 @@
  "chapters_sample": [
   {
    "id": "1205494254",
-   "title": "1.1 数字人导引：《企业战略管理》是学什么？",
+   "title": "1.1 课程导引：《示例课程》是学什么？",
    "jobCount": "1",
    "finished": false,
    "need_unlock": false,
@@ -1195,7 +1195,7 @@
   },
   {
    "id": "1197649513",
-   "title": "2.1 企业战略管理课程框架",
+   "title": "2.1 示例课程课程框架",
    "jobCount": "2",
    "finished": false,
    "need_unlock": false,
@@ -1216,7 +1216,7 @@
   },
   {
    "id": "1205494254",
-   "title": "1.1 数字人导引：《企业战略管理》是学什么？",
+   "title": "1.1 课程导引：《示例课程》是学什么？",
    "jobCount": "1",
    "finished": false,
    "need_unlock": false,
@@ -1289,7 +1289,7 @@
   },
   {
    "id": "1206258976",
-   "title": "11.1 数字人导引：为什么要战略变革？",
+   "title": "11.1 课程导引：为什么要战略变革？",
    "jobCount": "1",
    "finished": false,
    "need_unlock": false,

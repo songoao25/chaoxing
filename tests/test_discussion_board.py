@@ -48,10 +48,10 @@ def _topic_item(**over):
         "id": 711682418,
         "title": "",
         "content": "企业外部环境存在机会，是否就代表企业一定可以抓住机会？",
-        "createrName": "徐飞阳",
+        "createrName": "张三",
         "reply_count": 1,
         "ftime": "2小时前",
-        "lastReply": {"name": "徐飞阳", "formattime": "2小时前"},
+        "lastReply": {"name": "张三", "formattime": "2小时前"},
     }
     item.update(over)
     return item
@@ -61,7 +61,7 @@ class NormalizeTopicTestCase(unittest.TestCase):
     def test_title_falls_back_to_content(self):
         topic = discussion.normalize_topic(_topic_item())
         self.assertIn("企业外部环境", topic["title"])
-        self.assertEqual(topic["author"], "徐飞阳")
+        self.assertEqual(topic["author"], "张三")
         self.assertEqual(topic["reply_count"], 1)
 
     def test_real_title_wins(self):
@@ -97,11 +97,11 @@ class FetchTopicsTestCase(unittest.TestCase):
 class RenderTopicsTestCase(unittest.TestCase):
     def test_list_view_has_numbers_and_body(self):
         topics = [discussion.normalize_topic(_topic_item()),
-                  discussion.normalize_topic(_topic_item(uuid="u2", createrName="范钟贤"))]
+                  discussion.normalize_topic(_topic_item(uuid="u2", createrName="李四"))]
         out = discussion.render_topics(topics, page=1)
         self.assertIn("第 1 页", out)
         self.assertIn("1.", out)
-        self.assertIn("徐飞阳", out)
+        self.assertIn("张三", out)
         self.assertIn("企业外部环境", out)
 
     def test_empty_page_is_friendly(self):
@@ -153,14 +153,14 @@ class DiscussCliListOnlyTestCase(unittest.TestCase):
         session = FakeSession(payload)
         tc = FakeTaskCenter(session)
         chaoxing = mock.Mock()
-        chaoxing.get_course_list.return_value = [{"courseId": "1", "title": "企业战略管理"}]
+        chaoxing.get_course_list.return_value = [{"courseId": "1", "title": "示例课程"}]
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             result = discussion.discuss_cli(chaoxing, tc, {}, list_only=True)
         self.assertTrue(result["ok"])
         self.assertEqual(result["sent"], 0)
         out = buf.getvalue()
-        self.assertIn("讨论区 · 企业战略管理", out)
+        self.assertIn("讨论区 · 示例课程", out)
         self.assertIn("企业外部环境", out)
 
     def test_course_without_board_falls_through_to_next(self):
@@ -171,7 +171,7 @@ class DiscussCliListOnlyTestCase(unittest.TestCase):
         class Chaoxing:
             def get_course_list(self):
                 return [{"courseId": "1", "title": "没讨论区的课"},
-                        {"courseId": "2", "title": "企业战略管理"}]
+                        {"courseId": "2", "title": "示例课程"}]
 
         real_resolve = discussion.resolve_bbsid
         calls = []
@@ -185,8 +185,8 @@ class DiscussCliListOnlyTestCase(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 result = discussion.discuss_cli(Chaoxing(), tc, {}, list_only=True)
         self.assertTrue(result["ok"])
-        self.assertEqual(calls[:2], ["没讨论区的课", "企业战略管理"])
-        self.assertIn("企业战略管理", buf.getvalue())
+        self.assertEqual(calls[:2], ["没讨论区的课", "示例课程"])
+        self.assertIn("示例课程", buf.getvalue())
 
 
 
@@ -266,8 +266,13 @@ class FakeBoardTaskCenter:
         return ("https://groupweb.chaoxing.com/pc/topic/jumpToTopicDetail?"
                 "bbsid=2a4b2fff0f67dd5b88099bcd5c2a941e&uuid=topic-uuid")
 
-    def draft_reply(self, bbsid, topic_uuid, course=None, name="", referer=""):
-        self.drafts.append((topic_uuid, name))
+    def draft_reply(self, bbsid, topic_uuid, course=None, name="", referer="",
+                    revision_hint="", previous_reply=""):
+        self.drafts.append((topic_uuid, name, revision_hint, previous_reply))
+        if revision_hint:
+            revised = dict(self._draft)
+            revised["reply"] = "按要求重写后的回复。"
+            return revised
         return self._draft
 
     def submit_reply(self, bbsid, topic_uuid, **kwargs):
@@ -287,7 +292,7 @@ class DiscussCliInteractiveTestCase(unittest.TestCase):
         })
         tc.session = FakeSession(payload)
         chaoxing = mock.Mock()
-        chaoxing.get_course_list.return_value = [{"courseId": "1", "title": "企业战略管理"}]
+        chaoxing.get_course_list.return_value = [{"courseId": "1", "title": "示例课程"}]
         answers = list(inputs)
 
         def fake_input(prompt=""):
@@ -329,6 +334,27 @@ class DiscussCliInteractiveTestCase(unittest.TestCase):
         self.assertEqual(tc.submitted, [])
         self.assertEqual(result["sent"], 0)
 
+    def test_rewrite_with_hint_previews_new_draft_before_send(self):
+        result, tc, out = self._run(["1", "r", "更短一点，别举案例", "y"])
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(tc.submitted, ["u1"])
+        self.assertIn("按要求重写后的回复", out)
+        self.assertIn("已按你的方向重写", out)
+        self.assertEqual(tc.drafts[1][2], "更短一点，别举案例")
+        self.assertIn("机会和能不能抓住", tc.drafts[1][3])
+
+    def test_rewrite_never_submits_original_when_user_skips(self):
+        result, tc, out = self._run(["1", "r", "语气更平实", "n"])
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(tc.submitted, [])
+        self.assertIn("按要求重写后的回复", out)
+
+    def test_revision_hint_is_capped(self):
+        result, tc, out = self._run(["1", "r", "很" * 130, "n"])
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(len(tc.drafts[1][2]), discussion.MAX_REVISION_HINT_LENGTH)
+        self.assertIn("优化方向过长", out)
+
 
 class DraftSubmitSplitTestCase(unittest.TestCase):
     """模式 2 的草稿/提交拆分：草稿不提交，提交才发请求"""
@@ -361,6 +387,16 @@ class DraftSubmitSplitTestCase(unittest.TestCase):
             draft = tc.draft_reply("bbs", "uuid", course={"title": "课"}, name="帖子")
         self.assertEqual(tc.session.posts, [])
         self.assertIn("机会不等于结果", draft["reply"])
+
+    def test_redraft_passes_hint_and_previous_reply_to_writer(self):
+        tc = self._tc()
+        info = {"url_token": "tok", "title": "标题", "content": "正文", "user_puid": "1"}
+        with mock.patch("api.task_center._extract_discussion_topic", return_value=info), \
+             mock.patch.object(type(tc), "_load_discussion_replies", return_value=([], False)):
+            tc.draft_reply("bbs", "uuid", course={"title": "课"}, name="帖子",
+                           revision_hint="更简洁", previous_reply="原稿")
+        self.assertEqual(tc.writer.discussion.call_args.kwargs["revision_hint"], "更简洁")
+        self.assertEqual(tc.writer.discussion.call_args.kwargs["previous_reply"], "原稿")
 
     def test_submit_posts_and_records(self):
         tc = self._tc()

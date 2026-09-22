@@ -34,7 +34,7 @@ main.py                     CLI / 配置 / 编排 / 通知 / 进度
 3. 在 `main.py · _complete_teaching_plan` 里加分派（章节类型走 `process_chapter`）；
 4. 在 `tools/probe/` 加一个只读探针，验证学习地址/上报接口；
 5. 补离线单测（`tests/test_task_center.py` 的 FakeSession/FakeTC 写法）；
-6. 更新 `docs/任务中心与章节分类.md` 的类型表与支持状态。
+6. 更新 `docs/PLATFORM-NOTES.md` 的类型表与支持状态。
 
 ## 4. 编排与容错
 

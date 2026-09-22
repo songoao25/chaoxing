@@ -1,19 +1,23 @@
 # Chaoxing Course Automation (CLI)
 
-**English** | [中文](README.zh-CN.md)
+**English** | [Chinese](README.zh-CN.md)
 
 [![CI](https://github.com/songoao25/chaoxing/actions/workflows/tests.yml/badge.svg)](https://github.com/songoao25/chaoxing/actions/workflows/tests.yml)
 [![Release](https://img.shields.io/github/v/release/songoao25/chaoxing?include_prereleases)](https://github.com/songoao25/chaoxing/releases)
 [![Last commit](https://img.shields.io/github/last-commit/songoao25/chaoxing)](https://github.com/songoao25/chaoxing/commits/main)
 [![License](https://img.shields.io/github/license/songoao25/chaoxing)](LICENSE)
 
-A command-line assistant that completes Chaoxing (学习通 / 泛雅) course tasks without opening a browser — chapters and the newer Task Center. It is a deep extension fork of [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing): the same CLI foundation, with **Task Center · Teaching Tasks** support added on top.
+A command-line assistant that finishes Chaoxing (Xuexitong / Fanya) course tasks without opening a browser — chapters and the newer Task Center. It is a deep extension fork of [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing): the same CLI foundation, with **Task Center · Teaching Tasks** support added on top.
 
 > **Status: chapters are stable; the Task Center is newer and partly verified.**
 > Chapters (videos, documents, readings, chapter quizzes, live sessions) are complete.
 > In the Task Center, videos, chapter sync, AI practice, homework and topic discussions have been verified on a real account.
-> The **document** path is wired but the platform has not been observed counting it yet, and **thinking questions (思考题)** are not supported.
+> The **document** path is wired but the platform has not been observed counting it yet, and **thinking questions** are not supported.
 > A task is reported as complete only when the platform's own status re-check says so — the tool never pretends.
+>
+> Around the brushing itself: a **pre-run scan** always shows what is still missing, every AI-written answer is **printed live and kept for review** (`./cx review`), and discussions can be brushed automatically or **picked by hand from the board** (`./cx discuss`).
+
+> Console samples in this document are translated from the Chinese UI that the CLI actually prints.
 
 ## Features
 
@@ -21,19 +25,29 @@ A command-line assistant that completes Chaoxing (学习通 / 泛雅) course tas
 
 | Area | Status | What it covers |
 | --- | :---: | --- |
-| **Chapters (目录)** | ✅ | Every task point: video, document, reading, chapter quiz, live |
-| **Task Center · Teaching Tasks (任务中心 · 教学任务)** | 🟡 | See the per-type table below |
+| **Chapters (table of contents)** | ✅ | Every task point: video, document, reading, chapter quiz, live |
+| **Task Center · Teaching Tasks** | 🟡 | See the per-type table below |
 
 | Task Center task type | Status | How it is handled |
 | --- | :---: | --- |
 | Video | ✅ | Plays through the task engine and reports on the real playback rhythm |
 | Chapter sync | ✅ | Reuses chapter automation and calls the platform's chapter-score sync |
-| AI practice | 🟡 | "Thinking ladder" (思维阶梯) is supported: `main-talk` SSE dialogue, then the end-report call that makes the platform score it. The newer **situational dialogue** (情景对话, `/mobile/situationalDialogue/*`) is a different API and is not adapted yet |
+| AI practice | 🟡 | The "thinking ladder" type is supported: dialogue over `main-talk` SSE, then the end-report call that makes the platform score it. The newer **situational dialogue** type (`/mobile/situationalDialogue/*`) is a different API and is not adapted yet |
 | Homework | ✅ | Multiple-choice / true-false / fill-in via the question bank; short answers via `api/ai_writer.py` |
 | Topic discussion | ✅ | Reads existing replies for style, generates a non-duplicate reply, submits it |
-| Document | ⚠️ | 30-second heartbeats are sent, and "finish reading" documents (readEnd) complete. For duration-only documents the platform was **not** observed counting even 600 s of heartbeats + readEnd (verified twice); the tool keeps them unfinished and retries at most once per 24 h |
-| Thinking questions (思考题) | ❌ | Not supported — the tool tells you to finish it manually |
+| Document | ⚠️ | 30-second heartbeats are sent, and "finish reading" documents complete. For duration-only documents the platform was **not** observed counting even 600 s of heartbeats plus the final readEnd call (verified twice); the tool keeps them unfinished and retries at most once per 24 h |
+| Thinking questions | ❌ | Not supported — the tool tells you to finish them manually |
 | Classroom activities / check-in | ❌ | Not supported — finish them manually |
+
+### Comfort features around the brushing
+
+| Feature | What it does |
+| --- | --- |
+| **Pre-run scan** | Before every run (no checkbox, always on) it prints what is left: chapters pending, teaching tasks done / pending / locked / unsupported, plus reminders for missing homework and discussions. Read-only; a scan failure never blocks the run |
+| **Live answer trace** | While answering, each question is printed as it happens (`1. choice  A`, `4. short answer  ... (41 chars)`); discussion replies are shown in full. The same lines go to the normal run log |
+| **Review (`./cx review`)** | Every AI-written text that was submitted (quiz short answers, homework essays, discussion replies, AI-practice answers) is kept under `~/.chaoxing/reviews/` and can be browsed later |
+| **Two discussion modes** | Mode 1: task discussions, brushed automatically in the course's required order. Mode 2: `./cx discuss` lists the board, you pick threads (`1,3,5` / `1-3` / `all`), each one shows a draft and asks `y/n` before sending |
+| **Safe defaults** | Parallel tasks default to 2 (fewer captchas); `--yes` never auto-sends discussion replies; Enter on a dangerous prompt means "no"; piped or non-interactive input can never hang the wizard |
 
 ### Rules the tool follows
 
@@ -46,9 +60,9 @@ A command-line assistant that completes Chaoxing (学习通 / 泛雅) course tas
 ### The whole flow at a glance
 
 ```text
-启动 → 刷什么内容 → 讨论怎么刷 → 选课程 → 每门刷多少 → 确认
-     → 启动检查 → 登录 → 开始前扫描 → 章节刷课 → 任务中心 → 讨论区（如选）
-     → AI 内容留痕提示 → 结果汇报
+start -> what to brush -> how to brush discussions -> pick courses -> how many per course -> confirm
+      -> startup checks -> login -> pre-run scan -> chapters -> Task Center -> discussion board (if chosen)
+      -> AI content trace hint -> result summary
 ```
 
 Each step only asks what the previous choice needs, and every stage prints what it is about to do — nothing is asked twice and nothing is silently skipped.
@@ -88,12 +102,13 @@ The wizard walks you through one question at a time:
 
 1. choose an account (add one the first time),
 2. log in,
-3. choose what to study — chapters, Task Center, or both,
-4. choose the courses,
-5. choose how many task points to do per course,
-6. confirm and start.
+3. choose what to study — chapters, Task Center, both, or discussions only,
+4. choose how to brush discussions — task discussions automatically, or pick threads on the board,
+5. choose the courses,
+6. choose how many task points to do per course (skipped for "discussions only"),
+7. confirm and start.
 
-Afterwards, run `./cx` again to reuse the saved setup. `cx setup` changes the answering mode, notifications or study options; `cx --yes` skips the final confirmation.
+Afterwards, run `./cx` again to reuse the saved setup. `cx setup` changes the answering mode or notifications; `cx --yes` skips the final confirmation.
 
 > **Time is real.** A course with hours of video takes hours. Leave it running in the background and let the optional notifications tell you when it finishes — see [Troubleshooting](#troubleshooting) for keeping it alive.
 
@@ -119,9 +134,9 @@ The wizard writes `~/.chaoxing/config.ini` for you; `config_template.ini` in the
 | Python 3.13 or newer | The project targets 3.13+ and is tested on 3.13 / 3.14 |
 | macOS, Linux or Windows | `./cx` needs a Bash shell; on Windows use `python setup_wizard.py` |
 | Network access to Chaoxing | With an account you own |
-| Dependencies | Installed by `pip install -r requirements.txt` (requests, beautifulsoup4, loguru, tqdm, openai, ddddocr, …) |
+| Dependencies | Installed by `pip install -r requirements.txt` (requests, beautifulsoup4, loguru, tqdm, openai, ddddocr, ...) |
 | Optional: DeepSeek API key | Only if you choose the AI answering mode |
-| Optional: question-bank token | Only if you choose 言溪 / GO题 |
+| Optional: question-bank token | Only if you choose a question-bank service |
 | Optional: notification service | Only if you want push messages |
 
 ## Usage
@@ -151,16 +166,15 @@ A number is **how many *unfinished* task points to do in this run** — already-
 Before every run the tool scans what is still missing — no checkbox, no extra prompt:
 
 ```text
-  开始前扫描
-  ──────────────────────────────────────────────
-  企业战略管理
-    章节      139 节 · 已完成 37 · 待刷 102，从「1.1 数字人导引」接着刷
-    教学任务  7 个 · 已完成 2 · 待完成 3 · 未解锁 1
-    待完成    作业 1 · 主题讨论 1 · AI实践 1
-    提醒      · 1 个作业没做，本次会自动完成（简答题要等老师批改）
-    提醒      · 1 个讨论还没回复，本次会自动回复
-    提醒      · 还有 章节 1 被前面的分组锁着，完成前面的任务后会自动解锁
-  ──────────────────────────────────────────────
+  Pre-run scan
+  ----------------------------------------------
+  Example Course
+    Chapters   139 sections - 37 done - 102 left, resuming at "1.1 Course intro"
+    Tasks      9 teaching tasks - 77 task points (62 done - 9 pending - 6 locked)
+    Pending    homework 1 - topic discussion 1 - video 2 - document 3 - AI practice 2
+    Note       - 1 homework not done (this run only brushes discussions; choose "Task Center" to brush it)
+    Note       - 1 topic discussion not done (this run picks threads on the board instead)
+  ----------------------------------------------
 ```
 
 It only reads; nothing is submitted during the scan, and a scan failure never blocks the run.
@@ -169,52 +183,65 @@ It only reads; nothing is submitted during the scan, and a scan failure never bl
 
 | Mode | Entry | What it does |
 | --- | --- | --- |
-| 1. Task discussions (automatic) | included in scope 1/3, or scope 4 / `--only-discussion` | Walks the Task Center's `planType=14` points in the course's required order, reads the existing replies, writes one ordinary reply and submits it |
-| 2. Discussion board (you pick) | wizard scope 4 → "讨论区", or `./cx discuss` | Reads the board first (how many threads), you pick which ones (`1,3,5` / `1-3` / `all`), then each one shows a draft, asks `y/n`, and is sent one by one; `./cx discuss --list-topics` only lists |
+| 1. Task discussions (automatic) | included in scope 1/3, or scope 4 / `--only-discussion` | Walks the Task Center discussion points in the course's required order, reads the existing replies, writes one ordinary reply and submits it |
+| 2. Discussion board (you pick) | wizard scope 4 → "discussion board", or `./cx discuss` | Reads the board first (how many threads), you pick which ones (`1,3,5` / `1-3` / `all`), then each one shows a draft, asks `y/n`, and is sent one by one; `./cx discuss --list-topics` only lists |
 
-Both modes share the same reply pipeline: read existing replies → de-AI-ified text → humanization audit → submit → live trace + `~/.chaoxing/reviews/` record. A thread you already replied to is never replied to twice.
-
-The wizard asks only what your choice needs: chapters-only asks about chapter task points, Task Center asks about teaching tasks, and "只刷讨论" asks nothing about counts — it asks how to brush discussions (automatic task discussions vs. picking threads on the board).
+Both modes share the same reply pipeline: read existing replies → de-AI-ified text → humanization audit → submit → live trace and a record under `~/.chaoxing/reviews/`. A thread you already replied to is never replied to twice.
 
 ```text
-  讨论区 · 企业战略管理
-  ──────────────────────────────────────────────
-  第 1 页 · 20 条
+  Discussion board - Example Course
+  ----------------------------------------------
+  Reading threads...
+  20 threads - threads you already replied to are skipped
 
-   1. [1 回复] 徐飞阳 · 2小时前
-      企业外部环境存在机会，是否就代表企业一定可以抓住机会获得成功？
-   2. [0 回复] 范钟贤 · 6小时前
-      波特五力模型里，替代品威胁和现有竞争者竞争有什么区别，试举一个行业分析。
+  Page 1 - threads 1-20
 
-  ▶ 输入序号回复该帖（n 下一页 · p 上一页 · q 退出）
+    1. [1 reply] Zhang San - 2 hours ago
+       Does an opportunity in the external environment mean the company will succeed?
+    2. [0 replies] Li Si - 7 hours ago
+       What is the difference between substitute threats and existing rivalry?
+
+  > Pick threads to reply to (e.g. 1,3,5 / 1-3 / all; n next page - q quit) 1
+
+  [1/1] Does an opportunity in the external environment mean the company will succeed?
+      --------------------------------------------
+      An opportunity is only an external condition; whether it can be seized still
+      depends on the company's own resources and capabilities.
+      --------------------------------------------
+      Send this reply? [y send - Enter skip - q quit] y
+      sent
+
+  Done: 1 sent - 0 skipped
 ```
+
+The wizard asks only what your choice needs: chapters-only asks about chapter task points, Task Center asks about teaching tasks, and "discussions only" asks nothing about counts — it asks how to brush discussions instead.
 
 ### Study scope
 
 | Choice | What runs |
 | --- | --- |
-| 1. 章节 + 任务中心 | Both entries (recommended) |
-| 2. 只刷章节 | Chapters only |
-| 3. 只刷任务中心 | Task Center teaching tasks only |
-| 4. 只刷讨论 | Only topic discussions (`planType=14`); everything else in the Task Center is skipped this run. Also available as `--only-discussion` |
+| 1. Chapters + Task Center | Both entries (recommended) |
+| 2. Chapters only | Chapters only |
+| 3. Task Center only | Task Center teaching tasks only |
+| 4. Discussions only | Only discussions; everything else is skipped this run. Also available as `--only-discussion` |
 
-Topic discussions are part of the Task Center (they are one task-point type, not a separate menu item in the platform), so option 1/3 already includes them.
+Topic discussions are part of the Task Center (they are one task-point type, not a separate entry on the platform), so options 1 and 3 include them as well.
 
 ### Answering
 
 | Choice in the wizard | Config `provider` | Notes |
 | --- | --- | --- |
 | DeepSeek AI | `AI` | Recommended; answers most objective questions, needs a DeepSeek API key |
-| 言溪 question bank | `TikuYanxi` | Needs a token from `tk.enncy.cn` |
-| GO题 | `TikuGo` | Optional authorization |
-| 言溪 + AI fallback | `TikuYanxi,AI` | More accurate, still needs the 言溪 token |
-| GO题 + AI fallback | `TikuGo,AI` | More accurate |
+| Question bank | `TikuYanxi` | Needs a token from the provider |
+| Question bank (GO) | `TikuGo` | Optional authorization |
+| Question bank + AI fallback | `TikuYanxi,AI` | More accurate, still needs the question-bank token |
+| Question bank (GO) + AI fallback | `TikuGo,AI` | More accurate |
 | Manual | `TikuManual` | You type every answer; slowest |
 | Do not answer | *(empty)* | Quizzes are skipped, which can block chapter unlocking |
 
 - Chapter quizzes and Task Center homework (multiple-choice / true-false / fill-in) are answered through the configured provider in `api/answer.py`.
 - Short-answer homework and topic-discussion replies are written by `api/ai_writer.py`, which de-AI-ifies the text and passes a two-pass humanization audit before submitting.
-- Objective answers are submitted as option letters or 对 / 错 only — never as explanatory sentences.
+- Objective answers are submitted as option letters or true/false only — never as explanatory sentences.
 
 ### Submitting
 
@@ -228,23 +255,23 @@ Either way, a task counts as complete only after the platform status re-check �
 
 ### Reviewing AI-written content
 
-The tool never hides what it wrote on your behalf. Every piece of substantive text that an AI produced and that was submitted to the platform — chapter-quiz short answers, homework essays, topic-discussion replies, AI-practice answers — is kept in a readable log:
+The tool never hides what it wrote on your behalf. Every piece of substantive text that an AI produced and that was submitted to the platform — chapter-quiz short answers, homework essays, topic-discussion replies, AI-practice answers — is printed live during the run and kept in a readable log:
 
 ```text
 ~/.chaoxing/reviews/2026-09-21.md     # one Markdown file per day
 ~/.chaoxing/reviews/index.jsonl       # index used by the review command
 ```
 
-Answers are also shown **live while the run is going** — every question, in order:
+Answers are also shown **live while the run is going** — one line per question:
 
 ```text
-  作答 · 总体战略之专业化和多元化对比分析（4 题）
-     1. 选择  以下属于波特五力竞…  A
-     2. 多选  外部环境分析的内容有  ABC
-     3. 判断  多元化一定优于专业化  对
-     4. 简答  你更支持哪种战略  我更倾向先把主业做扎实，等现金流稳…（41 字）
-  讨论 · 决策者对外部环境的洞察
-    老师讲的那个例子我印象挺深，外部环境变化快的时候原来的优势可能很快就没了。……
+  Answering - Homework task A (4 questions)
+     1. choice        Which of these belongs to ...            A
+     2. multiple      Which items cover ...                    ABC
+     3. true/false    Diversification always beats focus       true
+     4. short answer  Which strategy would you pick           I would keep the main business solid ... (41 chars)
+  Discussion - Discussion task A
+    The example from class stuck with me; when the environment changes fast, an advantage can disappear quickly. ...
 ```
 
 The same lines go into the normal run log (`~/.chaoxing/chaoxing.log`), so nothing extra needs to be generated.
@@ -258,7 +285,7 @@ Review it at any time:
 | `./cx review --all` | Everything ever recorded |
 | `./cx review --list` | Just the list (no interaction) |
 
-Each run ends with a one-line hint when new content was recorded. Objective answers (A/B/C letters, 对/错) are not recorded — they have nothing to review. The log never contains passwords, cookies or tokens.
+Each run ends with a one-line hint when new content was recorded. Objective answers (A/B/C letters, true/false) are not recorded — they have nothing to review. The log never contains passwords, cookies or tokens.
 
 ### Notifications (optional)
 
@@ -279,64 +306,67 @@ Each phone number gets its own credentials and cookies under `~/.chaoxing/accoun
 
 ```text
 ~/.chaoxing/
-├── config.ini        # your settings (answer mode, notifications, study options)
-├── accounts/         # per-phone credentials, cookies and last-used plan
-├── cache.json        # question-bank answer cache
-└── chaoxing.log      # run log
+  config.ini        # your settings (answer mode, notifications)
+  accounts/         # per-phone credentials, cookies and run configs
+  cache.json        # answer cache
+  reviews/          # AI-written text kept for review
+  submissions.json  # local ledger: avoid duplicate homework submissions
+  chaoxing.log      # run log (DEBUG by default; CX_LOG_LEVEL=TRACE for full detail)
 ```
 
-The directory is created with mode `0700`; credential files are written with mode `0600`.
-Nothing is stored inside the repository. Set `CX_DATA_HOME` to move the whole directory.
+Nothing in this directory is ever committed to the repository.
 
 ### Common configuration keys
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `chapter_study` | `true` | Study the Chapters (目录) path |
-| `task_center` | `true` | Study Task Center · Teaching Tasks after chapters |
-| `max_points_per_course` | `0` | Max chapter task points per course (`0` = all) |
-| `max_tasks_per_course` | `0` | Max teaching tasks per course (`0` = all) |
+| `chapter_study` | `true` | Brush chapters |
+| `task_center` | `true` | Brush Task Center teaching tasks |
+| `only_discussion` | `false` | Only brush discussions |
+| `discussion_mode` | `task` | `task` = automatic task discussions; `board` = pick threads on the discussion board |
+| `jobs` | `2` | How many task points to process in parallel |
+| `speed` | `2` | Video speed (watch-duration videos always run at 1×) |
+| `max_points_per_course` | *(empty)* | How many unfinished chapter task points per course |
+| `max_tasks_per_course` | *(empty)* | How many unfinished teaching tasks per course |
 | `task_center_submit_mode` | `auto` | `auto` or `confirm` |
+| `serial_video` | `false` | Process videos one at a time (useful if the platform rolls progress back) |
 | `ai_practice_min_score` | `85` | Target score for AI practice |
-| `ai_practice_max_rounds` | `5` | Maximum AI practice rounds |
-
-Chapters and the Task Center cannot both be disabled — the program stops with a message instead of silently doing nothing.
+| `ai_practice_max_rounds` | `5` | How many times AI practice may be retried |
 
 ## Privacy and security
 
-**This project does not collect or upload any data.** There is no telemetry, no analytics, no developer server, and no account of any kind.
-
-- **Everything stays on your machine.** Accounts, cookies and configuration are stored only under `~/.chaoxing/`, created with directory mode `0700` and credential files `0600`.
-- **Nothing is committed.** Cookies, API keys, `config.ini` and logs must never be committed to the repository — they are also excluded by `.gitignore`.
-- **Capture samples are sanitized.** Every packet-capture sample kept in `docs/artifacts/` has been stripped of cookies and tokens. If you add one, sanitize it first.
-- **Network traffic goes where you expect.** Requests go to Chaoxing itself, plus only the third-party services you explicitly configure: the DeepSeek API (AI answering), the 言溪 / GO题 question banks, and the notification provider you choose. Nothing else.
-- **Your account, your responsibility.** Use an account you own, and follow your school's and the platform's rules.
-- **Login works like a browser.** The tool signs in with the credentials you provide and reads the login captcha with local OCR. It only ever uses the account you configured.
-
-Found a security problem? Do not paste credentials or private course data into a public issue — see [SECURITY.md](SECURITY.md).
+- **No data leaves your machine.** The tool talks only to Chaoxing and to the answering provider you configure; there is no telemetry and no upload of course content.
+- **Credentials stay local.** Accounts, cookies, logs and review records live in `~/.chaoxing/` (directory `0700`, files `0600`) and are never part of the repository.
+- **Sanitized samples.** Packet-capture samples under `docs/artifacts/` have account numbers, user ids, course parameters and tokens replaced with placeholders.
+- **Do not commit secrets.** Never commit cookies, API keys, tokens or logs. `.gitignore` protects `tools/probe/local.env` and `*.har`.
+- **Captcha.** Login captchas are recognised locally with OCR on your own machine; nothing is sent to a third-party service.
+- **Your responsibility.** Use it only with an account you own, and follow your school's rules.
 
 ## Troubleshooting
 
-| Symptom | What to do |
+| Problem | What to do |
 | --- | --- |
-| **Login fails, or gets stuck on the captcha** | Check the phone number and password first; too many attempts can trigger a temporary lock on the platform. Re-run `./cx` to let the captcha OCR try again, or log in once in the web / App to clear the lock, then retry. |
-| **A Task Center group never unlocks** | Groups unlock in order, and a group containing a task the tool cannot do (usually 思考题) blocks the ones behind it. Finish the blocking task manually in the browser or App, then re-run — the log says which task point is blocking. |
-| **Thinking questions (思考题) were skipped** | Expected: they are not supported. The tool says so explicitly. Finish them manually; they are not counted as completed. |
-| **Where is the log?** | `~/.chaoxing/chaoxing.log`. Attach a sanitized excerpt to an issue — never the whole file, which contains account identifiers. |
-| **How do I stop it?** | Press `q` (macOS / Linux) or `Ctrl+C`. Work already reported to the platform is kept; re-running picks up from the platform's own progress. |
-| **Can I close the terminal?** | No — closing it stops the process, and videos only progress while it runs. Use `tmux` / `screen` / `nohup` to keep it alive, or leave the window open. Notifications can tell you when it is done. |
-| **Will re-running redo finished tasks?** | No. The tool reads the platform state and skips task points that are already complete. |
-| **Cookies expired / "login expired"** | Run `./cx` again and log in; the per-account cookie file is refreshed automatically. |
-| **A Task Center document task stays incomplete** | Known gap (⚠️): 30-second heartbeats and the final readEnd are sent, but for duration-only documents the platform was not observed counting them (verified twice, 600 s each). The tool never marks it complete; it also skips re-reading the same document for 24 h. |
-| **AI answering fails or the key is rejected** | Check the DeepSeek key and balance. If a fallback chain is configured (for example `TikuYanxi,AI`), the tool tries the next provider; otherwise the quiz is skipped. |
-| **`pip install` fails on `lxml` / `ddddocr`** | Use Python 3.13 or 3.14 in a fresh virtual environment: `python -m venv .venv && .venv/bin/pip install -r requirements.txt` (Windows: `.venv\Scripts\pip`). |
-| **`./cx: Permission denied`** | Make it executable once: `chmod +x cx`. On Windows, run `python setup_wizard.py` instead. |
+| **Login captcha keeps failing** | Run `./cx` again; if it still fails, log in once in a browser and retry. The tool backs off for 60 seconds after repeated failures instead of hammering the platform |
+| **A Task Center group never unlocks** | Groups unlock in order and the platform syncs with a delay; re-run later. The pre-run scan shows how many points are still locked |
+| **Thinking questions are skipped** | Not supported — the tool prints a clear message telling you to finish them manually |
+| **A Task Center document task stays incomplete** | Known gap: 30-second heartbeats and the final readEnd are sent, but for duration-only documents the platform was not observed counting them (verified twice, 600 s each). The tool never marks it complete; it also skips re-reading the same document for 24 h |
+| **AI practice scores below the pass line** | The platform grades the practice itself. The tool answers with a reasoning model and majority voting, but a low score can still happen; it retries within the configured rounds |
+| **AI answering fails or the key is rejected** | Check the DeepSeek key and balance. If a fallback chain is configured (for example `TikuYanxi,AI`), the tool tries the next provider; otherwise the quiz is skipped |
+| **Where is the log?** | `~/.chaoxing/chaoxing.log`. When filing an issue, attach only a sanitized excerpt — never the whole file, it contains account identifiers |
+| **How do I stop it?** | Press `q` (macOS / Linux) or `Ctrl+C`. Work already reported to the platform is kept; re-running picks up from the platform's own progress |
+| **Can I close the terminal?** | No — closing it stops the process, and videos only progress while it runs. Use `tmux` / `screen` / `nohup` to keep it alive, or leave the window open. Notifications can tell you when it is done |
+| **Will re-running redo finished tasks?** | No. The tool reads the platform state and skips task points that are already complete |
+| **Cookies expired / "login expired"** | Run `./cx` again and log in; the per-account cookie file is refreshed automatically |
+| **`pip install` fails on `lxml` / `ddddocr`** | Use Python 3.13 or 3.14 in a fresh virtual environment: `python -m venv .venv && .venv/bin/pip install -r requirements.txt` (Windows: `.venv\Scripts\pip`) |
+| **`./cx: Permission denied`** | Make it executable once: `chmod +x cx`. On Windows, run `python setup_wizard.py` instead |
 
 ## Development
 
 ```bash
-make test      # offline unit tests (245 tests, no network, no real account)
+make test      # offline unit tests (335 tests, no network, no real account)
 make lint      # compile check + tests — run this before every commit
+make test-313  # same suite on the CI version (3.13); local Python may be 3.14
+               # (annotations are evaluated lazily there, so CI can differ)
 make status    # read-only Task Center progress snapshot
 make doctor    # environment self-check
 make help      # list all targets
@@ -351,11 +381,14 @@ make help      # list all targets
 
 | Path | Purpose |
 | --- | --- |
-| `cx` | Recommended launcher (`./cx`, `cx setup`, `cx --yes`) |
+| `cx` | Recommended launcher (`./cx`, `cx setup`, `cx --yes`, `cx discuss`, `cx review`) |
 | `setup_wizard.py` | Interactive setup and study wizard |
 | `main.py` | CLI entry, chapter task queue and Task Center orchestration |
 | `api/base.py` | Chaoxing core: login and chapter task points |
 | `api/task_center.py` | Task Center client: groups, task points, video / document reporting |
+| `api/discussion.py` | Discussion board: thread list, board resolution, pick-and-reply |
+| `api/scan.py` | Pre-run scan: what is still missing, in one block |
+| `api/review.py` | Review log for AI-written text (`cx review`) |
 | `api/answer.py` | Question banks (including AI providers) and answering |
 | `api/ai_writer.py` | Human-like writing for homework and discussions |
 | `tools/probe/` | Read-only probes: progress snapshots, classification tables |
@@ -364,27 +397,20 @@ make help      # list all targets
 
 ## Repository policy
 
-- Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `test:`, `chore:`. A Chinese description is fine; the prefix must be English.
-- Run `make lint` before opening a pull request.
-- Never commit cookies, API keys, passwords, `config.ini`, `accounts/`, or logs.
-- Sanitize any capture sample before adding it to `docs/artifacts/`.
-- Do not report a task as complete without platform evidence, and do not fake playback time — see [AGENTS.md](AGENTS.md) for the full guardrails.
-- Keep public documentation user-facing, and label unverified behaviour as unverified.
+- Issues and pull requests are welcome; please keep the scope of a change small and focused.
+- Behaviour changes must come with an offline test and must respect the guardrails in [AGENTS.md](AGENTS.md): never fake success, respect real time limits, keep unlock order, do not hammer the platform.
+- Never commit credentials, cookies, tokens or personal data. Samples must be sanitized.
+- This is a fork: upstream attribution is kept, and improvements that belong upstream are welcome there too.
 
 ## References
 
-- [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing) — the upstream project this fork extends.
-- [Keep a Changelog](https://keepachangelog.com/) — the format used by [CHANGELOG.md](CHANGELOG.md).
-- [Contributor Covenant](https://www.contributor-covenant.org/) — the basis of [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-- [Conventional Commits](https://www.conventionalcommits.org/) — the commit message convention.
+- Upstream project: [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing)
+- Platform structure notes: [docs/architecture-notes.md](docs/PLATFORM-NOTES.md)
+- Handoff notes and decisions: [docs/handoff/](docs/handoff/HANDOFF.md)
 
 ## License
 
-[GPL-3.0](LICENSE). The original project and its copyright belong to [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing) and its contributors; this fork keeps that attribution and publishes its own changes under the same license.
+GPL-3.0 — see [LICENSE](LICENSE).
 
-**Disclaimer**
+> This project is for learning and personal use only. Do not use it for commercial purposes, and do not use it on accounts you do not own. You are responsible for complying with your school's rules and the platform's terms of service.
 
-- This project is for **learning and exchange only**.
-- **Commercial or for-profit use is prohibited.**
-- Any derivative work must also be released under GPL-3.0, with the upstream attribution preserved.
-- Users are responsible for their own use of this code; the authors and contributors accept no liability.
