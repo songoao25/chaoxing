@@ -48,6 +48,9 @@ class PrivacyTest(unittest.TestCase):
                       'payload={"authorization": {"primary": "alpha-demo", "secondary": "beta-demo"}}'):
             self.assertNotIn("alpha-demo", privacy.redact(value))
             self.assertNotIn("beta-demo", privacy.redact(value))
+        value = '{"token": [\n "alpha-demo",\n "beta-demo"\n]}'
+        self.assertNotIn("alpha-demo", privacy.redact(value))
+        self.assertNotIn("beta-demo", privacy.redact(value))
         record = {"message": "safe", "extra": {"request": {"cookies": {"sid": "alpha-demo"}}}}
         privacy.patch_record(record)
         self.assertNotIn("alpha-demo", str(record))

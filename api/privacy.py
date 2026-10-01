@@ -41,8 +41,8 @@ def redact(value):
     text = re.sub(r"<RequestsCookieJar\[.*?\]>", "[redacted cookies]", text, flags=re.S)
     text = re.sub(r"(?i)\bBearer\s+[^\s,;\"']+", "Bearer [redacted]", text)
     # Headers and cookie containers can contain several unnamed credentials.
-    text = re.sub(r"(?im)([\"']?\b(?:set-cookie|cookies?)[\"']?\s*[:=]\s*)[^\r\n]*", lambda m: m.group(1) + "[redacted cookies]", text)
-    text = re.sub(rf"(?im)([\"']?\b{_fields}[\"']?\s*[:=]\s*)[{{\[][^\r\n]*", lambda m: m.group(1) + "[redacted container]", text)
+    text = re.sub(r"(?is)([\"']?\b(?:set-cookie|cookies?)[\"']?\s*[:=]\s*).*", lambda m: m.group(1) + "[redacted cookies]", text)
+    text = re.sub(rf"(?is)([\"']?\b{_fields}[\"']?\s*[:=]\s*)[{{\[].*", lambda m: m.group(1) + "[redacted container]", text)
     text = _assignment.sub(lambda m: m.group(1) + "[redacted]", text)
     # Notification keys can be in path segments, userinfo or arbitrary query keys.
     def hide_url(match):

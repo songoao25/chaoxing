@@ -143,7 +143,7 @@ Topic discussions belong to the Task Center, so the first and third scope includ
 | Automatic task discussions | part of the Task Center | Walks the discussion task points in the course's required order, reads the existing replies, writes one ordinary reply and submits it |
 | Discussion board | wizard choice, or `./cx discuss` | Lists the board, you pick threads (`1,3,5` / `1-3` / `all`), each one shows a draft and asks `y/n` before sending |
 
-Both modes share the same pipeline: read existing replies → write in a plain, human style → humanization audit → submit → print it live and save it under `~/.chaoxing/reviews/`. A thread you already replied to is never answered twice, and `--yes` never auto-sends a reply.
+Both modes read existing replies, validate the draft, display it and save it under `~/.chaoxing/reviews/` before submitting. Discussion-board replies always require individual confirmation; `--yes` does not bypass it. Task discussions follow `task_center_submit_mode`: `confirm` asks before sending, while `auto` sends after validation and recording. The client checks existing replies to avoid duplicates.
 
 ### Answering
 
