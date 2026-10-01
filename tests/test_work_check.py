@@ -67,7 +67,7 @@ class ParseWorkRecordDetailTest(unittest.TestCase):
         self.assertEqual(qs[0]['my_answer'], 'B')
 
     def test_extra_class_variant(self):
-        """answerCon 带额外 class 的页面变体应命中宽松模式."""
+        """AnswerCon 带额外 class 的页面变体应命中宽松模式."""
         html = _detail_html(
             '<span>我的答案：</span><div class="fl answerCon colorDeep">A</div>'
             '<span>正确答案：</span><div class="fl answerCon colorGreen">B</div>')

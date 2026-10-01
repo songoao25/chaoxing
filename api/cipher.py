@@ -32,6 +32,7 @@ def split_to_data_blocks(byte_str, block_size=16):
 
 class AESCipher:
     def __init__(self):
+        """Initialize configuration and runtime state."""
         self.key = str(gc.AESKey).encode("utf8")
         self.iv = str(gc.AESKey).encode("utf8")
 

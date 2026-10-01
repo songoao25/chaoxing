@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
+from uuid import uuid4
 
 from api import privacy, review
 from api.logger import logger
@@ -12,7 +13,7 @@ from api.logger import logger
 
 class PrivacyTest(unittest.TestCase):
     def test_console_and_file_sinks_redact_fields_urls_and_exceptions(self):
-        secret = "synthetic-canary-auth-value"
+        secret = uuid4().hex
         privacy.register_secret(secret)
         console = io.StringIO()
         with tempfile.TemporaryDirectory() as directory:

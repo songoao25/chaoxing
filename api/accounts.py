@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-"""
-多用户账号管理
-
-把每个用户的账号密码单独保存在用户数据目录（~/.chaoxing/accounts/）下，互不干扰。
-放在用户主目录而不是项目目录，升级代码 / git 操作都不会影响账号数据。
-账号文件格式（ini）：
-    [account]
-    username = 13800000000
-    password = xxxxx
-    name     = 张三          ; 登录后自动记录，用于列表显示
-    last_used = YYYY-MM-DD     ; 最后使用时间
-"""
+"""多用户账号管理."""
+# 
+# 把每个用户的账号密码单独保存在用户数据目录（~/.chaoxing/accounts/）下，互不干扰。
+# 放在用户主目录而不是项目目录，升级代码 / git 操作都不会影响账号数据。
+# 账号文件格式（ini）：
+# [account]
+# username = 13800000000
+# password = xxxxx
+# name     = 张三          ; 登录后自动记录，用于列表显示
+# last_used = YYYY-MM-DD     ; 最后使用时间
 
 import configparser
 import os
@@ -31,7 +29,7 @@ def ensure_dir():
 
 
 def _safe_name(username):
-    """用手机号当文件名，去掉不安全的字符"""
+    """用手机号当文件名，去掉不安全的字符."""
     return re.sub(r"[^0-9A-Za-z_\-]", "_", str(username).strip())
 
 
@@ -40,7 +38,7 @@ def account_path(username):
 
 
 def save_account(username, password, name="", course_ids=None, last_plan=None):
-    """保存（或更新）一个账号；未传的字段沿用已有值"""
+    """保存（或更新）一个账号；未传的字段沿用已有值."""
     ensure_dir()
     path = account_path(username)
     username = str(username).strip()
@@ -77,12 +75,10 @@ def save_account(username, password, name="", course_ids=None, last_plan=None):
 
 
 def load_account(username):
-    """
-    读取一个账号，返回 dict 或 None。
-
-    文件内容损坏（手改坏、写到一半断电等）时返回 None，
-    而不是抛异常拖垮整个账号列表。
-    """
+    """读取一个账号，返回 dict 或 None."""
+    # 
+    # 文件内容损坏（手改坏、写到一半断电等）时返回 None，
+    # 而不是抛异常拖垮整个账号列表。
     path = account_path(username)
     if not os.path.exists(path):
         return None
@@ -105,7 +101,7 @@ def load_account(username):
 
 
 def list_accounts():
-    """列出所有已保存的账号，最近使用的排前面"""
+    """列出所有已保存的账号，最近使用的排前面."""
     ensure_dir()
     items = []
     for fn in os.listdir(ACCOUNTS_DIR):
@@ -123,7 +119,7 @@ def list_accounts():
 
 
 def latest_run_config():
-    """最近使用的账号专属配置路径（cx discuss 这类命令没给 -c 时用它）"""
+    """最近使用的账号专属配置路径（cx discuss 这类命令没给 -c 时用它）."""
     for item in list_accounts():
         path = os.path.join(ACCOUNTS_DIR, "run_" + _safe_name(item["username"]) + ".ini")
         if os.path.exists(path):
@@ -140,7 +136,7 @@ def delete_account(username):
 
 
 def touch(username, name=None):
-    """更新最后使用时间（以及昵称）"""
+    """更新最后使用时间（以及昵称）."""
     acc = load_account(username)
     if not acc:
         return

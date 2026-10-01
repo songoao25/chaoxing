@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-"""
-讨论区浏览 + 挑帖子回复（模式 2）。
-
-模式 1 是"任务里的主题讨论"：任务中心里 planType=14 的任务点，按分组顺序自动刷。
-模式 2 就是这里：先只读统计讨论区有多少帖子 → 用户挑要回复哪几条 → 逐条给草稿、
-确认后再发送。
-
-接口（，groupweb.chaoxing.com）：
-  * 帖子列表 GET /pc/topic/topiclist/{bbsid}/getTopicList
-      ?folder_uuid=&page=1&pageSize=20&kw=&last_reply_time=&searchType=&authMappId=&isSetTop=1
-  * 帖子详情与发回复复用 TaskCenter.draft_reply / submit_reply（与模式 1 同一条链路）。
-"""
+"""讨论区浏览 + 挑帖子回复（模式 2）."""
+# 
+# 模式 1 是"任务里的主题讨论"：任务中心里 planType=14 的任务点，按分组顺序自动刷。
+# 模式 2 就是这里：先只读统计讨论区有多少帖子 → 用户挑要回复哪几条 → 逐条给草稿、
+# 确认后再发送。
+# 
+# 接口（，groupweb.chaoxing.com）：
+# * 帖子列表 GET /pc/topic/topiclist/{bbsid}/getTopicList
+# ?folder_uuid=&page=1&pageSize=20&kw=&last_reply_time=&searchType=&authMappId=&isSetTop=1
+# * 帖子详情与发回复复用 TaskCenter.draft_reply / submit_reply（与模式 1 同一条链路）。
 
 import re
 import textwrap
@@ -27,7 +25,7 @@ MAX_REVISION_HINT_LENGTH = 120
 
 
 def clip_text(text, limit: int = 20) -> str:
-    """按显示宽度截断（中文算 2 列），用于列表/预览行不撑爆终端"""
+    """按显示宽度截断（中文算 2 列），用于列表/预览行不撑爆终端."""
     value = re.sub(r"\s+", " ", str(text or "")).strip()
     width = 0
     out = []
@@ -41,7 +39,7 @@ def clip_text(text, limit: int = 20) -> str:
 
 
 def normalize_topic(item: dict) -> dict:
-    """把接口返回的一条帖子整理成界面要用的字段"""
+    """把接口返回的一条帖子整理成界面要用的字段."""
     item = item or {}
     title = str(item.get("title") or "").strip()
     content = re.sub(r"\s+", " ", str(item.get("content") or "")).strip()
@@ -63,7 +61,7 @@ def normalize_topic(item: dict) -> dict:
 
 def fetch_topics(session, bbsid: str, page: int = 1, page_size: int = DEFAULT_PAGE_SIZE,
                  keyword: str = "", base: str = "") -> List[dict]:
-    """只读拉一页帖子；失败返回空列表（不抛异常）"""
+    """只读拉一页帖子；失败返回空列表（不抛异常）."""
     from api.task_center import DISCUSSION_BASE
     url = (base or DISCUSSION_BASE) + TOPIC_LIST_PATH.format(bbsid=bbsid)
     params = {
@@ -99,11 +97,10 @@ def fetch_topics(session, bbsid: str, page: int = 1, page_size: int = DEFAULT_PA
 
 
 def fetch_all_topics(session, bbsid: str, max_pages: int = MAX_PAGES) -> Tuple[List[dict], bool]:
-    """把讨论区的帖子读出来（只读，最多 max_pages 页）。
-
-    返回 (帖子列表, 是否因为页数上限被截断)——截断时界面上要说"至少 N 条"，
-    不能假装这就是全部。
-    """
+    """把讨论区的帖子读出来（只读，最多 max_pages 页）."""
+    # 
+    # 返回 (帖子列表, 是否因为页数上限被截断)——截断时界面上要说"至少 N 条"，
+    # 不能假装这就是全部。
     topics: List[dict] = []
     capped = False
     for page in range(1, max(1, int(max_pages)) + 1):
@@ -119,7 +116,7 @@ def fetch_all_topics(session, bbsid: str, max_pages: int = MAX_PAGES) -> Tuple[L
 
 
 def resolve_bbsid(tc, course: dict) -> str:
-    """拿到课程的讨论区板块 id：优先问任务中心里的主题讨论任务点"""
+    """拿到课程的讨论区板块 id：优先问任务中心里的主题讨论任务点."""
     direct = str((course or {}).get("bbsid") or "").strip()
     if direct:
         return direct
@@ -148,7 +145,7 @@ def resolve_bbsid(tc, course: dict) -> str:
 
 def render_topics(topics: List[dict], page: int = 1, offset: int = 0,
                   page_size: int = DEFAULT_PAGE_SIZE) -> str:
-    """列表视图：全局编号 + 回复数 + 作者 + 时间 + 正文"""
+    """列表视图：全局编号 + 回复数 + 作者 + 时间 + 正文."""
     if not topics:
         return "\n  这一页没有帖子（可能已经翻到底，或该课程还没开放讨论区）。\n"
     lines = ["", f"  第 {page} 页 · 第 {offset + 1}–{offset + len(topics)} 条", ""]
@@ -168,7 +165,7 @@ def render_topics(topics: List[dict], page: int = 1, offset: int = 0,
 
 
 def parse_selection(raw: str, total: int) -> Optional[List[int]]:
-    """把 "1,3,5" / "1-3" / "all" 解析成 1 基序号列表；解析不了返回 None"""
+    """把 "1,3,5" / "1-3" / "all" 解析成 1 基序号列表；解析不了返回 None."""
     text = str(raw or "").strip().lower()
     if not text:
         return None
@@ -202,7 +199,7 @@ def _ask(prompt: str) -> str:
 
 
 def _revision_hint() -> str:
-    """读取一条简短重写方向；空白也允许，表示换一种写法。"""
+    """读取一条简短重写方向；空白也允许，表示换一种写法."""
     hint = _ask("      说说怎么改（如“更短一点、少讲案例”；回车＝换一种写法） ")
     if hint.lower() in ("q", "quit", "exit"):
         return "q"
@@ -234,7 +231,7 @@ def _pick_course(courses: list, list_only: bool) -> Optional[dict]:
 
 
 def _board_course(tc, courses: list) -> Tuple[Optional[dict], str]:
-    """按顺序找第一门有讨论区的课程"""
+    """按顺序找第一门有讨论区的课程."""
     for course in courses:
         bbsid = resolve_bbsid(tc, course)
         if bbsid:
@@ -245,12 +242,11 @@ def _board_course(tc, courses: list) -> Tuple[Optional[dict], str]:
 def discuss_cli(chaoxing, tc, config: dict, list_only: bool = False,
                 course_id: Optional[str] = None, courses: Optional[list] = None,
                 auto_yes: bool = False) -> dict:
-    """讨论区模式的入口：统计 → 挑帖子 → 草稿 → 确认 → 逐条发送。
-
-    返回 {ok, sent, skipped, reason}：调用方据此汇报，失败时绝不能说"已发送"。
-    auto_yes 只跳过"开始刷课"的确认；把 AI 写的回复发到公开讨论区必须逐条确认，
-    所以这里不因为 --yes 就静默群发（非交互输入会停在确认处并安全退出）。
-    """
+    """讨论区模式的入口：统计 → 挑帖子 → 草稿 → 确认 → 逐条发送."""
+    # 
+    # 返回 {ok, sent, skipped, reason}：调用方据此汇报，失败时绝不能说"已发送"。
+    # auto_yes 只跳过"开始刷课"的确认；把 AI 写的回复发到公开讨论区必须逐条确认，
+    # 所以这里不因为 --yes 就静默群发（非交互输入会停在确认处并安全退出）。
     from api.task_center import TaskCenter
     if tc is None:
         tc = TaskCenter(chaoxing, config)

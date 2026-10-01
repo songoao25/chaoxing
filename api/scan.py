@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
-"""
-开始刷课前的自动扫描（默认开启，无需用户勾选）。
-
-每次开始刷课前跑一遍，把"漏刷"的东西一次说清楚：
-  * 章节：共多少节 · 已完成 · 待刷（从哪一节接着刷）；
-  * 教学任务：已完成 / 可学待完成 / 未解锁 / 暂不支持；
-  * 需要人管的：作业等批改、时长类文档平台不计入、新版情景对话未适配。
-
-设计原则：
-  * 全程只读，不提交任何东西；
-  * 失败软着陆：扫描出错只记日志，绝不挡住刷课；
-  * 输出控制在几行以内（结论先行，细节看运行日志）。
-"""
+"""开始刷课前的自动扫描（默认开启，无需用户勾选）."""
+# 
+# 每次开始刷课前跑一遍，把"漏刷"的东西一次说清楚：
+# * 章节：共多少节 · 已完成 · 待刷（从哪一节接着刷）；
+# * 教学任务：已完成 / 可学待完成 / 未解锁 / 暂不支持；
+# * 需要人管的：作业等批改、时长类文档平台不计入、新版情景对话未适配。
+# 
+# 设计原则：
+# * 全程只读，不提交任何东西；
+# * 失败软着陆：扫描出错只记日志，绝不挡住刷课；
+# * 输出控制在几行以内（结论先行，细节看运行日志）。
 
 from typing import List, Optional
 
@@ -19,7 +17,7 @@ from api.logger import logger
 
 
 def chapter_row(course: dict, all_points: Optional[list], error: str = "") -> dict:
-    """一门课的章节扫描结果（纯计算，不发请求）"""
+    """一门课的章节扫描结果（纯计算，不发请求）."""
     points = list(all_points or [])
     finished = [p for p in points if p.get("has_finished")]
     pending = [p for p in points if not p.get("has_finished")]
@@ -34,9 +32,9 @@ def chapter_row(course: dict, all_points: Optional[list], error: str = "") -> di
 
 
 def scan_task_center(chaoxing, courses: list, config: dict) -> List[dict]:
-    """只读扫描任务中心：每门课的分组 / 任务点状态分类"""
+    """只读扫描任务中心：每门课的分组 / 任务点状态分类."""
     from api.task_center import (TaskCenter, SUPPORTED_PLAN_TYPES,
-                                 PLAN_TYPE_DISCUSS, plan_type_name)
+                                 plan_type_name)
     rows = []
     try:
         tc = TaskCenter(chaoxing, config)
@@ -98,7 +96,7 @@ def _type_text(by_type: dict) -> str:
 def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
            task_center_enabled: bool, only_discussion: bool = False,
            discussion_mode: str = "task") -> str:
-    """扫描报告：结论先行，几行说完"""
+    """扫描报告：结论先行，几行说完."""
     lines = ["  开始前扫描", "  " + "─" * 46]
     for row in chapter_rows or []:
         title = str(row.get("title") or "")
@@ -163,7 +161,7 @@ def render(chapter_rows: list, tc_rows: list, chapters_enabled: bool,
 def run(chaoxing, courses: list, config: dict, chapter_rows: list,
         chapters_enabled: bool, task_center_enabled: bool,
         only_discussion: bool = False, discussion_mode: str = "task") -> str:
-    """执行扫描并返回可直接 print 的报告文本（永不抛异常）"""
+    """执行扫描并返回可直接 print 的报告文本（永不抛异常）."""
     tc_rows = []
     if task_center_enabled:
         try:
