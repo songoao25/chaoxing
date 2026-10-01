@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """真人化审计：检查"发给老师/同学看"的文本与作答行为是否像真人."""
-# 
+#
 # 协议约束：
 # 为了"提高判分通过率"，AI实践的选择题被拼成了
 # "选 D。D：……。依据：回答正确！你的回答正确。本题考核知识点为业务层战略……"
 # —— 选择题本该只回选项字母，而且把平台的反馈原文当"依据"回显，
 # 既是自曝 AI，也确实不像人在答题。这个审计器就是防止同类问题再出现。
-# 
+#
 # 用法：
 # python tools/audit/01_human_likeness_audit.py                    # 审计内置样例文件
 # python tools/audit/01_human_likeness_audit.py --samples x.json    # 审计指定样例
 # python tools/audit/01_human_likeness_audit.py --selftest          # 只跑规则自检
-# 
+#
 # 样例 JSON：[{"kind": "思考题|作业简答|主题讨论|AI实践开放题|AI实践客观题", "prompt": "...", "text": "..."}]
 import argparse
 import json
@@ -194,7 +194,7 @@ def audit_warnings(sample: dict) -> list:
     text = str(sample.get("text") or "")
     warnings = []
     sentences = [s for s in re.split(r"[。！？!?\n]", text) if s.strip()]
-    # 犹豫词不再算"人味"证据：提示词里就要求过，审计再拿它当证据是自我验证（第五轮审计指出）
+    # 犹豫词不再算"人味"证据：提示词里就要求过，审计再拿它当证据是自我验证
     human_marker = (any(word in text for word in COLLOQUIAL)
                     or any(len(s) <= 12 for s in sentences))
     if len(text) >= 200 and not human_marker:
@@ -289,7 +289,7 @@ def print_report(report: dict) -> None:
     print(f"审计样例 {report['samples']} 条，硬伤 {report['problems']} 处，"
           f"软提醒 {report.get('warnings_total', 0)} 处")
     print("（硬伤必须改；软提醒交给第二遍独立审计判断，不能只看这一份报告）")
-    for index, item in enumerate(report["items"], 1):
+    for item in report["items"]:
         flag = "✗" if item["issues"] else "✓"
         print(f"  {flag} [{item['kind']}] {item['text'][:60]}")
         for rule, detail in item["issues"]:
@@ -317,18 +317,24 @@ def selftest() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--samples", default="/tmp/human_audit_samples.json")
+    parser.add_argument("--samples", help="JSON samples to audit")
+    parser.add_argument("--report", help="Optional JSON report destination")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args()
     if args.selftest:
         return selftest()
+    if not args.samples:
+        parser.error("--samples is required unless --selftest is selected")
     if not os.path.exists(args.samples):
         print("找不到样例文件:", args.samples)
         return 2
-    samples = json.load(open(args.samples, encoding="utf-8"))
+    with open(args.samples, encoding="utf-8") as source:
+        samples = json.load(source)
     report = audit_all(samples)
     print_report(report)
-    json.dump(report, open("/tmp/human_audit_report.json", "w"), ensure_ascii=False, indent=1)
+    if args.report:
+        with open(args.report, "w", encoding="utf-8") as destination:
+            json.dump(report, destination, ensure_ascii=False, indent=1)
     return 1 if report["problems"] else 0
 
 

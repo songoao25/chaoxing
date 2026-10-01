@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """审计修复的离线回归."""
-# 
+#
 # * 直播任务失败/被终止时不再报成功
 # * 没有题库的章节测验不再被记为完成（返回 ERROR）
 # * 向导确认页回车 = 取消（安全默认）
@@ -95,11 +95,15 @@ class SituationalDialogueTestCase(unittest.TestCase):
         tc = TaskCenter(object(), {})
 
         class Resp:
+            """Provide a synthetic test dependency."""
+
             status_code = 200
             url = "https://mooc2-ans.chaoxing.com/mooc2-ans-vue/situationalDialogue?courseid=1"
             text = "<html>situationalDialogue</html>"
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, **kwargs):
                 return Resp()
 
@@ -125,14 +129,17 @@ class NoFakeSuccessTestCase(unittest.TestCase):
         self.assertEqual(unknown, ["weird-new-type"])
 
     def test_get_job_list_fails_on_unknown_card_types(self):
-        from api import base as base_mod
         cx = base_mod.Chaoxing()
 
         class Resp:
+            """Provide a synthetic test dependency."""
+
             status_code = 200
             text = "<html></html>"
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, *args, **kwargs):
                 return Resp()
 
@@ -147,10 +154,11 @@ class NoFakeSuccessTestCase(unittest.TestCase):
         self.assertEqual(info.get("unknownCardTypes"), ["weird"])
 
     def test_chapter_document_result_false_is_error(self):
-        from api import base as base_mod
         cx = base_mod.Chaoxing()
 
         class Resp:
+            """Provide a synthetic test dependency."""
+
             status_code = 200
             text = "{}"
 
@@ -158,6 +166,8 @@ class NoFakeSuccessTestCase(unittest.TestCase):
                 return {"result": False, "msg": "任务未完成"}
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, *args, **kwargs):
                 return Resp()
 
@@ -169,10 +179,11 @@ class NoFakeSuccessTestCase(unittest.TestCase):
         self.assertEqual(result, base_mod.StudyResult.ERROR)
 
     def test_read_non_json_is_error(self):
-        from api import base as base_mod
         cx = base_mod.Chaoxing()
 
         class Resp:
+            """Provide a synthetic test dependency."""
+
             status_code = 200
             text = "<html>login</html>"
 
@@ -180,6 +191,8 @@ class NoFakeSuccessTestCase(unittest.TestCase):
                 raise ValueError("not json")
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, *args, **kwargs):
                 return Resp()
 

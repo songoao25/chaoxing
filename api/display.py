@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """刷课进度显示."""
-# 
+#
 # 目标：刷课时不再刷屏，每完成一个章节只输出一行，清晰可读。
-# 
+#
 # 显示形式：
 # ██████░░░░░░░░░░░░░░░░░░░░   23/111  21%   剩 88 节 · 预计 12 分 30 秒   ✓ 1.2 什么是马克思主义
 # ██████████░░░░░░░░░░░░░░░░   24/111  22%   剩 87 节 · 预计 12 分 10 秒   ⤼ 3.1 社会形态（未开放）
 # ████████████░░░░░░░░░░░░░░   25/111  23%   剩 86 节 · 预计 11 分 50 秒   ✗ 4.2.6 社会形态
-# 
+#
 # ✓ 完成   ⤼ 跳过   ✗ 失败
-# 
+#
 # 通过 tqdm.write 输出，与视频进度条共存不会互相破坏。
 
 import re
@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 def safe_console():
     """让控制台输出永远不会因为编码问题崩溃."""
-    # 
+    #
     # Windows 中文版控制台默认是 GBK 编码，课程名 / 题干里只要出现一个
     # &nbsp;( ) 之类的字符，print 就会抛 UnicodeEncodeError 直接结束程序（#602）。
     # 这里只放宽错误处理（errors="replace"），不改编码 ——
@@ -31,9 +31,9 @@ def safe_console():
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="replace")
-        except Exception:
-            # 被重定向 / 打包成窗口程序时没有 reconfigure，忽略即可
-            pass
+        except (AttributeError, OSError, ValueError) as exc:
+            from api.logger import logger
+            logger.debug("控制台编码设置不可用（{}）", type(exc).__name__)
 
 
 def _disp_width(text) -> int:
@@ -159,13 +159,11 @@ def emit(text):
         return
     try:
         print(line)
-    except Exception:
-        pass
-    try:
-        from api.logger import log_file_only
-        log_file_only(line.strip(), 'INFO')
-    except Exception:
-        pass
+    except (OSError, UnicodeError) as exc:
+        from api.logger import logger
+        logger.debug("控制台留痕输出失败（{}）", type(exc).__name__)
+    from api.logger import log_file_only
+    log_file_only(line.strip(), 'INFO')
 
 
 def emit_block(title: str, text: str, width: int = 60) -> None:
@@ -233,7 +231,7 @@ def compress_labels(labels, max_groups=3) -> str:
 
 def course_plan_summary(finished_points, pending_points, planned_count=None) -> str:
     """一门课开刷前的一句话说明，让用户一眼看清"哪些已经刷过、从哪儿接着刷"."""
-    # 
+    #
     # 共 30 节待刷
     # 共 12 节已完成（1.1 ~ 3.4），从 4.1 开始
     # 共 12 节已完成（1.1 ~ 3.4），从 4.1 开始，本次刷 3 节
@@ -319,8 +317,9 @@ class ChapterProgress:
         except Exception:
             try:
                 print(line, file=sys.stderr, flush=True)
-            except Exception:
-                pass
+            except (OSError, UnicodeError) as exc:
+                from api.logger import logger
+                logger.debug("进度输出不可用（{}）", type(exc).__name__)
 
     def _bump(self, kind, title, extra=""):
         with self._lock:

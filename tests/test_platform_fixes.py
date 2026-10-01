@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """离线回归测试：平台文本 / 填空题提交 / 大模型连接检查 / 视频并发开关."""
-# 
+#
 # 对应上游 issue：
 # #602 课程名含 &nbsp;( ) 时控制台编码崩溃
 # #615 #575 填空题答案保存后为空
@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 import unittest
+from uuid import uuid4
 
 import requests
 from bs4 import BeautifulSoup
@@ -383,6 +384,8 @@ class VideoProgressParseTestCase(unittest.TestCase):
     """#175 #298：视频进度上报接口返回非 JSON 时不能抛异常打断整章."""
 
     class _Resp:
+        """Provide a synthetic test dependency."""
+
         def __init__(self, payload=None, raw=False):
             """Initialize configuration and runtime state."""
             self._payload = payload
@@ -405,7 +408,11 @@ class ChapterReadFailureTestCase(unittest.TestCase):
     """#223 #357：任务点读取失败不能被当成"章节已完成"静默打勾."""
 
     class _Cx:
+        """Provide a synthetic test dependency."""
+
         class _Limiter:
+            """Provide a synthetic test dependency."""
+
             @staticmethod
             def limit_rate(**kwargs):
                 return None
@@ -416,6 +423,8 @@ class ChapterReadFailureTestCase(unittest.TestCase):
             return None, {}
 
     class _CxEmpty(_Cx):
+        """Provide a synthetic test dependency."""
+
         def get_job_list(self, course, point):
             return [], {"notOpen": False}
 
@@ -502,7 +511,7 @@ class CacheDAOTestCase(unittest.TestCase):
 class StartupGuardTestCase(unittest.TestCase):
     """#567：纯命令行模式没有 -c 配置文件，不能被启动检查拦死."""
 
-    CONFIG = {"username": "13800000000", "password": "pw", "course_list": ["111"]}
+    CONFIG = {"username": "13800000000", "password": uuid4().hex, "course_list": ["111"]}
     TIKU = {"provider": "TikuManual"}
 
     def test_cli_mode_without_config_file_is_allowed(self):
@@ -566,6 +575,8 @@ class LoginRobustnessTestCase(unittest.TestCase):
     """#163 #164 #220：登录接口没超时 / 返回非 JSON 时不能崩或挂死."""
 
     class _FakeResponse:
+        """Provide a synthetic test dependency."""
+
         status_code = 200
         text = "blocked"
 
@@ -676,10 +687,14 @@ class VideoReplayTestCase(unittest.TestCase):
             return state["calls"] >= 2, 200
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             cookies = {}
 
             def get(self, url, **kwargs):
                 class R:
+                    """Provide a synthetic test dependency."""
+
                     status_code = 200
 
                     @staticmethod
@@ -721,10 +736,14 @@ class VideoReplayTestCase(unittest.TestCase):
             return state["calls"] >= 2, 200
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             cookies = {}
 
             def get(self, url, **kwargs):
                 class R:
+                    """Provide a synthetic test dependency."""
+
                     status_code = 200
 
                     @staticmethod

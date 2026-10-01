@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """真人化回归：任何"提交给平台"的文本都不能露出 AI/机器痕迹（不联网）."""
-# 
+#
 # 需要防止的错误格式：AI实践选择题被拼成
 # "选 D。D：……。依据：回答正确！……平台判据：……" —— 既不是人的作答格式，
 # 又把平台自己的判分反馈回显了出来。
@@ -32,6 +32,8 @@ class ObjectiveAnswerTestCase(unittest.TestCase):
     """选择题/判断题只提交字母或对错，不能带解释、不能回显平台反馈."""
 
     class Writer:
+        """Provide a synthetic test dependency."""
+
         def __init__(self, choice="D", judge="对"):
             """Initialize configuration and runtime state."""
             self.choice = choice
@@ -105,7 +107,7 @@ class AuditToolTestCase(unittest.TestCase):
         self.assertEqual(human_audit.audit_all(good)["problems"], 0)
 
     def test_flags_fabricated_resume(self):
-        """在校学生的"我实习那家公司"就是编的（AGENTS.md 4.9 明确禁止）."""
+        """在校学生的"我实习那家公司"没有可验证的素材支持."""
         bad = [{"kind": "主题讨论",
                 "text": "我之前实习那家公司就这样，使命写得挺响，实际考核全是拉新和续费。"}]
         rules = {rule for item in human_audit.audit_all(bad)["items"] for rule, _ in item["issues"]}

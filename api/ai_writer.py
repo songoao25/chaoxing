@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """生成并检查问答和讨论回复."""
-# 
+#
 # 任务中心的问答（思考题、作业简答）和主题讨论不能用模板腔：
 # 平台上老师和同学一眼就能看出 AI 味，讨论区还要求和其他同学的回复风格一致。
-# 
+#
 # 这个模块负责两件事：
 # 1. 用配置里的大模型（[tiku] 段的 endpoint / key / model）生成内容
 # 2. 严格"去 AI 味"：提示词约束 + 生成后清洗 + 长度/风格对齐参考文本
-# 
+#
 # 注意：这里只负责写字，不负责任何提交动作。
 
 import configparser
@@ -291,7 +291,7 @@ class HumanLikeWriter:
     def style_problems(cls, text: str, require_hesitation: bool = False,
                        require_course_anchor: bool = False) -> list:
         """真人化自检：返回命中的问题（空列表=过检）."""
-        # 
+        #
         # 检查范围：
         # 结尾金句、无来源的假具体、口癖分布过密、长文没有一处真实的犹豫。
         text = str(text or "")
@@ -338,7 +338,7 @@ class HumanLikeWriter:
     def _generate_text(self, user: str, max_chars: int, require_hesitation: bool = False,
                        require_course_anchor: bool = False, **kwargs) -> str:
         """生成 + 自检：不合格就重写，平台判分话术残留直接报错."""
-        # 
+        #
         # 宁可失败也不能把"回答正确/依据：/本题考核知识点"这类平台判分话术
         # 写进要提交给老师的正文里（）。
         text = ""
@@ -391,7 +391,7 @@ class HumanLikeWriter:
                    max_chars: int = 180, revision_hint: str = "",
                    previous_reply: str = "") -> str:
         """给主题讨论写一条回复：目标"班里中等水平"的普通回复，不显眼也不掉队."""
-        # 
+        #
         # 用户实测反馈：太机灵、太有个人风格（"要我说…我甚至觉得…"）反而不像普通同学。
         # 所以这里明确要求平实、普通、长度和多数同学接近；不追求语言上的亮点。
         refs = self.style_reference(existing_posts)
@@ -530,7 +530,7 @@ class HumanLikeWriter:
     @staticmethod
     def _recent_feedback(data: dict, limit: int = 3, max_chars: int = 600) -> str:
         """从 AI 实践对话里提取平台最近的解析/判据."""
-        # 
+        #
         # 平台的 preAppendContent 在判错时会直接把正确概念讲出来
         # （例如"公司层战略是企业最高管理层制定的面向企业整体的总体战略，核心是确定经营领域"），
         # 把它作为作答依据喂回模型，能显著提高重复题的正确率。

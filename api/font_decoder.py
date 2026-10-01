@@ -10,7 +10,8 @@ from api.logger import logger
 
 class FontDecoder:
     """超星加密字体解码器."""
-    # 
+
+    #
     # 用于解码超星平台使用特殊字体加密的内容。
 
     # 正则表达式常量
@@ -19,7 +20,7 @@ class FontDecoder:
 
     def __init__(self, html_content: Optional[str] = None):
         """初始化字体解码器."""
-        # 
+        #
         # Args:
         # html_content: 包含加密字体信息的HTML内容
         self.html_content = html_content
@@ -30,7 +31,7 @@ class FontDecoder:
 
     def __init_font_map(self, html_content: str) -> None:
         """从HTML内容中提取字体信息并初始化字体映射."""
-        # 
+        #
         # Args:
         # html_content: 包含加密字体信息的HTML内容
         try:
@@ -57,13 +58,13 @@ class FontDecoder:
 
     def decode(self, target_str: str) -> str:
         """解码加密字符串."""
-        # 
+        #
         # Args:
         # target_str: 需要解码的加密字符串
-        # 
+        #
         # Returns:
         # 解码后的字符串
-        # 
+        #
         # Raises:
         # ValueError: 当字体映射未初始化时抛出
         if not self.__font_map:
@@ -73,7 +74,7 @@ class FontDecoder:
 
     def set_html_content(self, html_content: str) -> None:
         """设置新的HTML内容并重新初始化字体映射."""
-        # 
+        #
         # Args:
         # html_content: 包含加密字体信息的HTML内容
         self.html_content = html_content

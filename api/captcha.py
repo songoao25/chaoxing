@@ -1,8 +1,8 @@
 """Captcha API for Chaoxing."""
-# 
+#
 # 本模块用于通过CX验证码，提供包括验证码获取、识别、验证等接口。
 # 使用了开源的验证码识别库[DdddOcr](https://github.com/sml2h3/ddddocr)
-# 
+#
 # Author: skreon
 # Email: 1340554713@qq.com
 # Date: 2025-06-05
@@ -28,7 +28,7 @@ except ImportError:
 
 def ocr_init() -> Optional[DdddOcr]:
     """初始化OCR对象."""
-    # 
+    #
     # Returns: DdddOcr对象
     if not HAS_DDDDOCR:
         logger.warning("未检测到 ddddocr 依赖，自动验证码识别将不可用。如遇403限制请在浏览器端手动完成验证。")
@@ -45,10 +45,11 @@ _MISSING = object()
 
 class CxCaptcha:
     """CxCaptcha 类用于处理学习任务中出现的验证码."""
-    # 
+
+    #
     # 该类提供了获取、识别和提交验证码的方法，使用 requests 库进行 HTTP 请求，
     # 并利用 DdddOcr 进行验证码识别。
-    # 
+    #
     # Attributes:
     # host (str): 超星平台的主机地址。
     # api (dict): 包含获取和提交验证码的 API 路径。
@@ -64,7 +65,7 @@ class CxCaptcha:
 
     def __init__(self, user_agent: str, cookies: str, ocr: Optional[DdddOcr] = _MISSING):
         """初始化 CxCaptcha 实例."""
-        # 
+        #
         # Args:
         # user_agent (str): 用户代理字符串。
         # cookies (str): 会话 cookies。
@@ -84,7 +85,7 @@ class CxCaptcha:
 
     def getCaptcha(self) -> Optional[bytes]:
         """获取验证码图片."""
-        # 
+        #
         # Returns:
         # Optional[bytes]: 返回验证码图片的二进制数据，如果获取失败则返回 None。
         api = self.host + self.api['get']
@@ -99,10 +100,10 @@ class CxCaptcha:
 
     def submitCaptcha(self, cap_token: str) -> bool:
         """提交验证码以完成验证."""
-        # 
+        #
         # Args:
         # cap_token (str): 验证码 token。
-        # 
+        #
         # Returns:
         # bool: 如果提交成功并重定向，则返回 True；否则返回 False。
         api = self.host + self.api['submit']
@@ -118,10 +119,10 @@ class CxCaptcha:
 
     def recognition(self, img: bytes) -> str:
         """使用 DdddOcr 对验证码图片进行识别."""
-        # 
+        #
         # Args:
         # img (bytes): 验证码图片的二进制数据.
-        # 
+        #
         # Returns:
         # str: 返回识别出的验证码字符串。
         if not self.ocr:
@@ -132,9 +133,9 @@ class CxCaptcha:
 
     def try_pass(self) -> bool:
         """尝试通过验证码验证流程."""
-        # 
+        #
         # 该方法会自动获取验证码、识别并提交。
-        # 
+        #
         # Returns:
         # bool: 如果验证码成功通过验证，则返回 True；否则返回 False。
         try:

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """大模型调用策略（api/llm.py）与答题解析/投票回归."""
-# 
+#
 # 背景：DeepSeek flash 不同版本的 thinking 行为不同——旧版正文为空、新版默认带推理。
 # 代码不能再写死"永远关 thinking"（会降低正确率），也不能假设一定有 content。
 # 全部离线，不联网。
@@ -46,6 +46,8 @@ class FakeClient:
         outer = self
 
         class Completions:
+            """Provide a synthetic test dependency."""
+
             def create(self, **kwargs):
                 outer.calls.append(kwargs)
                 item = outer.script.pop(0) if outer.script else FakeResponse(FakeMessage(""))

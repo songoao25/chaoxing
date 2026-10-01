@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """任务中心「教学任务」支持（task.chaoxing.com 任务引擎）."""
-# 
+#
 # 【为什么需要单独一套逻辑】
 # 新版泛雅课程首页的「任务中心」里，老师可以发布"教学任务"。它和「章节」是
 # 两套互相独立的学习入口：
 # * 章节   -> mooc1.chaoxing.com/mooc-ans/knowledge/cards（老接口）
 # * 教学任务 -> task.chaoxing.com 的任务引擎，任务点按"分组"解锁，
 # 完成上一组才允许学下一组
-# 
+#
 # 教学任务的每个任务点（plan）有自己的类型：
 # 4  作业        8  章节        9  思考题      10 视频
 # 11 文档        14 主题讨论    15 AI实践
@@ -24,7 +24,7 @@
 # * 主题讨论：groupweb 话题详情页 → 读已有回复做风格参考 → ai_writer 生成回复 →
 # POST /pc/invitation/{topicUuid}/addReplys；文本有硬伤（编造经历等）直接不提交。
 # 其余类型（思考题）目前不做，会明确写日志提示手动完成，绝不会假装成功。
-# 
+#
 # 接口全部是只读探测出来的，任何一步失败都只影响该任务点，不会影响章节刷课。
 
 import hashlib
@@ -92,11 +92,11 @@ SUPPORTED_PLAN_TYPES = {
 }
 
 # 同一任务点提交后的本地去重窗口（秒）。
-# 平台完成状态有延迟（作业实测 8 秒~1 分钟，其他类型更久），
+# 平台完成状态有延迟，
 # 重复运行不能因此把同一份作业/讨论再提交一遍。
 SUBMISSION_LEDGER_TTL = 6 * 3600
 
-# 文档任务点尝试记录窗口（秒）。实测 10 分钟文档连打 600 秒 + readEnd 后平台仍不计入，
+# 文档任务点尝试记录窗口（秒）。平台可能不认可文档时长报告，
 # 24 小时内不重复消耗真实阅读时间；如果平台之后计入了，任务状态复查会直接通过。
 DOCUMENT_ATTEMPT_TTL = 24 * 3600
 
@@ -127,7 +127,7 @@ AI_LOAD_DATA_URL = f"{MOOC_BASE}/mooc2-ans/ai-evaluate/v2/answer/load-data"
 AI_SUBMIT_URL = f"{MOOC_BASE}/mooc2-ans/ai-evaluate/v2/answer/submit"
 AI_TALK_URL = f"{MOOC_BASE}/ai-ans/ai-evaluate/think/main-talk"
 # 提交之后平台**不会自动评估**：成绩是学生点"学习质量评估报告"时由这个接口现算的。
-# 实测提交后 10 分钟 answerRecords 里都没有分数，调一次 end-report 立刻出分。
+# 提交后需要 end-report 触发评分，不能只等待 answerRecords。
 AI_END_REPORT_URL = f"{MOOC_BASE}/ai-ans/ai-evaluate/think/end-report"
 AI_FORM_HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -157,7 +157,7 @@ class TaskOutcome(str, Enum):
 
 def normalize_submit_mode(value: Any) -> str:
     """提交模式只允许 confirm/auto；默认 auto（后台自动提交），错误值也回到 auto."""
-    # 
+    #
     # auto = 作答完成后直接提交（适合挂后台刷课，用户要求默认值）；
     # confirm = 提交前显示预览并询问（需要人工盯着时显式配置）。
     mode = str(value or "auto").strip().lower()
@@ -187,7 +187,7 @@ def _encode_uri_component(value: str) -> str:
 
 def _read_point_enc(params: dict) -> str:
     """按云盘阅读器 addPoint.js 的规则计算 ac_mark.enc."""
-    # 
+    #
     # 浏览器先对 d 做 encodeURIComponent，再按参数名排序拼接所有字符串参数，
     # 最后追加固定盐并取 MD5。requests 收到未编码的 d 后会在发送时编码一次，
     # 因而这里不能把已编码的 d 再放回 params，否则会在网络层双重编码。
@@ -209,7 +209,6 @@ def _extract_json_object(text: str, marker: str) -> Optional[dict]:
     if brace < 0:
         return None
     try:
-        import json
 
         obj, _ = json.JSONDecoder().raw_decode(text[brace:])
         return obj if isinstance(obj, dict) else None
@@ -219,10 +218,10 @@ def _extract_json_object(text: str, marker: str) -> Optional[dict]:
 
 def _extract_discussion_topic(page_html: str) -> dict:
     """从话题详情页里取 urlToken / 标题 / 正文."""
-    # 
+    #
     # window.obj.topic 是 JS 字面量（不是严格 JSON，带注释和未加引号的键），
     # 所以先定位 topic:{ 片段再用正则取字段，不做整段 JSON 解析。
-    info = {"url_token": "", "title": "", "content": "", "user_puid": ""}
+    info = dict.fromkeys(("url_token", "title", "content", "user_puid"), str())
     matched = re.search(r"urlToken\s*:\s*['\"]([^'\"]+)['\"]", page_html or "")
     if matched:
         info["url_token"] = matched.group(1)
@@ -242,9 +241,44 @@ def _extract_discussion_topic(page_html: str) -> dict:
     return info
 
 
+def _sse_events(lines, report=False):
+    """Yield JSON events while accepting report events split across lines."""
+    pending = ""
+    for raw_line in lines:
+        line = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else str(raw_line)
+        line = line.strip()
+        if not line or (not report and not line.startswith("data:")):
+            continue
+        payload = line[5:].strip() if line.startswith("data:") else line
+        if payload == "[DONE]":
+            if report:
+                break
+            continue
+        payload = pending + payload if report else payload
+        if not payload:
+            continue
+        try:
+            event = json.loads(payload)
+        except (TypeError, ValueError):
+            pending = payload if report else ""
+            continue
+        pending = ""
+        if isinstance(event, dict):
+            yield event
+
+
+def _sse_content(event):
+    """Normalize event content without dropping numeric or structured values."""
+    content = event.get("content", "")
+    if content is None:
+        return ""
+    return content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+
+
 class TaskCenter:
     """任务中心客户端：读取教学任务 + 完成任务点."""
-    # 
+
+    #
     # ``study_video`` / ``study_document`` 保持历史 bool 返回值，供旧调用方继续使用。
     # 新增任务类型会同时更新 ``last_outcome``，编排层据此区分失败、锁定和等待确认。
     # ``writer`` 与 ``confirm_callback`` 可注入，既方便离线测试，也避免把提交确认和
@@ -301,7 +335,7 @@ class TaskCenter:
 
     def confirm_submission(self, kind: str, preview: str = "") -> bool:
         """提交前的统一门禁."""
-        # 
+        #
         # confirm 模式在无交互终端中直接安全停止；只有明确输入 y/yes 才会继续。
         # 该门禁只用于会改变课程记录的提交动作，视频/文档打点和状态读取不受影响。
         if self.submit_mode == "auto":
@@ -562,7 +596,7 @@ class TaskCenter:
     @staticmethod
     def chapter_sync_payload(encry_task_user_id: str, chapter_data: dict) -> dict:
         """按任务中心网页格式组装章节成绩同步请求体."""
-        # 
+        #
         # 任务中心页面在查询参数里会使用编码后的变量，但
         # ``autoPullChapterScore`` 的 JSON 体实际使用原始 ``eTaskUserId``。
         # 这里必须保留 ``open_task`` 返回的原值；requests 会负责 HTTP 层编码。
@@ -579,7 +613,7 @@ class TaskCenter:
 
     def sync_chapter_plan(self, encry_task_user_id: str, chapter_data: dict) -> bool:
         """把已完成的章节成绩交给任务引擎."""
-        # 
+        #
         # HTTP 200 只代表请求到达服务器；只有 JSON 明确返回 ``result=true``
         # 才算同步请求被接受。任务点最终是否完成仍必须由调用方重新读取确认。
         payload = self.chapter_sync_payload(encry_task_user_id, chapter_data)
@@ -660,13 +694,13 @@ class TaskCenter:
                 params={"encryId": encry_id},
                 timeout=TASK_CENTER_TIMEOUT,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("播放位置保存失败（{}）", type(exc).__name__)
 
     @staticmethod
     def need_seconds(plan: Optional[dict], enable_key: str, value_key: str) -> int:
         """任务点的"时长型"完成条件（读 planBreakthroughSet）."""
-        # 
+        #
         # 平台把它写成"开关 + 分钟数"，例如：
         # enableVideoWatchDuration=1 + videoWatchDuration=2.0      -> 要看够 2 分钟
         # enableDocumentWatchDuration=1 + documentWatchDuration=5.0 -> 要读够 5 分钟
@@ -684,27 +718,32 @@ class TaskCenter:
             minutes = 0.0
         return int(round(minutes * 60)) if minutes > 0 else 0
 
-    def study_video(self, study_url: str, plan: Optional[dict] = None) -> bool:
-        """按真实播放节奏完成任务引擎的视频任务点."""
-        # 
-        # 完成条件有两种：
-        # * enableVideoComplated=1              -> 播完就行
-        # * enableVideoWatchDuration=1 + N 分钟 -> 要累计观看够 N 分钟
-        # 
-        # 有"观看时长"要求时必须按 1 倍速真实播放：服务端按真实时间判定有效观看
-        # 时长（实测 2 倍速打点只算一半、原地心跳不算），一遍不够就回看一遍。
+    def _task_page(self, study_url, label):
+        """Load an engine task page and require a successful HTTP response."""
+        try:
+            resp = self.session.get(study_url, timeout=TASK_CENTER_TIMEOUT)
+        except Exception as exc:
+            logger.warning("{}任务页打开失败: {}", label, exc)
+            return None
+        if resp.status_code != 200:
+            logger.warning("{}任务页打开失败: HTTP {}", label, resp.status_code)
+            return None
+        return resp
+
+    def _video_task_metadata(self, study_url):
+        """Validate video metadata before starting the paced playback loop."""
         try:
             resp = self.session.get(study_url, timeout=TASK_CENTER_TIMEOUT)
         except Exception as e:
             logger.warning("视频任务页打开失败: {}", e)
-            return False
+            return None
         if resp.status_code != 200:
             logger.warning("视频任务页打开失败: HTTP {}", resp.status_code)
-            return False
+            return None
         vo = _extract_json_object(resp.text, "videoLearnVo")
         if not vo:
             logger.warning("视频任务页结构变化，未取到 videoLearnVo")
-            return False
+            return None
         encry_id = vo.get("encryId")
         info = vo.get("videoInfo") or {}
         try:
@@ -713,7 +752,23 @@ class TaskCenter:
             duration = 0
         if not encry_id or duration <= 0:
             logger.warning("视频任务信息不完整（encryId/duration 缺失），跳过")
+            return None
+
+        return vo, encry_id, info, duration
+
+    def study_video(self, study_url: str, plan: Optional[dict] = None) -> bool:
+        """按真实播放节奏完成任务引擎的视频任务点."""
+        #
+        # 完成条件有两种：
+        # * enableVideoComplated=1              -> 播完就行
+        # * enableVideoWatchDuration=1 + N 分钟 -> 要累计观看够 N 分钟
+        #
+        # 有"观看时长"要求时必须按 1 倍速真实播放：服务端按真实时间判定有效观看
+        # 时长（实测 2 倍速打点只算一半、原地心跳不算），一遍不够就回看一遍。
+        metadata = self._video_task_metadata(study_url)
+        if metadata is None:
             return False
+        vo, encry_id, info, duration = metadata
 
         required = self.need_seconds(plan, "enableVideoWatchDuration", "videoWatchDuration")
         # 有时长要求 -> 1 倍速，保证"有效观看时长"和真实时间一致
@@ -783,7 +838,7 @@ class TaskCenter:
 
     def _send_read_point(self, mark: dict, seq: int) -> bool:
         """上报一个阅读点（真实阅读器每 30 秒一次）."""
-        # 
+        #
         # 请求形态和签名与阅读器 addPoint.js 对齐：d 在 params 中保留原始 JSON，
         # 交给 requests 在网络层编码一次；enc 则使用 d 的 encodeURIComponent 形式计算。
         payload = {
@@ -850,20 +905,15 @@ class TaskCenter:
 
     def study_document(self, study_url: str, plan: Optional[dict] = None) -> bool:
         """完成任务引擎的文档任务点."""
-        # 
+        #
         # 文档的完成条件是"阅读时长 >= N 分钟"（planBreakthroughSet.documentWatchDuration），
         # 阅读时长由云盘阅读器的 readPoint 打点累计，所以流程是：
         # 1. 打开任务引擎文档页，取出云盘阅读器地址
         # 2. 打开阅读器页，取出打点信息 markDataStr
         # 3. 每 30 秒打一个点，凑够要求的分钟数
         # 4. 页面明确要求"完成阅读"（enableCompleteRead）时再调 readEnd
-        try:
-            resp = self.session.get(study_url, timeout=TASK_CENTER_TIMEOUT)
-        except Exception as e:
-            logger.warning("文档任务页打开失败: {}", e)
-            return False
-        if resp.status_code != 200:
-            logger.warning("文档任务页打开失败: HTTP {}", resp.status_code)
+        resp = self._task_page(study_url, "文档")
+        if resp is None:
             return False
         page = resp.text
         matched = re.search(r'encryPlanUserId\s*=\s*"([^"]+)"', page)
@@ -1035,7 +1085,7 @@ class TaskCenter:
 
     def _ai_init(self, params: dict) -> Optional[dict]:
         """初始化一次新的作答；已存在未完成记录时返回空字典，交给调用方续接."""
-        # 
+        #
         # 前端 helper 会把该 POST 序列化成 form-urlencoded，而不是 JSON。
         payload = {
             "type": 2,
@@ -1095,33 +1145,12 @@ class TaskCenter:
         }
         option_map = {}
         try:
-            for raw_line in lines:
-                if isinstance(raw_line, bytes):
-                    line = raw_line.decode("utf-8", errors="replace")
-                else:
-                    line = str(raw_line)
-                line = line.strip()
-                if not line.startswith("data:"):
-                    continue
-                payload = line[5:].strip()
-                if not payload or payload == "[DONE]":
-                    continue
-                try:
-                    event = json.loads(payload)
-                except (TypeError, ValueError):
-                    # SSE 中可能混入心跳或服务端提示；保留已解析内容，最终仍要求有有效题目/结束标记。
-                    continue
-                if not isinstance(event, dict):
-                    continue
+            for event in _sse_events(lines):
                 result["had_data"] = True
                 if "status" in event and not _api_success(event.get("status")):
                     result["error"] = str(event.get("msg") or event.get("message") or "SSE业务失败")
                     continue
-                content = event.get("content", "")
-                if content is None:
-                    content = ""
-                if not isinstance(content, str):
-                    content = json.dumps(content, ensure_ascii=False)
+                content = _sse_content(event)
                 if content:
                     result["content"] += content
 
@@ -1132,18 +1161,9 @@ class TaskCenter:
                     result["special_marks"].append(content)
 
                 event_type = str(event.get("type") or "")
-                if event_type == "preAppendContent":
-                    result["preAppendContent"] += content
-                elif event_type == "questionType":
-                    result["questionType"] += content
-                elif event_type == "questionTypeInt":
-                    result["questionTypeInt"] += content
-                elif event_type == "dimension":
-                    result["dimension"] += content
-                elif event_type == "knowledgePoint":
-                    result["knowledgePoint"] += content
-                elif event_type == "questionStem":
-                    result["questionStem"] += content
+                if event_type in {"preAppendContent", "questionType", "questionTypeInt",
+                                  "dimension", "knowledgePoint", "questionStem"}:
+                    result[event_type] += content
                 elif event_type.startswith("option-"):
                     option = event_type.split("-", 1)[1].strip().upper()
                     if option:
@@ -1162,8 +1182,8 @@ class TaskCenter:
     @staticmethod
     def parse_ai_report_sse(lines) -> dict:
         """解析"学习质量评估报告"的 SSE：成绩是 id=score 的那条事件."""
-        # 
-        # 平台**不会**在提交后自动评估：实测提交后 10 分钟 answerRecords 里仍然没有分数，
+        #
+        # 平台**不会**在提交后自动评估：提交后 answerRecords 里可能仍然没有分数，
         # 必须请求 end-report（页面上就是"学习质量评估报告"按钮）才会现算成绩。
         # 这个流会把同一条 JSON 拆到多行（中文 key 更长），所以按"拼接后能解析就算一条"处理。
         result = {
@@ -1173,36 +1193,10 @@ class TaskCenter:
             "stream_closed": False,
             "error": "",
         }
-        pending = ""
         try:
-            for raw_line in lines:
-                if isinstance(raw_line, bytes):
-                    line = raw_line.decode("utf-8", errors="replace")
-                else:
-                    line = str(raw_line)
-                line = line.strip()
-                if not line:
-                    continue
-                payload = line[5:].strip() if line.startswith("data:") else line
-                if payload == "[DONE]":
-                    break
-                payload = pending + payload
-                if not payload:
-                    continue
-                try:
-                    event = json.loads(payload)
-                except (TypeError, ValueError):
-                    pending = payload
-                    continue
-                pending = ""
-                if not isinstance(event, dict):
-                    continue
+            for event in _sse_events(lines, report=True):
                 result["had_data"] = True
-                content = event.get("content", "")
-                if content is None:
-                    content = ""
-                if not isinstance(content, str):
-                    content = json.dumps(content, ensure_ascii=False)
+                content = _sse_content(event)
                 key = str(event.get("id") or "").strip()
                 if key:
                     result["sections"][key] = result["sections"].get(key, "") + content
@@ -1389,7 +1383,7 @@ class TaskCenter:
     AI_SUMMARY_MARKS = ("知识点解析", "小结", "本局结束", "本轮结束", "练习结束", "继续加油")
 
     # 同一道题最多试几个答案：平台判分是它自己的大模型，偶尔会把标准答案
-    # 判错并反复推回同一题（实测同一题被推回 15 次、整局拖到 112 题）。
+    # 判错并反复推回同一题。
     # 试满一轮选项还不够，就带着本轮已有作答直接提交，不再空转。
     AI_MAX_TRIES_PER_QUESTION = 4
     # 连续几次作答都没让平台的 messageList 变长，说明这一局其实已经结束、
@@ -1399,7 +1393,7 @@ class TaskCenter:
     @classmethod
     def _ai_pending_turn(cls, data: dict) -> Optional[dict]:
         """取当前还没作答的题."""
-        # 
+        #
         # 注意：从后往前扫时，一旦先遇到平台的结束总结，就必须返回 None。
         # 实测踩过坑：总结之后还留着上一条题目，旧实现会把那条**过期题目**当成 pending，
         # 于是对着它反复作答、平台根本不再收录，一路空转到轮数上限（23 分钟白跑）。
@@ -1455,7 +1449,7 @@ class TaskCenter:
     def _ai_wait_for_score(self, params: dict, record_uuid: str,
                            tries: int = 20, interval: float = 30.0):
         """提交后等平台出评估结果."""
-        # 
+        #
         # 平台不是立刻出分：实测提交后要几分钟，`answerRecords` 里才会出现
         # statusMsg=已评估。这里轮询 load-data，等到就返回分数。
         data = None
@@ -1529,7 +1523,7 @@ class TaskCenter:
     @classmethod
     def _ai_average_score(cls, data: dict) -> Optional[float]:
         """练习平均分."""
-        # 
+        #
         # 页面上写的达标口径是"学生多次练习平均分达到 N 分"，所以历史低分记录会拖后腿；
         # 单次满分并不等于这项练习的最终成绩够看。
         scores = cls._ai_record_scores(data)
@@ -1554,22 +1548,8 @@ class TaskCenter:
 
     def _ai_answer(self, turn: dict, data: dict, exclude=None) -> str:
         stem = str(turn.get("questionStem") or turn.get("content") or "").strip()
-        question_type = str(turn.get("questionTypeInt") if turn.get("questionTypeInt") is not None else "").strip()
         options = self._ai_options(turn.get("options"))
-        if not question_type:
-            question_label = str(turn.get("questionType") or "")
-            if "多选" in question_label:
-                question_type = "1"
-            elif "单选" in question_label:
-                question_type = "0"
-            elif "判断" in question_label:
-                question_type = "3"
-        if question_type not in {"0", "1", "3"} and options:
-            # 平台偶尔只给中文 questionType、或者给一个没见过的 questionTypeInt 编码，
-            # 但题目带了选项。此时按最常见的单选处理：**绝不能**因为题型没认出来
-            # 就把客观题当简答写一段小作文（实测被平台判"没有按题目要求作答"；
-            # 独立审计也用 questionTypeInt="2" + A/B 选项复现过）。
-            question_type = "0"
+        question_type = self._ai_answer_type(turn, options)
         requirement = str(data.get("requirement") or "").strip()
         # 客观题只需要"维度/知识点"这种题干上下文；平台反馈另算一份，
         # **只用于选择题/判断题的内部判据**。开放题的正文绝不能带平台判分话术，
@@ -1595,30 +1575,7 @@ class TaskCenter:
                     else ("平台判据：" + hints)
 
         if question_type in {"0", "1"} and options:
-            chooser = getattr(self.writer, "choose_options", None)
-            if not callable(chooser):
-                raise RuntimeError("当前写作器不支持 AI 实践选择题")
-            try:
-                answer = chooser(stem, options, multiple=question_type == "1",
-                                 context=choice_context, exclude=exclude)
-            except TypeError:
-                # 兼容旧写作器/测试替身：不接受 exclude 参数
-                answer = chooser(stem, options, multiple=question_type == "1",
-                                 context=choice_context)
-            valid = {item["option"] for item in options}
-            chosen = []
-            for letter in re.findall(r"[A-E]", str(answer).upper()):
-                if letter in valid and letter not in chosen:
-                    chosen.append(letter)
-            if not chosen:
-                raise RuntimeError("AI 实践选择题没有得到有效选项")
-            if question_type == "0":
-                # 选择题就发选项字母本身（和真人在页面上点选项一样），
-                # 不要拼"选 X，因为……"这种解释性长句：既不是平台的作答格式，
-                # 也一眼就能看出是机器在答。
-                return chosen[0]
-            order = {letter: index for index, letter in enumerate("ABCDE")}
-            return "".join(sorted(chosen, key=lambda letter: order.get(letter, 99)))
+            return self._ai_choice_answer(stem, options, question_type, choice_context, exclude)
 
         if question_type == "3":
             judge = getattr(self.writer, "choose_judgement", None)
@@ -1678,7 +1635,7 @@ class TaskCenter:
     def _load_discussion_replies(self, bbsid: str, topic_uuid: str, user_puid: str = "",
                                  limit: int = 8) -> tuple:
         """读讨论已有回复."""
-        # 
+        #
         # 返回 (回复正文列表, 自己是否已经回复过)。
         # 正文供 ai_writer 模仿语气；"已回复过"用来避免重复运行同一任务时反复发帖。
         # 读取失败就当没有参考、也没回复过（上层仍会走正常的提交路径）。
@@ -1711,14 +1668,14 @@ class TaskCenter:
     def study_discussion(self, study_url: str, plan: Optional[dict] = None,
                          course: Optional[dict] = None) -> bool:
         """完成「任务中心 -> 主题讨论」任务点（planType=14）."""
-        # 
+        #
         # 真实接口（groupweb.chaoxing.com，）：
         # * 话题详情页：GET study_url（302 到 .../replysList?courseId=&classId=），
         # 页面里的 window.obj 带 urlToken / topic.title / topic.content；
         # * 已有回复：GET /pc/invitation/getReplyList?bbsid=&uuid=&order=2；
         # * 发回复：POST /pc/invitation/{topicUuid}/addReplys
         # （replyId=-1 一级回复、topic_content=encodeURIComponent(正文)、urlToken、bbsid）。
-        # 
+        #
         # 回复文本统一走 api/ai_writer.HumanLikeWriter.discussion（模仿已有回复、去 AI 味）；
         # 生成器判定有硬伤（编造个人经历/平台话术）时直接放弃，不提交。
         # 是否算完成仍由上层 wait_plan_finished 复查任务引擎状态裁定。
@@ -1759,7 +1716,7 @@ class TaskCenter:
                     name: str = "", referer: str = "", revision_hint: str = "",
                     previous_reply: str = "") -> Optional[dict]:
         """只生成回复草稿，**不提交**."""
-        # 
+        #
         # 讨论区模式（自己挑帖子）要先给用户看草稿、确认之后再发，所以拆出这一步。
         # 返回 {topic_info, title, reply, has_replied, referer}；失败返回 None。
         course = course or {}
@@ -1951,7 +1908,7 @@ class TaskCenter:
     def _fill_homework_answers(self, questions: list, course: Optional[dict] = None,
                                task_name: str = "") -> Optional[str]:
         """给作业题目填答案（选择题/判断题/填空题走题库，简答题走去 AI 味写作器）."""
-        # 
+        #
         # 返回 None 表示全部填好；返回字符串表示失败原因（此时绝不提交）。
         tiku = getattr(self.chaoxing, "tiku", None)
         if tiku is None or getattr(tiku, "DISABLE", False):
@@ -1970,7 +1927,7 @@ class TaskCenter:
             q_type = q.get("type")
             answer = ""
             if q_type == "shortanswer" or (q_type == "unknown" and not q.get("options")):
-                # 简答题必须走去 AI 味写作器；拿不到正文就不提交（AGENTS 铁律 7/9）
+                # 简答题必须走去 AI 味写作器；拿不到正文就不提交
                 writer = getattr(self, "writer", None)
                 if writer is None or not getattr(writer, "available", False):
                     return f"简答题需要 AI 写作器，当前不可用：{str(q.get('title'))[:40]}"
@@ -1991,29 +1948,8 @@ class TaskCenter:
                     return "简答题复核记录写入失败"
                 q["_review_item"] = item
                 emit_block(f"简答 {_qi}", answer)
-            elif not res:
-                answer = random_answer(q.get("options", ""), q_type)
-            elif q_type == "multiple":
-                answer = build_multiple_answer(res, q.get("options", ""))
-            elif q_type == "single":
-                options_list = multi_cut(q.get("options", ""))
-                if options_list:
-                    t_res = clean_res(res)
-                    for option in options_list:
-                        if t_res and is_subsequence(t_res[0], option):
-                            answer = option[:1]
-                            break
-                    if not answer and t_res:
-                        answer = best_option_by_similarity(t_res[0], options_list, threshold=0.8)
-            elif q_type == "judgement":
-                answer = "true" if tiku.judgement_select(res) else "false"
-            elif q_type == "completion":
-                if isinstance(res, list):
-                    answer = "#".join(str(x).strip() for x in res if str(x).strip())
-                elif isinstance(res, str):
-                    answer = res
             else:
-                answer = res if isinstance(res, str) else ""
+                answer = self._homework_objective_answer(q, res, tiku)
 
             if not answer and q_type not in ("shortanswer", "unknown"):
                 answer = random_answer(q.get("options", ""), q_type)
@@ -2029,11 +1965,11 @@ class TaskCenter:
     def study_homework(self, study_url: str, plan: Optional[dict] = None,
                        course: Optional[dict] = None) -> bool:
         """完成「任务中心 -> 作业」任务点（planType=4）."""
-        # 
+        #
         # 与章节测验的区别：学习页是新版 mooc2/work/dowork，提交接口是
         # addStudentWorkNewWeb（表单 action 自带 token / totalQuestionNum）；
         # 章节测验用的 mooc-ans/api/work 对课程级作业返回 403，不能复用。
-        # 
+        #
         # 这里只负责"作答并被接口接受"；是否算完成由上层 wait_plan_finished
         # 重新读任务引擎状态裁定，接口 200 / status=true 单独不算完成。
         name = (plan or {}).get("name") or "作业"
@@ -2081,50 +2017,11 @@ class TaskCenter:
             if action.startswith("/"):
                 action = "https://mooc1.chaoxing.com" + action
 
-            payload = {
-                key: value for key, value in page.items()
-                if key not in ("questions", "form_action", "form_method")
-            }
-            payload["answerwqbid"] = page.get("answerwqbid", "")
-            payload["pyFlag"] = ""
-            for question in questions:
-                answer_field = question.get("answerField") or {}
-                payload[f"answer{question['id']}"] = answer_field.get(f"answer{question['id']}", "")
-                payload[f"answertype{question['id']}"] = answer_field.get(
-                    f"answertype{question['id']}", ""
-                )
-            # 填空题按空提交（answerEditor{id}{n} + tiankongsize{id}），与章节测验同一规则
-            for question in questions:
-                build_completion_fields(payload, question)
+            payload = self._homework_payload(page, questions)
 
             sep = "&" if "?" in action else "?"
             submit_url = action + sep + "pyFlag=&ua=pc&formType=post&saveStatus=1&version=1"
-            try:
-                submitted = self.session.post(
-                    submit_url,
-                    data=payload,
-                    timeout=TASK_CENTER_TIMEOUT,
-                    headers={
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Accept": "application/json, text/javascript, */*; q=0.01",
-                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                        "Origin": "https://mooc1.chaoxing.com",
-                        "Referer": study_url,
-                    },
-                )
-            except Exception as e:
-                logger.warning("作业提交请求失败: {} - {}", name, e)
-                return False
-            if getattr(submitted, "status_code", 0) != 200:
-                logger.warning("作业提交失败: {} HTTP {}", name, getattr(submitted, "status_code", "?"))
-                return False
-            try:
-                data = submitted.json()
-            except ValueError:
-                logger.warning("作业提交返回的不是 JSON，本次不判定成功: {}", name)
-                return False
-            if not isinstance(data, dict) or not data.get("status"):
-                logger.warning("作业提交被平台拒绝: {} -> {}", name, str(data)[:200])
+            if not self._post_homework(submit_url, payload, study_url, name):
                 return False
 
             review_status = "平台已接受，等待任务状态复查"
@@ -2138,7 +2035,7 @@ class TaskCenter:
 
     def study_ai_practice(self, study_url: str, plan: Optional[dict] = None) -> bool:
         """续接/完成一次 AI 实践，并在达到最低分后才返回 True."""
-        # 
+        #
         # 对话请求本身不是最终提交；只有确认模式通过后调用 ``answer/submit``，
         # 并且提交后的 load-data 读回分数，才会进入完成状态。任务中心的 isFinish
         # 仍由上层 ``wait_plan_finished`` 再次确认。
@@ -2177,236 +2074,430 @@ class TaskCenter:
             if interrupt.should_stop():
                 return False
 
-            # 第一次优先续接服务端已有的未完成记录；后续低分重答才初始化新记录。
-            if attempt > 0 or self._ai_record_submitted(data) or not data.get("recordUuid"):
-                init_data = self._ai_init(params)
-                if init_data is None:
-                    return False
-                record_uuid = str(init_data.get("recordUuid") or data.get("recordUuid") or "")
-                data = self._ai_load_data(params, record_uuid) or self._ai_load_data(params)
-                if data is None:
-                    return False
-            record_uuid = str(data.get("recordUuid") or "")
-            if not record_uuid:
-                logger.warning("AI实践状态缺少 recordUuid，按失败处理")
+            round_data = self._ai_round_data(params, data, attempt)
+            if round_data is None:
                 return False
+            data, record_uuid = round_data
 
-            if self._ai_record_submitted(data):
-                score = self._ai_score(data, record_uuid)
-                if score is not None and score >= self.ai_practice_min_score:
-                    average = self._ai_average_score(data)
-                    if (average is not None and average < self.ai_practice_min_score
-                            and attempt + 1 < self.ai_practice_max_rounds):
-                        logger.info(
-                            "AI实践已有 {:.1f} 分的记录，但练习平均分 {:.1f} 低于目标 {:.1f}，开新一轮补答",
-                            score, average, self.ai_practice_min_score,
-                        )
-                        # 必须直接开新一轮：这一条记录已经提交过，落下去会把同一条
-                        # 记录再 submit 一次（平台可能直接拒绝，白跑一轮还报失败）。
-                        time.sleep(1.0)
-                        continue
-                    logger.info("AI实践已有有效成绩 {:.1f}，无需重复提交", score)
-                    self._set_outcome(TaskOutcome.COMPLETED)
-                    return True
-
-            completion = self._ai_completion_state(data)
-            turn = self._ai_pending_turn(data)
-            last_answer = ""
-            turn_count = 0
-            summary_seen = False
-            topic_count = sum(
-                len(dimension.get("topicList") or [])
-                for dimension in data.get("dimensionList") or []
-                if isinstance(dimension, dict)
-            )
-            # 平台的判分是它自己的大模型，同一道题会反复追问；知识点多的时候
-            # 一局可能要答几十题（实测 9 个知识点答过 55 题仍被追问），
-            # 这里给足余量，但仍有上限避免死循环。
-            max_turns = max(30, min(200, topic_count * 8 + 30))
-
-            if turn is None and completion is not True:
-                # 与前端 iniQuestion 一致：已有记录但没有 messageList 时发送空消息，
-                # 让平台生成第一道题；这不是提交动作。
-                turn = self._ai_stream(params, record_uuid, "")
-                if turn is None:
-                    return False
-
-            # 平台已经给出总结、且快照里没有待答题目：这一局已经结束了。
-            # 旧实现会再发一条空消息"让平台出第一题"，平台就继续生成新题，
-            # 于是对着一个已经结束的局空转到轮数上限（实测白跑 23 分钟）。
-            ready_to_submit = turn is None and completion is True
-            if ready_to_submit:
-                logger.info("AI实践这一局平台已经结束，直接提交本轮成绩")
-
-            # 平台是拿自己的大模型判分的：同一道题同一个答案会被反复判错。
-            # 记下每道题已经试过的答案，重试时换一个，才可能跳出死循环。
-            tried_answers: dict = {}
-            attempts: dict = {}
-            stalled = 0
-            while not ready_to_submit and turn_count < max_turns:
-                if interrupt.should_stop():
-                    return False
-                if not self._ai_turn_has_question(turn):
-                    summary_seen = any(
-                        "SummaryTopic" in mark for mark in (turn or {}).get("special_marks", [])
-                    )
-                    # SSE 这一帧没带问题不代表练完了：平台的状态快照里可能还有 pending 题，
-                    # 这时候提交会拿到一个"没答完"的低分（实测 60 分那轮就是提前提交）
-                    pending_turn = self._ai_pending_turn(data)
-                    if pending_turn is not None:
-                        turn = pending_turn
-                        continue
-                    if completion is True or summary_seen:
-                        break
-                    logger.warning("AI实践 SSE 没有下一道可回答的问题，按失败处理")
-                    return False
-
-                question_key = self._ai_question_key(turn)
-                used = tried_answers.setdefault(question_key, set())
-                attempts[question_key] = attempts.get(question_key, 0) + 1
-                try:
-                    answer = self._ai_answer(turn, data, exclude=used)
-                    item = None
-                    if self._ai_turn_type(turn) == "shortanswer":
-                        item = review.record(
-                            review.KIND_PRACTICE, answer,
-                            course="", task=(plan or {}).get("name") or "",
-                            status="待发送给平台评分",
-                        )
-                        if not item:
-                            logger.warning("AI实践复核记录写入失败，本次不发送")
-                            return False
-                except Exception as e:
-                    logger.warning("AI实践生成答案失败: {}", e)
-                    return False
-                used.add(self._ai_answer_core(answer))
-                last_answer = answer
-                turn_count += 1
-                emit(answer_line(turn_count, self._ai_turn_type(turn), answer,
-                                 self._ai_turn_title(turn)))
-                if self._ai_turn_type(turn) == "shortanswer":
-                    emit_block(f"AI实践简答 {turn_count}", answer)
-                if turn_count > 1:
-                    time.sleep(1.0)
-                before_msgs = len((data or {}).get("messageList") or [])
-                try:
-                    next_turn = self._ai_stream(params, record_uuid, answer)
-                except Exception:
-                    review.update(item, "请求失败或平台未确认")
-                    raise
-                review.update(item, "平台返回对话响应" if next_turn is not None else "请求失败或平台未确认")
-                if next_turn is None:
-                    return False
-
-                refreshed = self._ai_load_data(params, record_uuid)
-                if refreshed is None:
-                    return False
-                data = refreshed
-                completion = self._ai_completion_state(data)
-                if len((data or {}).get("messageList") or []) > before_msgs:
-                    stalled = 0
-                else:
-                    stalled += 1
-                # 知识点答完之后，平台还会把最后一道题推回来：它既不再收录我们的
-                # 作答（messageList 不再增长），也不会主动结束这一局。实测会一直空转，
-                # 甚至"错/对"来回换十几次。这时候收手提交才是对的。
-                if completion is True and (
-                    attempts.get(question_key, 0) >= self.AI_MAX_TRIES_PER_QUESTION
-                    or stalled >= self.AI_STALL_LIMIT
-                ):
-                    logger.info(
-                        "AI实践平台已判定答完（同一道题作答 {} 次、连续 {} 次无新消息），直接提交本轮",
-                        attempts.get(question_key, 0), stalled,
-                    )
-                    break
-                if self._ai_turn_has_question(next_turn):
-                    turn = next_turn
-                    continue
-                summary_seen = any(
-                    "SummaryTopic" in mark for mark in next_turn.get("special_marks", [])
-                )
-                pending_turn = self._ai_pending_turn(data)
-                if pending_turn is not None:
-                    turn = pending_turn
-                    continue
-                if completion is True or summary_seen:
-                    break
-                # 服务端偶尔先落库再返回下一题，尝试从状态快照续接一次；仍无题就失败。
-                turn = self._ai_pending_turn(data)
-                if turn is None:
-                    logger.warning("AI实践未得到完成证据或下一道题，按失败处理")
-                    return False
-            else:
-                # 只有"真的答满了轮数还没结束"才算失败；ready_to_submit 是跳过作答直接提交
-                if not ready_to_submit:
-                    logger.warning("AI实践对话超过安全轮数上限，按失败处理")
-                    return False
-
-            if completion is not True and not summary_seen:
-                logger.warning("AI实践对话结束但没有明确完成证据，不提交")
-                return False
-
-            preview = (
-                f"第 {attempt + 1} 轮，共回答 {turn_count} 个问题；"
-                f"最后回答：{last_answer[:220]}"
-            )
-            if not self._ai_submit(params, record_uuid, preview):
-                return False
-            # 平台不会自己评估：必须请求一次质量评估报告，成绩才算出来并回填，
-            # 否则 answerRecords 会一直停在"未评估"（实测等了 10 分钟都没有）。
-            report_score = self._ai_end_report(params, record_uuid)
-            if report_score is not None:
-                # 报告已经给了成绩：读一次状态（remainAnswerCount 等）就走人，
-                # 不再空等状态接口回填（旧实现固定轮询 19 次×30s≈10 分钟）。
-                refreshed = self._ai_load_data(params, record_uuid)
-                if refreshed is not None:
-                    data = refreshed
-                score = report_score
-            else:
-                # 报告没给成绩（平台偶发）：退回状态接口轮询
-                score, data = self._ai_wait_for_score(params, record_uuid)
-            if score is None or data is None:
-                logger.warning("AI实践提交后平台还没出评估结果，本次不算完成")
-                return False
-            logger.info(
-                "AI实践第 {}/{} 轮提交成绩：{:.1f}（目标 {:.1f}）",
-                attempt + 1, self.ai_practice_max_rounds, score, self.ai_practice_min_score,
-            )
-            average = self._ai_average_score(data)
-            logger.info(
-                "AI实践练习记录：{} | 平均 {:.1f} | 本轮 {:.1f} | 目标 {:.1f}",
-                "、".join(f"{value:.0f}" for value in self._ai_record_scores(data)) or "无",
-                average if average is not None else score,
-                score,
-                self.ai_practice_min_score,
-            )
-            if score >= self.ai_practice_min_score and (
-                average is None or average >= self.ai_practice_min_score
-            ):
-                self._set_outcome(TaskOutcome.COMPLETED)
+            existing = self._ai_existing_result(data, record_uuid, attempt)
+            if existing == "retry":
+                continue
+            if existing == "complete":
                 return True
 
-            try:
-                remain = int(float(data.get("remainAnswerCount")))
-            except (TypeError, ValueError):
-                remain = 1
-            if attempt + 1 >= self.ai_practice_max_rounds or remain <= 0:
-                if score >= self.ai_practice_min_score:
-                    # 本轮已经达标，只是历史低分把平均分拖下来了；重答次数用尽就
-                    # 如实汇报，不再空转（平台自己的成绩字段已含本轮的分）。
-                    logger.warning(
-                        "AI实践本轮 {:.1f} 已达标，但练习平均分 {:.1f} 未到目标 {:.1f}，重答次数已用尽",
-                        score, average if average is not None else score,
-                        self.ai_practice_min_score,
-                    )
-                    self._set_outcome(TaskOutcome.COMPLETED)
-                    return True
-                logger.warning("AI实践成绩 {:.1f} 未达到目标，重答次数已用尽", score)
+            dialogue = self._ai_run_dialogue(params, record_uuid, data, plan, attempt)
+            if dialogue is None:
                 return False
-            logger.info("AI实践成绩未达标，准备开始第 {} 轮重答", attempt + 2)
-            time.sleep(1.0)
+            data, preview = dialogue
+            if not self._ai_submit(params, record_uuid, preview):
+                return False
+            result, data = self._ai_round_result(params, record_uuid, data, attempt)
+            if result is not None:
+                return result
 
         return False
+
+    @staticmethod
+    def _ai_answer_type(turn, options):
+        """Classify objective turns conservatively when option data is present."""
+        question_type = str(turn.get("questionTypeInt") if turn.get("questionTypeInt") is not None else "").strip()
+        if not question_type:
+            question_label = str(turn.get("questionType") or "")
+            if "多选" in question_label:
+                question_type = "1"
+            elif "单选" in question_label:
+                question_type = "0"
+            elif "判断" in question_label:
+                question_type = "3"
+        if question_type not in {"0", "1", "3"} and options:
+            # 平台偶尔只给中文 questionType、或者给一个没见过的 questionTypeInt 编码，
+            # 但题目带了选项。此时按最常见的单选处理：**绝不能**因为题型没认出来
+            # 就把客观题当简答写一段小作文（实测被平台判"没有按题目要求作答"；
+            # 独立审计也用 questionTypeInt="2" + A/B 选项复现过）。
+            question_type = "0"
+        return question_type
+
+    def _ai_choice_answer(self, stem, options, question_type, choice_context, exclude):
+        """Choose and validate objective option letters."""
+        chooser = getattr(self.writer, "choose_options", None)
+        if not callable(chooser):
+            raise RuntimeError("当前写作器不支持 AI 实践选择题")
+        try:
+            answer = chooser(stem, options, multiple=question_type == "1",
+                             context=choice_context, exclude=exclude)
+        except TypeError:
+            # 兼容旧写作器/测试替身：不接受 exclude 参数
+            answer = chooser(stem, options, multiple=question_type == "1",
+                             context=choice_context)
+        valid = {item["option"] for item in options}
+        chosen = []
+        for letter in re.findall(r"[A-E]", str(answer).upper()):
+            if letter in valid and letter not in chosen:
+                chosen.append(letter)
+        if not chosen:
+            raise RuntimeError("AI 实践选择题没有得到有效选项")
+        if question_type == "0":
+            # 选择题就发选项字母本身（和真人在页面上点选项一样），
+            # 不要拼"选 X，因为……"这种解释性长句：既不是平台的作答格式，
+            # 也一眼就能看出是机器在答。
+            return chosen[0]
+        order = {letter: index for index, letter in enumerate("ABCDE")}
+        return "".join(sorted(chosen, key=lambda letter: order.get(letter, 99)))
+
+
+    def _homework_objective_answer(self, q, res, tiku):
+        """Normalize homework objective answers without generating prose."""
+        q_type = q.get("type")
+        answer = ""
+        if not res:
+            answer = random_answer(q.get("options", ""), q_type)
+        elif q_type == "multiple":
+            answer = build_multiple_answer(res, q.get("options", ""))
+        elif q_type == "single":
+            options_list = multi_cut(q.get("options", ""))
+            if options_list:
+                t_res = clean_res(res)
+                for option in options_list:
+                    if t_res and is_subsequence(t_res[0], option):
+                        answer = option[:1]
+                        break
+                if not answer and t_res:
+                    answer = best_option_by_similarity(t_res[0], options_list, threshold=0.8)
+        elif q_type == "judgement":
+            answer = "true" if tiku.judgement_select(res) else "false"
+        elif q_type == "completion":
+            if isinstance(res, list):
+                answer = "#".join(str(x).strip() for x in res if str(x).strip())
+            elif isinstance(res, str):
+                answer = res
+        else:
+            answer = res if isinstance(res, str) else ""
+
+        return answer
+
+
+    def _homework_payload(self, page, questions):
+        """Build homework fields using the chapter completion protocol."""
+        payload = {
+            key: value for key, value in page.items()
+            if key not in ("questions", "form_action", "form_method")
+        }
+        payload["answerwqbid"] = page.get("answerwqbid", "")
+        payload["pyFlag"] = ""
+        for question in questions:
+            answer_field = question.get("answerField") or {}
+            payload[f"answer{question['id']}"] = answer_field.get(f"answer{question['id']}", "")
+            payload[f"answertype{question['id']}"] = answer_field.get(
+                f"answertype{question['id']}", ""
+            )
+        # 填空题按空提交（answerEditor{id}{n} + tiankongsize{id}），与章节测验同一规则
+        for question in questions:
+            build_completion_fields(payload, question)
+
+        return payload
+
+
+    def _post_homework(self, submit_url, payload, study_url, name):
+        """Return success only after a valid platform acceptance response."""
+        try:
+            submitted = self.session.post(
+                submit_url,
+                data=payload,
+                timeout=TASK_CENTER_TIMEOUT,
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "Origin": "https://mooc1.chaoxing.com",
+                    "Referer": study_url,
+                },
+            )
+        except Exception as e:
+            logger.warning("作业提交请求失败: {} - {}", name, e)
+            return False
+        if getattr(submitted, "status_code", 0) != 200:
+            logger.warning("作业提交失败: {} HTTP {}", name, getattr(submitted, "status_code", "?"))
+            return False
+        try:
+            data = submitted.json()
+        except ValueError:
+            logger.warning("作业提交返回的不是 JSON，本次不判定成功: {}", name)
+            return False
+        if not isinstance(data, dict) or not data.get("status"):
+            logger.warning("作业提交被平台拒绝: {} -> {}", name, str(data)[:200])
+            return False
+
+        return True
+
+
+    def _ai_run_dialogue(self, params, record_uuid, data, plan, attempt):
+        """Run a bounded dialogue and require completion evidence before submission."""
+        state = {"data": data}
+        state['completion'] = self._ai_completion_state(state['data'])
+        state['turn'] = self._ai_pending_turn(state['data'])
+        state['last_answer'] = ""
+        state['turn_count'] = 0
+        state['summary_seen'] = False
+        topic_count = sum(
+            len(dimension.get("topicList") or [])
+            for dimension in state['data'].get("dimensionList") or []
+            if isinstance(dimension, dict)
+        )
+        # 平台的判分是它自己的大模型，同一道题会反复追问；知识点多的时候
+        # 一局可能要答几十题，
+        # 这里给足余量，但仍有上限避免死循环。
+        max_turns = max(30, min(200, topic_count * 8 + 30))
+
+        if state['turn'] is None and state['completion'] is not True:
+            # 与前端 iniQuestion 一致：已有记录但没有 messageList 时发送空消息，
+            # 让平台生成第一道题；这不是提交动作。
+            state['turn'] = self._ai_stream(params, record_uuid, "")
+            if state['turn'] is None:
+                return None
+
+        # 平台已经给出总结、且快照里没有待答题目：这一局已经结束了。
+        # 旧实现会再发一条空消息"让平台出第一题"，平台就继续生成新题，
+        # 于是对着一个已经结束的局空转到轮数上限。
+        ready_to_submit = state['turn'] is None and state['completion'] is True
+        if ready_to_submit:
+            logger.info("AI实践这一局平台已经结束，直接提交本轮成绩")
+
+        # 平台是拿自己的大模型判分的：同一道题同一个答案会被反复判错。
+        # 记下每道题已经试过的答案，重试时换一个，才可能跳出死循环。
+        tried_answers: dict = {}
+        attempts: dict = {}
+        state['stalled'] = 0
+        while not ready_to_submit and state['turn_count'] < max_turns:
+            action = self._ai_dialogue_step(params, record_uuid, plan, tried_answers, attempts, state)
+            if action == "fail":
+                return None
+            if action == "break":
+                break
+
+        else:
+            # 只有"真的答满了轮数还没结束"才算失败；ready_to_submit 是跳过作答直接提交
+            if not ready_to_submit:
+                logger.warning("AI实践对话超过安全轮数上限，按失败处理")
+                return None
+
+        if state['completion'] is not True and not state['summary_seen']:
+            logger.warning("AI实践对话结束但没有明确完成证据，不提交")
+            return None
+
+        preview = (
+            f"第 {attempt + 1} 轮，共回答 {state['turn_count']} 个问题；"
+            f"最后回答：{state['last_answer'][:220]}"
+        )
+
+        return state["data"], preview
+
+
+    def _ai_dialogue_step(self, params, record_uuid, plan, tried_answers, attempts, state):
+        """Advance one dialogue turn without bypassing pending questions."""
+        if interrupt.should_stop():
+            return "fail"
+        if not self._ai_turn_has_question(state['turn']):
+            state['summary_seen'] = any(
+                "SummaryTopic" in mark for mark in (state['turn'] or {}).get("special_marks", [])
+            )
+            # SSE 这一帧没带问题不代表练完了：平台的状态快照里可能还有 pending 题，
+            # 这时候提交会拿到一个"没答完"的低分
+            pending_turn = self._ai_pending_turn(state['data'])
+            if pending_turn is not None:
+                state['turn'] = pending_turn
+                return "continue"
+            if state['completion'] is True or state['summary_seen']:
+                return "break"
+            logger.warning("AI实践 SSE 没有下一道可回答的问题，按失败处理")
+            return "fail"
+
+        question_key = self._ai_question_key(state['turn'])
+        used = tried_answers.setdefault(question_key, set())
+        attempts[question_key] = attempts.get(question_key, 0) + 1
+        next_turn = self._ai_send_answer(params, record_uuid, plan, question_key, used, state)
+        if next_turn is None:
+            return "fail"
+
+        refreshed = self._ai_load_data(params, record_uuid)
+        if refreshed is None:
+            return "fail"
+        state['data'] = refreshed
+        state['completion'] = self._ai_completion_state(state['data'])
+        if len((state['data'] or {}).get("messageList") or []) > state["before_msgs"]:
+            state['stalled'] = 0
+        else:
+            state['stalled'] += 1
+        # 知识点答完之后，平台还会把最后一道题推回来：它既不再收录我们的
+        # 作答（messageList 不再增长），也不会主动结束这一局。实测会一直空转，
+        # 甚至"错/对"来回换十几次。这时候收手提交才是对的。
+        if state['completion'] is True and (
+            attempts.get(question_key, 0) >= self.AI_MAX_TRIES_PER_QUESTION
+            or state['stalled'] >= self.AI_STALL_LIMIT
+        ):
+            logger.info(
+                "AI实践平台已判定答完（同一道题作答 {} 次、连续 {} 次无新消息），直接提交本轮",
+                attempts.get(question_key, 0), state['stalled'],
+            )
+            return "break"
+        if self._ai_turn_has_question(next_turn):
+            state['turn'] = next_turn
+            return "continue"
+        state['summary_seen'] = any(
+            "SummaryTopic" in mark for mark in next_turn.get("special_marks", [])
+        )
+        pending_turn = self._ai_pending_turn(state['data'])
+        if pending_turn is not None:
+            state['turn'] = pending_turn
+            return "continue"
+        if state['completion'] is True or state['summary_seen']:
+            return "break"
+        # 服务端偶尔先落库再返回下一题，尝试从状态快照续接一次；仍无题就失败。
+        state['turn'] = self._ai_pending_turn(state['data'])
+        if state['turn'] is None:
+            logger.warning("AI实践未得到完成证据或下一道题，按失败处理")
+            return "fail"
+        return "continue"
+
+
+    def _ai_send_answer(self, params, record_uuid, plan, question_key, used, state):
+        """Record substantive text before sending and preserve truthful review status."""
+        try:
+            answer = self._ai_answer(state['turn'], state['data'], exclude=used)
+            item = None
+            if self._ai_turn_type(state['turn']) == "shortanswer":
+                item = review.record(
+                    review.KIND_PRACTICE, answer,
+                    course="", task=(plan or {}).get("name") or "",
+                    status="待发送给平台评分",
+                )
+                if not item:
+                    logger.warning("AI实践复核记录写入失败，本次不发送")
+                    return None
+        except Exception as e:
+            logger.warning("AI实践生成答案失败: {}", e)
+            return None
+        used.add(self._ai_answer_core(answer))
+        state['last_answer'] = answer
+        state['turn_count'] += 1
+        emit(answer_line(state['turn_count'], self._ai_turn_type(state['turn']), answer,
+                         self._ai_turn_title(state['turn'])))
+        if self._ai_turn_type(state['turn']) == "shortanswer":
+            emit_block(f"AI实践简答 {state['turn_count']}", answer)
+        if state['turn_count'] > 1:
+            time.sleep(1.0)
+        state["before_msgs"] = len((state['data'] or {}).get("messageList") or [])
+        try:
+            next_turn = self._ai_stream(params, record_uuid, answer)
+        except Exception:
+            review.update(item, "请求失败或平台未确认")
+            raise
+        review.update(item, "平台返回对话响应" if next_turn is not None else "请求失败或平台未确认")
+        if next_turn is None:
+            return None
+
+        return next_turn
+
+
+    def _ai_round_data(self, params, data, attempt):
+        """Resume an unfinished record or initialize the next allowed attempt."""
+        # 第一次优先续接服务端已有的未完成记录；后续低分重答才初始化新记录。
+        if attempt > 0 or self._ai_record_submitted(data) or not data.get("recordUuid"):
+            init_data = self._ai_init(params)
+            if init_data is None:
+                return None
+            record_uuid = str(init_data.get("recordUuid") or data.get("recordUuid") or "")
+            data = self._ai_load_data(params, record_uuid) or self._ai_load_data(params)
+            if data is None:
+                return None
+        record_uuid = str(data.get("recordUuid") or "")
+        if not record_uuid:
+            logger.warning("AI实践状态缺少 recordUuid，按失败处理")
+            return None
+
+        return data, record_uuid
+
+
+    def _ai_existing_result(self, data, record_uuid, attempt):
+        """Use verified existing scores without duplicating a submitted record."""
+        if self._ai_record_submitted(data):
+            score = self._ai_score(data, record_uuid)
+            if score is not None and score >= self.ai_practice_min_score:
+                average = self._ai_average_score(data)
+                if (average is not None and average < self.ai_practice_min_score
+                        and attempt + 1 < self.ai_practice_max_rounds):
+                    logger.info(
+                        "AI实践已有 {:.1f} 分的记录，但练习平均分 {:.1f} 低于目标 {:.1f}，开新一轮补答",
+                        score, average, self.ai_practice_min_score,
+                    )
+                    # 必须直接开新一轮：这一条记录已经提交过，落下去会把同一条
+                    # 记录再 submit 一次（平台可能直接拒绝，白跑一轮还报失败）。
+                    time.sleep(1.0)
+                    return "retry"
+                logger.info("AI实践已有有效成绩 {:.1f}，无需重复提交", score)
+                self._set_outcome(TaskOutcome.COMPLETED)
+                return "complete"
+
+        return "dialogue"
+
+
+    def _ai_round_result(self, params, record_uuid, data, attempt):
+        """Request the score report, verify scores and enforce retry limits."""
+        # 平台不会自己评估：必须请求一次质量评估报告，成绩才算出来并回填，
+        # 否则 answerRecords 会一直停在"未评估"。
+        report_score = self._ai_end_report(params, record_uuid)
+        if report_score is not None:
+            # 报告已经给了成绩：读一次状态（remainAnswerCount 等）就走人，
+            # 不再空等状态接口回填（旧实现固定轮询 19 次×30s≈10 分钟）。
+            refreshed = self._ai_load_data(params, record_uuid)
+            if refreshed is not None:
+                data = refreshed
+            score = report_score
+        else:
+            # 报告没给成绩（平台偶发）：退回状态接口轮询
+            score, data = self._ai_wait_for_score(params, record_uuid)
+        if score is None or data is None:
+            logger.warning("AI实践提交后平台还没出评估结果，本次不算完成")
+            return False, data
+        logger.info(
+            "AI实践第 {}/{} 轮提交成绩：{:.1f}（目标 {:.1f}）",
+            attempt + 1, self.ai_practice_max_rounds, score, self.ai_practice_min_score,
+        )
+        average = self._ai_average_score(data)
+        logger.info(
+            "AI实践练习记录：{} | 平均 {:.1f} | 本轮 {:.1f} | 目标 {:.1f}",
+            "、".join(f"{value:.0f}" for value in self._ai_record_scores(data)) or "无",
+            average if average is not None else score,
+            score,
+            self.ai_practice_min_score,
+        )
+        if score >= self.ai_practice_min_score and (
+            average is None or average >= self.ai_practice_min_score
+        ):
+            self._set_outcome(TaskOutcome.COMPLETED)
+            return True, data
+
+        try:
+            remain = int(float(data.get("remainAnswerCount")))
+        except (TypeError, ValueError):
+            remain = 1
+        if attempt + 1 >= self.ai_practice_max_rounds or remain <= 0:
+            if score >= self.ai_practice_min_score:
+                # 本轮已经达标，只是历史低分把平均分拖下来了；重答次数用尽就
+                # 如实汇报，不再空转（平台自己的成绩字段已含本轮的分）。
+                logger.warning(
+                    "AI实践本轮 {:.1f} 已达标，但练习平均分 {:.1f} 未到目标 {:.1f}，重答次数已用尽",
+                    score, average if average is not None else score,
+                    self.ai_practice_min_score,
+                )
+                self._set_outcome(TaskOutcome.COMPLETED)
+                return True, data
+            logger.warning("AI实践成绩 {:.1f} 未达到目标，重答次数已用尽", score)
+            return False, data
+        logger.info("AI实践成绩未达标，准备开始第 {} 轮重答", attempt + 2)
+        time.sleep(1.0)
+
+        return None, data
+
 
 
 def plan_type_name(plan_type: Any) -> str:

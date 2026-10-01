@@ -45,10 +45,10 @@ def _console_filter(record) -> bool:
 
 def _console_format(record) -> str:
     """控制台输出格式：去掉时间戳、模块名、行号，只保留可读信息."""
-    # 
+    #
     # 非刷课阶段：  消息内容
     # 刷课阶段：    ⚠ 警告 / ✘ 错误（且只显示 WARNING 及以上）
-    # 
+    #
     # 【重要】loguru 会把这里返回的字符串再当成模板做一次 format_map，
     # 因此消息里原生的 { } 必须转义，否则会抛 KeyError（例如 API 返回的
     # JSON 报错里带 {'error': ...} 就会让日志线程崩溃）。
@@ -73,13 +73,14 @@ def _console_format(record) -> str:
 
 def log_file_only(message, level="ERROR"):
     """只写日志文件，不在控制台显示."""
-    # 
+    #
     # 控制台的提示语统一用 print 输出（顺序确定、排版可控），
     # 日志文件里再留一份记录，避免同一句话在屏幕上出现两遍。
     try:
         logger.bind(file_only=True).log(level, message)
     except Exception:
-        pass
+        # Logging may be unavailable during shutdown; do not recurse into the logger.
+        return None
 
 
 def tqdm_sink(msg):

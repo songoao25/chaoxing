@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """超星刷课 · 统一多用户入口."""
-# 
+#
 # 启动流程：
 # 1. 检查/配置 DeepSeek API Key（实时验证有效性）
 # 2. 显示用户列表：选一个直接开始，或加入新账号，或管理账号
@@ -9,11 +9,11 @@
 # 5. 选课（每次都手动选，不沿用上次）
 # 6. 逐门课程设置本次范围：章节前几个 / 教学任务前几个（不刷的那类不问）
 # 7. 开始刷课
-# 
+#
 # 安全设计：
 # 任何时候输入 q / quit / exit 都能立即退出，防止刷错课。
 # Ctrl+C 同样安全退出。
-# 
+#
 # 每个用户的账号、cookie 都互相隔离，不会串号。
 
 import configparser
@@ -49,7 +49,6 @@ QUIT_WORDS = {"q", "quit", "exit", "退出", "取消"}
 
 class UserQuit(Exception):
     """用户主动一键退出."""
-    pass
 
 
 def quit_now(reason="用户主动退出"):
@@ -79,7 +78,7 @@ def title(text):
 
 def ask_choice(prompt, valid, default="", max_tries=5):
     """反复问，直到拿到合法选项."""
-    # 
+    #
     # 非交互输入（管道/重定向）反复给不出合法值时按默认继续，绝不卡死——
     # 向导里任何一个选择题都不该让整个流程停在那里。
     options = " / ".join(sorted(valid))
@@ -202,8 +201,8 @@ def short_err(err, limit=60):
         m = _re.search(r"['\"]message['\"]\s*:\s*['\"]([^'\"]+)['\"]", text)
         if m:
             text = m.group(1)
-    except Exception:
-        pass
+    except (TypeError, ValueError):
+        text = str(err)
 
     # 用【原始】报错判断类型（精简后的文本可能已经不含 401 等关键字）
     low = str(err).lower()
@@ -262,7 +261,7 @@ def _read_config_text():
 def update_config(mapping):
     """更新 config.ini 的若干项，保留注释."""
     # mapping: {(section, key): value}
-    # 
+    #
     # 写入前会自动备份，误覆盖也能恢复（见 ~/.chaoxing/backups/）。
     paths.backup_config()
 
@@ -410,11 +409,11 @@ ANSWER_MODES = [
 
 def is_answer_mode_configured(cfg):
     """答题方式是否已经配置过（且必要字段齐全）."""
-    # 
+    #
     # 两种判定，任一成立即视为已配置：
     # 1. 有 [cx] answer_mode_done = yes 标记（新配置走这条路）
     # 2. 没有标记，但 [tiku] 里的字段是齐全的（兼容旧配置）
-    # 
+    #
     # 这样升级后不会让用户重新填一遍。
     if not cfg.has_section("tiku"):
         return False
@@ -436,29 +435,34 @@ def is_answer_mode_configured(cfg):
     return (cfg.get("cx", "answer_mode_done", fallback="") or "").strip() == "yes"
 
 
+def _configured_answer_mode(cfg):
+    """Return the existing provider configuration without prompting for secrets."""
+    provider = (cfg.get("tiku", "provider", fallback="") or "").strip()
+    existing = {"provider": provider, "_ran": False}
+    cur_degraded = (cfg.get("cx", "quiz_degraded", fallback="") or "").strip()             if cfg.has_section("cx") else ""
+    existing["_degraded"] = (cur_degraded == "yes")
+    for name in [p.strip() for p in provider.split(",") if p.strip()]:
+        need = ANSWER_MODE_REQUIREMENTS.get(name)
+        if need:
+            existing[need] = (cfg.get("tiku", need, fallback="") or "").strip()
+    label = "、".join(
+        m[2] for m in ANSWER_MODES
+        if m[1] == provider
+    ) or (provider or "不答题")
+    print(f"  答题方式：{label}（已配置，如需修改请运行 cx setup）")
+    return provider, existing
+
+
 def setup_answer_mode(force=False):
     """选择答题方式。返回 (provider字符串, 需要的配置字典)."""
-    # 
+    #
     # 已经配置过且字段齐全时，直接沿用，不再打扰用户。
     # 需要重新配置请用 cx setup（force=True）。
     cfg = read_config()
 
     # 已配置 -> 直接沿用（_ran=False 表示没有重新配置，不要覆盖已有标记）
     if not force and is_answer_mode_configured(cfg):
-        provider = (cfg.get("tiku", "provider", fallback="") or "").strip()
-        existing = {"provider": provider, "_ran": False}
-        cur_degraded = (cfg.get("cx", "quiz_degraded", fallback="") or "").strip()             if cfg.has_section("cx") else ""
-        existing["_degraded"] = (cur_degraded == "yes")
-        for name in [p.strip() for p in provider.split(",") if p.strip()]:
-            need = ANSWER_MODE_REQUIREMENTS.get(name)
-            if need:
-                existing[need] = (cfg.get("tiku", need, fallback="") or "").strip()
-        label = "、".join(
-            m[2] for m in ANSWER_MODES
-            if m[1] == provider
-        ) or (provider or "不答题")
-        print(f"  答题方式：{label}（已配置，如需修改请运行 cx setup）")
-        return provider, existing
+        return _configured_answer_mode(cfg)
 
     cur_key = cfg.get("tiku", "key", fallback="") if cfg.has_section("tiku") else ""
 
@@ -549,7 +553,7 @@ def _provider_needs_ai(provider):
 
 def resolve_invalid_api_key(provider, current_key):
     """API Key 失效时的处理：当场让用户重填，而不是把他踢出去重走 setup."""
-    # 
+    #
     # 返回 (处理结果, 新key)：
     # ("fixed",   新key)   -> 用户重新填了有效的 Key
     # ("degraded", "")     -> 用户确认：不做测验，只刷视频/文档
@@ -584,7 +588,7 @@ def resolve_invalid_api_key(provider, current_key):
 
 def ensure_api_key(force=False):
     """确保答题方式已配置好，并验证 Key 是否真的可用."""
-    # 
+    #
     # 已配置时不再重复询问；但会验证 Key —— 失效时当场让用户重填，
     # 或确认降级为"只刷非测验部分"，不需要重走整个 setup。
     provider, conf = setup_answer_mode(force=force)
@@ -691,7 +695,7 @@ def prefs_summary() -> str:
 
 def ensure_global_prefs(force=False):
     """全局设置：直接用推荐默认，不再逐项询问."""
-    # 
+    #
     # 首次运行写入推荐配置；之后每次启动只显示一遍当前配置。
     # force=True（cx setup）同样不问刷课参数，只保留可选的通知配置。
     cfg = read_config()
@@ -756,8 +760,9 @@ def do_login(username, password):
     name = ""
     try:
         name = cx.get_name()
-    except Exception:
-        pass
+    except Exception as exc:
+        from api.logger import logger
+        logger.debug("账号昵称读取失败（{}）", type(exc).__name__)
     return cx, name
 
 
@@ -852,10 +857,10 @@ DISCUSSION_MODES = {
 
 def choose_study_scope():
     """选择这次刷什么."""
-    # 
+    #
     # 学习通里「章节（目录）」和「任务中心 · 教学任务」是两套互相独立的学习入口，
     # 记录不互通，所以这里必须明确选一次，不能让配置文件里的默认值替用户决定。
-    # 
+    #
     # 返回 (chapters_enabled, task_center_enabled)。
     title("刷什么内容")
     print("  章节（目录）和任务中心的教学任务是两套独立记录，要分开刷。")
@@ -906,7 +911,7 @@ def choose_discussion_mode(required=False):
 
 def _ask_count(prompt):
     """读一个"刷几个"的数量."""
-    # 
+    #
     # 数字 = 只刷前几个未完成的；all / 全部 / 0（或直接回车）= 全部。
     # 返回 0 表示全部。
     for _ in range(5):
@@ -925,33 +930,8 @@ def _ask_count(prompt):
     return 0
 
 
-def choose_courses(cx, ask_points=True, ask_tasks=True, only_discussion=False,
-                   discussion_mode=""):
-    title("选择课程")
-    print("  正在读取课程列表...")
-
-    try:
-        all_course = cx.get_course_list()
-    except Exception as e:
-        print("  ✘ 读取失败：" + short_err(e))
-        sys.exit(1)
-
-    if not all_course:
-        print("  ✘ 这个账号下没有课程")
-        sys.exit(1)
-
-    seen, courses = set(), []
-    for c in all_course:
-        key = (str(c["courseId"]), str(c["clazzId"]))
-        if key not in seen:
-            seen.add(key)
-            courses.append(c)
-
-    print()
-    for i, c in enumerate(courses, 1):
-        print("   " + str(i).rjust(2) + ". " + c["title"])
-    print()
-
+def _choose_course_entries(courses):
+    """Read valid course indices/IDs with a bounded number of invalid inputs."""
     chosen = None
     tries = 0
     while chosen is None:
@@ -981,6 +961,38 @@ def choose_courses(cx, ask_points=True, ask_tasks=True, only_discussion=False,
                 seen2.add(c["courseId"])
                 uniq.append(c)
         chosen = uniq
+
+    return chosen
+
+
+def choose_courses(cx, ask_points=True, ask_tasks=True, only_discussion=False,
+                   discussion_mode=""):
+    title("选择课程")
+    print("  正在读取课程列表...")
+
+    try:
+        all_course = cx.get_course_list()
+    except Exception as e:
+        print("  ✘ 读取失败：" + short_err(e))
+        sys.exit(1)
+
+    if not all_course:
+        print("  ✘ 这个账号下没有课程")
+        sys.exit(1)
+
+    seen, courses = set(), []
+    for c in all_course:
+        key = (str(c["courseId"]), str(c["clazzId"]))
+        if key not in seen:
+            seen.add(key)
+            courses.append(c)
+
+    print()
+    for i, c in enumerate(courses, 1):
+        print("   " + str(i).rjust(2) + ". " + c["title"])
+    print()
+
+    chosen = _choose_course_entries(courses)
 
     print("  已选：" + "、".join(c["title"] for c in chosen))
 
@@ -1075,8 +1087,9 @@ def build_config(username, password, plan, chapters_enabled=True, task_center_en
         f.write(text)
     try:
         os.chmod(user_config, 0o600)
-    except Exception:
-        pass
+    except OSError:
+        if os.name != "nt":
+            raise
     return user_config
 
 
@@ -1115,7 +1128,7 @@ def pick_user():
 def ask_after_run(label, cancelled=False):
     """一轮结束后问用户下一步做什么."""
     # 返回 "again"（同账号继续）/ "switch"（换账号）/ "exit"（退出）
-    # 
+    #
     # cancelled=True 表示用户在上一步取消了刷课（此时不能说"刷课结束"）。
     title("接下来做什么")
     if cancelled:
@@ -1130,6 +1143,43 @@ def ask_after_run(label, cancelled=False):
 
     choice = ask_choice("请选择", {"1", "2", "3"}, default="3")
     return {"1": "again", "2": "switch", "3": "exit"}[choice]
+
+
+def _show_run_confirmation(label, username, plan, chapters_enabled,
+                           task_center_enabled, only_discussion, discussion_mode):
+    """Display the exact account, courses and scope selected for this run."""
+    if only_discussion:
+        scope_text = "只刷讨论"
+    elif chapters_enabled and task_center_enabled:
+        scope_text = "章节 + 任务中心"
+    elif chapters_enabled:
+        scope_text = "只刷章节"
+    else:
+        scope_text = "只刷任务中心"
+    title("请确认")
+    account_text = label or username or "已保存的账号"
+    if username and username != account_text:
+        account_text = account_text + "（" + username + "）"
+    print("  账号  " + account_text)
+    print("  范围  " + scope_text)
+    if discussion_mode:
+        print("  讨论  " + ("讨论区（自己挑帖子，逐条确认后发送）"
+                            if discussion_mode == "board"
+                            else "任务里的主题讨论（自动）"))
+    print("  课程")
+    for c, chapter_n, task_n in plan:
+        cp = "章节全部" if chapter_n == 0 else ("章节 " + str(chapter_n) + " 个未完成")
+        tp = "教学任务全部" if task_n == 0 else ("教学任务 " + str(task_n) + " 个未完成")
+        if only_discussion:
+            detail = ""     # 上面"讨论"那一行已经说清楚了，这里不再重复
+        elif chapters_enabled and task_center_enabled:
+            detail = cp + " · " + tp
+        elif chapters_enabled:
+            detail = cp
+        else:
+            detail = tp
+        print(("        " + _pad(c["title"], 24) + detail).rstrip())
+    print()
 
 
 def _main_inner(force_setup=False):
@@ -1180,38 +1230,8 @@ def _main_inner(force_setup=False):
                                    discussion_mode)
 
         # ---- 最终确认 ----
-        if only_discussion:
-            scope_text = "只刷讨论"
-        elif chapters_enabled and task_center_enabled:
-            scope_text = "章节 + 任务中心"
-        elif chapters_enabled:
-            scope_text = "只刷章节"
-        else:
-            scope_text = "只刷任务中心"
-        title("请确认")
-        account_text = label or username or "已保存的账号"
-        if username and username != account_text:
-            account_text = account_text + "（" + username + "）"
-        print("  账号  " + account_text)
-        print("  范围  " + scope_text)
-        if discussion_mode:
-            print("  讨论  " + ("讨论区（自己挑帖子，逐条确认后发送）"
-                                if discussion_mode == "board"
-                                else "任务里的主题讨论（自动）"))
-        print("  课程")
-        for c, chapter_n, task_n in plan:
-            cp = "章节全部" if chapter_n == 0 else ("章节 " + str(chapter_n) + " 个未完成")
-            tp = "教学任务全部" if task_n == 0 else ("教学任务 " + str(task_n) + " 个未完成")
-            if only_discussion:
-                detail = ""     # 上面"讨论"那一行已经说清楚了，这里不再重复
-            elif chapters_enabled and task_center_enabled:
-                detail = cp + " · " + tp
-            elif chapters_enabled:
-                detail = cp
-            else:
-                detail = tp
-            print(("        " + _pad(c["title"], 24) + detail).rstrip())
-        print()
+        _show_run_confirmation(label, username, plan, chapters_enabled,
+                               task_center_enabled, only_discussion, discussion_mode)
         if auto_yes:
             print("  （--yes：跳过确认，直接开始）")
         elif not ask_yes_no("开始刷课吗？", default_no=True):

@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """数据目录统一管理."""
-# 
+#
 # 用户数据（配置、账号、cookie）存放在用户主目录，而不是项目目录。
 # 这样升级代码、git 操作、清理项目目录都不会影响用户配置。
-# 
+#
 # 默认位置：~/.chaoxing/
 # 可用环境变量 CX_DATA_HOME 覆盖。
-# 
+#
 # 首次使用时会自动从项目目录迁移旧文件（config.ini / accounts/ / cookies.txt）。
 
 import os
@@ -23,8 +23,9 @@ def data_dir():
     os.makedirs(d, exist_ok=True)
     try:
         os.chmod(d, 0o700)
-    except Exception:
-        pass
+    except OSError:
+        if os.name != "nt":
+            raise
     return d
 
 
@@ -96,8 +97,9 @@ def backup_config(keep=15):
         for old in files[keep:]:
             try:
                 os.remove(os.path.join(backups_dir(), old))
-            except Exception:
-                pass
+            except OSError as exc:
+                from api.logger import logger
+                logger.debug("旧配置备份清理失败（{}）", type(exc).__name__)
         return dst
     except Exception:
         return None
@@ -137,9 +139,9 @@ def _migrate_once():
         new_cache = cache_path()
         if os.path.exists(old_cache) and not os.path.exists(new_cache):
             shutil.copy2(old_cache, new_cache)
-    except Exception:
-        # 迁移失败不能影响主流程
-        pass
+    except (OSError, shutil.Error) as exc:
+        from api.logger import logger
+        logger.debug("旧配置迁移失败（{}）", type(exc).__name__)
 
 
 def init():

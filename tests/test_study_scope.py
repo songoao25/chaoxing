@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """刷课范围（章节 / 任务中心）回归."""
-# 
+#
 # - main.py 的 chapter_study 开关（命令行 > 配置文件 > 默认开启）
 # - 向导里的「刷什么内容」选择与写出的账号配置
-# 
+#
 # 不联网、不碰真实用户数据（CX_DATA_HOME 指向临时目录）。
 
 import configparser
@@ -130,7 +130,6 @@ class WizardScopeTestCase(unittest.TestCase):
 
     @staticmethod
     def _empty_cfg():
-        import configparser
         cfg = configparser.ConfigParser()
         cfg.add_section("tiku")
         return cfg
@@ -256,7 +255,6 @@ class DiscussionScopeIsolationTestCase(unittest.TestCase):
 
     def test_prefs_do_not_ask(self):
         """已经配置过：正常启动不再问任何东西."""
-        import configparser
         cfg = configparser.ConfigParser()
         cfg.add_section("cx")
         cfg.set("cx", "prefs_done", "yes")
@@ -271,7 +269,6 @@ class DiscussionScopeIsolationTestCase(unittest.TestCase):
 
     def test_first_run_asks_optional_notification(self):
         """第一次运行会问一次可选的通知设置（直接回车＝不用）."""
-        import configparser
         cfg = configparser.ConfigParser()
         cfg.add_section("cx")
         with mock.patch.object(wizard, "read_config", return_value=cfg), \
@@ -337,7 +334,7 @@ class WizardDisplayTestCase(unittest.TestCase):
              mock.patch.object(wizard, "ensure_global_prefs"), \
              mock.patch.object(wizard, "pick_user",
                                return_value=("13800000000", "pw", cx, "测试用户")), \
-             mock.patch.object(wizard, "build_config", return_value="/tmp/cx-ui-test.ini"), \
+             mock.patch.object(wizard, "build_config", return_value=os.path.join(tempfile.gettempdir(), 'cx-ui-test.ini')), \
              mock.patch.object(wizard, "ask_after_run", return_value="exit"), \
              mock.patch("builtins.input", fake_input), \
              redirect_stdout(buf):
@@ -384,7 +381,7 @@ class WizardFlowTestCase(unittest.TestCase):
                               only_discussion=False, discussion_mode="task"):
             seen["scope"] = (chapters_enabled, task_center_enabled, only_discussion)
             seen["discussion_mode"] = discussion_mode
-            return "/tmp/cx-test-run.ini"
+            return os.path.join(tempfile.gettempdir(), 'cx-test-run.ini')
 
         def fake_run_main():
             seen["argv"] = list(sys.argv)
@@ -408,14 +405,14 @@ class WizardFlowTestCase(unittest.TestCase):
         self.assertFalse(seen["ask_points"])
         self.assertTrue(seen["ask_tasks"])
         self.assertEqual(seen["scope"], (False, True, False))
-        self.assertEqual(seen["argv"], ["main.py", "-c", "/tmp/cx-test-run.ini", "--yes"])
+        self.assertEqual(seen["argv"], ["main.py", "-c", os.path.join(tempfile.gettempdir(), 'cx-test-run.ini'), "--yes"])
 
     def test_chapters_and_task_center_without_yes(self):
         seen = self._run_flow(["setup_wizard.py"], (True, True, False, "task"), submit_answer=True)
         self.assertTrue(seen["ask_points"])
         self.assertTrue(seen["ask_tasks"])
         self.assertEqual(seen["scope"], (True, True, False))
-        self.assertEqual(seen["argv"], ["main.py", "-c", "/tmp/cx-test-run.ini"])
+        self.assertEqual(seen["argv"], ["main.py", "-c", os.path.join(tempfile.gettempdir(), 'cx-test-run.ini')])
 
     def test_chapters_only_does_not_ask_tasks(self):
         seen = self._run_flow(["setup_wizard.py"], (True, False, False, ""), submit_answer=True)
@@ -442,7 +439,7 @@ class WizardFlowTestCase(unittest.TestCase):
                               discussion_mode="task"):
             written.append((chapters_enabled, task_center_enabled,
                             only_discussion, discussion_mode))
-            return "/tmp/cx-test-run.ini"
+            return os.path.join(tempfile.gettempdir(), 'cx-test-run.ini')
 
         def fake_run_main():
             ran.append(list(sys.argv))

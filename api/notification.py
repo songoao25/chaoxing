@@ -14,6 +14,7 @@ from api.privacy import register_config, redact
 
 class NotificationService(ABC):
     """通知服务基类，定义通知服务的公共接口和实现."""
+
     # 所有具体的通知服务类应继承此类并实现必要的方法。
 
     # 默认配置文件：用户数据目录下的 config.ini
@@ -29,7 +30,7 @@ class NotificationService(ABC):
 
     def config_set(self, config: Dict[str, str]) -> None:
         """设置通知服务的配置."""
-        # 
+        #
         # Args:
         # config: 包含配置参数的字典
         self._conf = config
@@ -37,7 +38,7 @@ class NotificationService(ABC):
 
     def _load_config_from_file(self) -> Optional[Dict[str, str]]:
         """从配置文件中加载通知服务的配置."""
-        # 
+        #
         # Returns:
         # 成功返回配置字典，失败返回None
         try:
@@ -67,14 +68,14 @@ class NotificationService(ABC):
     @abstractmethod
     def _send(self, message: str) -> None:
         """发送通知消息，由子类实现."""
-        # 
+        #
         # Args:
         # message: 要发送的消息内容
         pass
 
     def send(self, message: str) -> None:
         """发送通知消息的公共接口."""
-        # 
+        #
         # Args:
         # message: 要发送的消息内容
         if not self.disabled:
@@ -87,10 +88,10 @@ class NotificationFactory:
     @staticmethod
     def create_service(config: Optional[Dict[str, str]] = None) -> NotificationService:
         """根据配置创建通知服务实例."""
-        # 
+        #
         # Args:
         # config: 通知服务的配置，如果为None则从配置文件加载
-        # 
+        #
         # Returns:
         # 通知服务实例
         service = DefaultNotification()
@@ -116,7 +117,7 @@ class DefaultNotification(NotificationService):
 
     def get_notification_from_config(self) -> NotificationService:
         """根据配置创建具体的通知服务实例."""
-        # 
+        #
         # Returns:
         # 通知服务实例
         if not self._conf:
@@ -163,7 +164,7 @@ class ServerChan(NotificationService):
 
     def _send(self, message: str) -> None:
         """通过Server酱发送通知."""
-        # 
+        #
         # Args:
         # message: 要发送的消息内容
         params = {
@@ -200,7 +201,7 @@ class Qmsg(NotificationService):
 
     def _send(self, message: str) -> None:
         """通过Qmsg酱发送通知."""
-        # 
+        #
         # Args:
         # message: 要发送的消息内容
         params = {'msg': message}
@@ -232,7 +233,7 @@ class Bark(NotificationService):
 
     def _send(self, message: str) -> None:
         """通过Bark发送通知."""
-        # 
+        #
         # Args:
         # message: 要发送的消息内容
         params = {'body': message}
@@ -263,7 +264,7 @@ class Telegram(NotificationService):
 
     def _send(self, message: str) -> None:
         """通过Telegram发送通知."""
-        # 
+        #
         # Args:
         # message: 要发送的消息内容
         params = {

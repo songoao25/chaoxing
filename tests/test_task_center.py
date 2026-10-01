@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """任务中心（教学任务）离线测试."""
-# 
+#
 # 覆盖：
 # * 教学任务列表 / 分组 / 任务点的解析与失败处理
 # * 任务引擎视频打点节奏（0=开始 / 1=心跳 / 2=结束）
 # * 文档任务 readEnd
 # * 分组顺序解锁：上一组完成后才继续下一组
 # * 不支持的类型（作业/思考题/讨论/未完成证据的章节）不会被假装成已完成
-# 
+#
 # 全部测试不联网、不读写用户真实数据。
 import json
 import os
@@ -279,6 +279,78 @@ class DocumentTestCase(unittest.TestCase):
         ))
 
 
+class FakeGroupEngine:
+    """Simulate sequential group unlocks without contacting a server."""
+
+    def __init__(self, plans_by_group):
+        """Initialize configuration and runtime state."""
+        self.plans_by_group = plans_by_group
+        self.finished = set()
+        self.studied = []
+        self.round = 0
+        self.last_outcome = None
+        self.waiting_confirmation = False
+
+    def open_task(self, task):
+        self.round += 1
+        return {"encryTaskUserId": "u", "encryTaskId": "t"}
+
+    def get_groups(self, etui):
+        groups = []
+        for index in range(len(self.plans_by_group)):
+            allow = index == 0 or all(
+                p["planId"] in self.finished for p in self.plans_by_group[index - 1]
+            )
+            groups.append({
+                "encryptGroupId": f"g{index}",
+                "groupAllowStudy": allow,
+                "taskGroup": {"id": index, "name": f"分组{index}"},
+            })
+        return groups
+
+    def get_plans(self, etui, group_id):
+        index = int(group_id[1:])
+        return self.plans_by_group[index]
+
+    def plan_finished(self, plan):
+        return plan["planId"] in self.finished
+
+    def get_study_url(self, etui, encrypt_plan_id):
+        return f"https://task.chaoxing.com/videoStudy/learnPage?enc={encrypt_plan_id}"
+
+    def _finish(self, url):
+        """按 encryptPlanId 找到对应任务点并标记完成（模拟服务端同步）."""
+        enc = url.rsplit("=", 1)[-1]
+        for plans in self.plans_by_group:
+            for plan in plans:
+                if plan["encryptPlanId"] == enc:
+                    self.studied.append(plan["planId"])
+                    self.finished.add(plan["planId"])
+
+    def study_video(self, url, plan=None):
+        self._finish(url)
+        return True
+
+    def study_document(self, url, plan=None):
+        self._finish(url)
+        return True
+
+    def study_ai_practice(self, url, plan=None):
+        self._finish(url)
+        return True
+
+    def study_homework(self, url, plan=None, course=None):
+        self._finish(url)
+        return True
+
+    def study_discussion(self, url, plan=None, course=None):
+        self._finish(url)
+        return True
+
+    def wait_plan_finished(self, etui, group_id, plan_id, tries=3, interval=2.0):
+        return plan_id in self.finished
+
+
 class GroupUnlockTestCase(unittest.TestCase):
     """任务点按分组解锁：只有做完当前组，下一组才会允许学习."""
 
@@ -286,75 +358,27 @@ class GroupUnlockTestCase(unittest.TestCase):
         main.logger.remove()
 
     def _make_fake_tc(self, plans_by_group):
-        class FakeTC:
-            def __init__(self):
-                """Initialize configuration and runtime state."""
-                self.finished = set()
-                self.studied = []
-                self.round = 0
-                self.last_outcome = None
-                self.waiting_confirmation = False
+        return FakeGroupEngine(plans_by_group)
 
-            def open_task(self, task):
-                self.round += 1
-                return {"encryTaskUserId": "u", "encryTaskId": "t"}
-
-            def get_groups(self, etui):
-                groups = []
-                for index, plans in enumerate(plans_by_group):
-                    allow = index == 0 or all(
-                        p["planId"] in self.finished for p in plans_by_group[index - 1]
-                    )
-                    groups.append({
-                        "encryptGroupId": f"g{index}",
-                        "groupAllowStudy": allow,
-                        "taskGroup": {"id": index, "name": f"分组{index}"},
-                    })
-                return groups
-
-            def get_plans(self, etui, group_id):
-                index = int(group_id[1:])
-                return plans_by_group[index]
-
-            def plan_finished(self, plan):
-                return plan["planId"] in self.finished
-
-            def get_study_url(self, etui, encrypt_plan_id):
-                return f"https://task.chaoxing.com/videoStudy/learnPage?enc={encrypt_plan_id}"
-
-            def _finish(self, url):
-                """按 encryptPlanId 找到对应任务点并标记完成（模拟服务端同步）."""
-                enc = url.rsplit("=", 1)[-1]
-                for plans in plans_by_group:
-                    for plan in plans:
-                        if plan["encryptPlanId"] == enc:
-                            self.studied.append(plan["planId"])
-                            self.finished.add(plan["planId"])
-
-            def study_video(self, url, plan=None):
-                self._finish(url)
-                return True
-
-            def study_document(self, url, plan=None):
-                self._finish(url)
-                return True
-
-            def study_ai_practice(self, url, plan=None):
-                self._finish(url)
-                return True
-
-            def study_homework(self, url, plan=None, course=None):
-                self._finish(url)
-                return True
-
-            def study_discussion(self, url, plan=None, course=None):
-                self._finish(url)
-                return True
-
-            def wait_plan_finished(self, etui, group_id, plan_id, tries=3, interval=2.0):
-                return plan_id in self.finished
-
-        return FakeTC()
+    def test_cancelled_homework_stops_before_next_plan(self):
+        """A cancelled submission cannot continue with another task in the group."""
+        tc = self._make_fake_tc([[{
+            "planId": "p1", "planType": 4, "name": "作业",
+            "encryptPlanId": "e1", "encryptGroupId": "g0",
+        }, {
+            "planId": "p2", "planType": 10, "name": "视频",
+            "encryptPlanId": "e2", "encryptGroupId": "g0",
+        }]])
+        def cancel(*args, **kwargs):
+            tc.last_outcome = tc_mod.TaskOutcome.WAITING_CONFIRMATION
+            return False
+        tc.study_homework = cancel
+        with mock.patch.object(main.interrupt, "should_stop", return_value=False):
+            ok, _ = main._process_teaching_task(tc, object(), self._course(),
+                    {"name": "教学任务"}, {"speed": 1}, {})
+        self.assertFalse(ok)
+        self.assertEqual(tc.last_outcome, tc_mod.TaskOutcome.WAITING_CONFIRMATION)
+        self.assertEqual(tc.studied, [])
 
     def _course(self):
         return {"title": "示例课程", "courseId": "1", "clazzId": "2", "cpi": "3"}
@@ -623,6 +647,8 @@ class GroupUnlockTestCase(unittest.TestCase):
         }
 
         class FakeChaoxing:
+            """Provide a synthetic test dependency."""
+
             last_student_job_info = None
 
         chaoxing = FakeChaoxing()
@@ -661,6 +687,8 @@ class GroupUnlockTestCase(unittest.TestCase):
         fake.sync_chapter_plan = lambda etui, data: synced.append(data) or True
 
         class FakeChaoxing:
+            """Provide a synthetic test dependency."""
+
             last_student_job_info = None
 
         def fake_process_chapter(cx, course, point, speed, engine_info=False):
@@ -685,6 +713,8 @@ class GroupUnlockTestCase(unittest.TestCase):
 
     def test_task_list_read_failure_is_not_reported_as_completion(self):
         class FailedTC:
+            """Provide a synthetic test dependency."""
+
             last_read_failed = True
 
             def get_course_tasks(self, course):
@@ -735,7 +765,7 @@ class SwitchTestCase(unittest.TestCase):
 
     def test_cli_submit_mode_overrides_config_file(self):
         args = type("Args", (), {
-            "config": "/tmp/config.ini",
+            "config": os.path.join(tempfile.gettempdir(), 'config.ini'),
             "task_center": None,
             "task_center_submit_mode": "auto",
         })()
@@ -893,6 +923,8 @@ class DocumentWatchDurationTestCase(unittest.TestCase):
         seen = {}
 
         class HeaderSession:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 seen.update(kwargs)
                 return FakeResponse(status_code=403)
@@ -930,7 +962,8 @@ class SubmitModeTestCase(unittest.TestCase):
 
 class ConfirmPromptStdinTestCase(unittest.TestCase):
     """确认提示必须先让键盘监听让出 stdin."""
-    # 
+
+    #
     # 终端并发约束：章节阶段起的键盘监听线程会把终端设成
     # cbreak 并一直 os.read(stdin,1)，与 input() 抢字符——逐字敲 "yes" 会被
     # 吃成 "ye"/"ys"（按取消处理），甚至让 input() 永久挂住且看不到回显。
@@ -947,6 +980,8 @@ class ConfirmPromptStdinTestCase(unittest.TestCase):
                 events.append("resume")
 
         class FakeTTY:
+            """Provide a synthetic test dependency."""
+
             def isatty(self):
                 return True
 
@@ -959,12 +994,11 @@ class ConfirmPromptStdinTestCase(unittest.TestCase):
 
     def test_paused_watcher_leaves_stdin_for_input(self):
         """暂停期间监听线程不再消费 stdin；恢复后又能按 q 终止."""
-        import os as _os
         import select as _select
         import termios as _termios
         import time as _time
 
-        if _os.name == "nt":
+        if os.name == "nt":
             self.skipTest("termios 只测 POSIX")
         try:
             import pty
@@ -977,22 +1011,22 @@ class ConfirmPromptStdinTestCase(unittest.TestCase):
         attrs = _termios.tcgetattr(slave)
         attrs[3] = attrs[3] & ~_termios.ECHO
         _termios.tcsetattr(slave, _termios.TCSANOW, attrs)
-        fake_stdin = _os.fdopen(_os.dup(slave), "rb", buffering=0)
+        fake_stdin = os.fdopen(os.dup(slave), "rb", buffering=0)
         old_stdin = sys.stdin
         sys.stdin = fake_stdin
         try:
             self.assertTrue(tc_mod.interrupt.start_watcher())
             self.assertTrue(tc_mod.interrupt.pause_watcher(2.0))
             # 监听让开以后，写进终端的内容应该原样被读到
-            _os.write(master, b"hello\n")
+            os.write(master, b"hello\n")
             ready, _, _ = _select.select([slave], [], [], 2.0)
             self.assertTrue(ready, "暂停期间 stdin 仍被监听线程消费")
-            with _os.fdopen(_os.dup(slave), "rb", buffering=0) as reader:
+            with os.fdopen(os.dup(slave), "rb", buffering=0) as reader:
                 self.assertEqual(reader.readline(), b"hello\n")
             # 恢复监听后按 q 依旧能终止
             tc_mod.interrupt.resume_watcher()
             _time.sleep(0.2)
-            _os.write(master, b"q")
+            os.write(master, b"q")
             deadline = _time.time() + 3.0
             while _time.time() < deadline and not tc_mod.interrupt.should_stop():
                 _time.sleep(0.05)
@@ -1001,8 +1035,8 @@ class ConfirmPromptStdinTestCase(unittest.TestCase):
             sys.stdin = old_stdin
             tc_mod.interrupt.reset()
             fake_stdin.close()
-            _os.close(master)
-            _os.close(slave)
+            os.close(master)
+            os.close(slave)
 
 
 class AIPracticeTestCase(unittest.TestCase):
@@ -1085,6 +1119,8 @@ class AIPracticeTestCase(unittest.TestCase):
             return FakeResponse(lines=lines)
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context=""):
                 return "A"
 
@@ -1216,6 +1252,8 @@ class AIPracticeTestCase(unittest.TestCase):
             return FakeResponse(payload={"status": True, "data": state["submits"]})
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context=""):
                 return "A"
 
@@ -1271,6 +1309,8 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
         calls = []
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 calls.append(dict(params or {}))
                 return FakeResponse(payload=payload)
@@ -1301,6 +1341,8 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
         calls = []
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 calls.append(dict(params or {}))
                 return FakeResponse(status_code=403, text="403 错误页")
@@ -1320,10 +1362,14 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
         from api import base as base_mod
 
         class FakeProc:
+            """Provide a synthetic test dependency."""
+
             stdout = '{"isPassed": true}\n200'
             returncode = 0
 
         class FakeSession:
+            """Provide a synthetic test dependency."""
+
             cookies = {}
 
         with mock.patch("shutil.which", return_value="/usr/bin/curl"), \
@@ -1335,7 +1381,7 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
 
     def test_plain_log_has_no_engine_param_and_no_capture(self):
         cx = self._chaoxing()
-        passed, state, calls = self._run_log(
+        passed, _state, calls = self._run_log(
             cx, False, {"isPassed": True, "stuJobInfo": {"enc": "不应被暂存"}}
         )
         self.assertTrue(passed)
@@ -1351,6 +1397,8 @@ class EngineDocumentSyncTestCase(unittest.TestCase):
 
     def _sess(self, calls, stu):
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 calls.append((url, dict(params or {})))
                 if "mooc-ans/job/document" in url:
@@ -1498,6 +1546,8 @@ class AIReportScoreTestCase(unittest.TestCase):
             return FakeResponse(payload={"status": True, "data": 1})
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 return "A"
 
@@ -1538,6 +1588,8 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
 
     def test_options_without_type_are_answered_as_choice(self):
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 return "B"
 
@@ -1560,6 +1612,8 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
         """题型编码没见过（如 "2"）但题目给了选项：按客观题作答，不写小作文."""
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 return "A"
 
@@ -1580,6 +1634,8 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
 
     def test_chinese_judgement_label_answers_with_dui_cuo(self):
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_judgement(self, question, context="", exclude=None):
                 return "错"
 
@@ -1598,8 +1654,9 @@ class AIObjectiveAnswerTestCase(unittest.TestCase):
 
 class AIPracticeLoopGuardTestCase(unittest.TestCase):
     """平台拿自己的大模型判分，会把标准答案判错并反复推回同一题."""
-    # 
-    # 实测被推回 15 次、整局拖到 112 题。知识点答完后必须及时收手。
+
+    #
+    # 同一题重复出现时，知识点答完后应及时结束，避免无效循环。
 
     PAGE_URL = AIPracticeTestCase.PAGE_URL
     QUESTION = [
@@ -1621,6 +1678,8 @@ class AIPracticeLoopGuardTestCase(unittest.TestCase):
 
     def _run(self, state, load_data, talk, submit):
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 banned = {str(item).upper() for item in (exclude or [])}
                 for letter in "ABCD":
@@ -1693,7 +1752,7 @@ class AIPracticeLoopGuardTestCase(unittest.TestCase):
 
     def test_stale_question_after_last_topic_is_not_answered_forever(self):
         """知识点答完后平台把最后一道题推回来、又不收录作答：连续两次无新消息就收手."""
-        # 
+        #
         # 真实踩坑：一整局 9 道题都答对了、unCompleteTopic 也空了，平台却继续把
         # 最后那道判断题推回来，本地"错/对"来回换了十几次，记录里一条都没多。
         SUMMARY = b'data:' + json.dumps(
@@ -1791,6 +1850,8 @@ class AIAverageScoreTestCase(unittest.TestCase):
             return FakeResponse(lines=['data:{"id":"score","content":"95"}', "data:[DONE]"])
 
         class Writer:
+            """Provide a synthetic test dependency."""
+
             def choose_options(self, question, options, multiple=False, context="", exclude=None):
                 return "A"
 

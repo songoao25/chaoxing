@@ -31,6 +31,7 @@ __all__ = ["CacheDAO", "Tiku", "TikuFallback", "TikuYanxi", "TikuGo", "TikuLike"
 
 class CacheDAO:
     """@Author: SocialSisterYi."""
+
     # @Reference: https://github.com/SocialSisterYi/xuexiaoyi-to-xuexitong-tampermonkey-proxy
     # 答案缓存放在用户数据目录，升级代码不会丢失已积累的答案
     DEFAULT_CACHE_FILE = _paths.cache_path()
@@ -201,7 +202,7 @@ class Tiku(ABC):
 
     def __init__(self, config_path: Optional[str] = None) -> None:
         """初始化题库基类."""
-        # 
+        #
         # Args:
         # config_path: 配置文件路径，若为 None 则使用默认的 CONFIG_PATH。
         self._name = None
@@ -390,7 +391,7 @@ class Tiku(ABC):
 
     def set_work_feedback(self, feedback) -> None:
         """设置上一轮章节检测的错误反馈，供支持反馈的大模型题库在重新作答时参考."""
-        # 
+        #
         # Args:
         # feedback: 错误反馈，可以是 str 或 list[str]（描述哪些题目答错、正确答案是什么）
         pass
@@ -970,11 +971,11 @@ class TikuLike(Tiku):
 
     def _query_single(self, token: str = "", query: str = "") -> str:
         """查询单个问题的答案."""
-        # 
+        #
         # Args:
         # token: API访问令牌
         # query: 查询的问题内容
-        # 
+        #
         # Returns:
         # 查询到的答案，如果失败则返回None
         # 验证输入参数
@@ -1040,10 +1041,10 @@ class TikuLike(Tiku):
 
     def _parse_response(self, response):
         """解析API响应."""
-        # 
+        #
         # Args:
         # response: HTTP响应对象
-        # 
+        #
         # Returns:
         # 解析后的答案，如果解析失败则返回None
         try:
@@ -1085,11 +1086,11 @@ class TikuLike(Tiku):
 
     def _extract_answer_by_type(self, q_type: str, answer: dict) -> str:
         """根据题目类型提取答案."""
-        # 
+        #
         # Args:
         # q_type: 题目类型
         # answer: 答案字典
-        # 
+        #
         # Returns:
         # 提取的答案文本
         if not isinstance(answer, dict):
@@ -1266,7 +1267,7 @@ class TikuAdapter(Tiku):
 
 def parse_answer_text(text: str) -> str:
     """从模型输出里提取答案正文：兼容 JSON / 代码块 / "答案：X" / 纯文本."""
-    # 
+    #
     # 模型有时返回 {"Answer": ["A"]}，有时直接写 "答案：A"，有时带 markdown 代码块，
     # 以前只认第一种，其它情况一律记"无法解析"并退化成随机作答（错率高的直接原因之一）。
     if not text:
@@ -1303,7 +1304,7 @@ class AI(Tiku):
 
     def set_work_feedback(self, feedback) -> None:
         """设置章节检测上一轮的错误反馈，供重新作答时参考."""
-        # 
+        #
         # Args:
         # feedback: str 或 list[str]，描述答错的题目与正确答案
         self.work_feedback = feedback
@@ -1332,7 +1333,7 @@ class AI(Tiku):
 
     def _complete(self, messages, **kwargs) -> str:
         """统一的答题模型调用：thinking 默认交给模型自己（auto）."""
-        # 
+        #
         # ：DeepSeek V4.1 flash 默认带推理且正文正常，
         # 强关 thinking 只会降低正确率；旧版本"正文为空"的情况由
         # api/llm.create_completion 自动降级重试，reasoning_content 也能兜底。

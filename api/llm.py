@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """大模型调用的统一策略层（thinking 模式自适应）."""
-# 
+#
 # 不同模型可能返回正文、推理正文或空响应，需要按实际响应降级。
-# 
+#
 # 策略（thinking = auto/on/off，默认 auto）：
 # auto: 按模型默认行为调用；正文为空但有 reasoning 时用 reasoning 兜底；
 # 两者都空 → 再试一次 thinking=disabled。
@@ -71,7 +71,7 @@ def strip_code_fence(text: str) -> str:
 def create_completion(client, *, model: str, messages: list, thinking: str = "auto",
                       allow_reasoning_fallback: bool = False, **kwargs) -> str:
     """调一次 chat.completions，按 thinking 策略自动降级."""
-    # 
+    #
     # allow_reasoning_fallback=True 时（答题链路），正文为空则用 reasoning_content 兜底
     # （推理内容里通常也包含最终答案）；写作链路必须为 False，避免把思维链当正文交出去。
     steps = thinking_steps(thinking)

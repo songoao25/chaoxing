@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """讨论区浏览（模式 2）回归：列表解析、渲染、板块解析、只列不回复."""
-# 
+#
 # 模式 1（任务里的主题讨论）在 tests/test_discussion.py 里；两者共用
 # TaskCenter.reply_topic，所以这里的重点是"能不能把讨论区的帖子列出来并选中"。
 
@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import unittest
+from uuid import uuid4
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -143,6 +144,8 @@ class ResolveBbsidTestCase(unittest.TestCase):
 
     def test_missing_board_returns_empty(self):
         class EmptyTC:
+            """Provide a synthetic test dependency."""
+
             def get_course_tasks(self, course):
                 return []
         self.assertEqual(discussion.resolve_bbsid(EmptyTC(), {"title": "课"}), "")
@@ -170,6 +173,8 @@ class DiscussCliListOnlyTestCase(unittest.TestCase):
         tc = FakeTaskCenter(session)
 
         class Chaoxing:
+            """Provide a synthetic test dependency."""
+
             def get_course_list(self):
                 return [{"courseId": "1", "title": "没讨论区的课"},
                         {"courseId": "2", "title": "示例课程"}]
@@ -217,6 +222,8 @@ class FetchAllTopicsTestCase(unittest.TestCase):
         }
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def __init__(self):
                 """Initialize configuration and runtime state."""
                 self.calls = []
@@ -234,6 +241,8 @@ class FetchAllTopicsTestCase(unittest.TestCase):
 
     def test_reports_capped_when_page_limit_reached(self):
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, **kwargs):
                 return FakeResp({"status": True,
                                  "datas": [_topic_item(uuid="u%d" % kwargs["params"]["page"])]
@@ -288,7 +297,7 @@ class DiscussCliInteractiveTestCase(unittest.TestCase):
     def _run(self, inputs, draft=None, auto_yes=False):
         payload = {"status": True, "datas": [_topic_item(uuid="u1"), _topic_item(uuid="u2")]}
         tc = FakeBoardTaskCenter(draft or {
-            "topic_info": {"url_token": "tok"}, "title": "标题",
+            "topic_info": {"url_token": uuid4().hex}, "title": "标题",
             "reply": "我觉得吧，机会和能不能抓住是两回事。", "has_replied": False,
             "referer": "https://groupweb.chaoxing.com/pc/topic/jumpToTopicDetail?x=1",
         })
@@ -313,26 +322,26 @@ class DiscussCliInteractiveTestCase(unittest.TestCase):
         self.assertIn("发送 1 条", out)
 
     def test_confirm_no_skips(self):
-        result, tc, out = self._run(["1", "n"])
+        _result, tc, out = self._run(["1", "n"])
         self.assertEqual(tc.submitted, [])
         self.assertIn("已跳过这条", out)
 
     def test_multi_select_sends_one_by_one(self):
-        result, tc, out = self._run(["1-2", "y", "y"])
+        _result, tc, out = self._run(["1-2", "y", "y"])
         self.assertEqual(tc.submitted, ["u1", "u2"])
         self.assertIn("[1/2]", out)
         self.assertIn("[2/2]", out)
 
     def test_already_replied_is_skipped(self):
-        draft = {"topic_info": {"url_token": "tok"}, "title": "标题", "reply": "",
+        draft = {"topic_info": {"url_token": uuid4().hex}, "title": "标题", "reply": "",
                  "has_replied": True, "referer": ""}
-        result, tc, out = self._run(["1", "y"], draft=draft)
+        _result, tc, out = self._run(["1", "y"], draft=draft)
         self.assertEqual(tc.submitted, [])
         self.assertIn("已经回复过", out)
 
     def test_auto_yes_does_not_auto_send(self):
         """--yes 只跳过启动确认；把 AI 回复发到公开讨论区必须逐条确认."""
-        result, tc, out = self._run(["1"], auto_yes=True)
+        result, tc, _out = self._run(["1"], auto_yes=True)
         self.assertEqual(tc.submitted, [])
         self.assertEqual(result["sent"], 0)
 
@@ -366,6 +375,8 @@ class DraftSubmitSplitTestCase(unittest.TestCase):
         tc = TaskCenter(object(), {})
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def __init__(self):
                 """Initialize configuration and runtime state."""
                 self.posts = []
@@ -384,7 +395,7 @@ class DraftSubmitSplitTestCase(unittest.TestCase):
 
     def test_draft_does_not_post(self):
         tc = self._tc()
-        info = {"url_token": "tok", "title": "标题", "content": "正文", "user_puid": "1"}
+        info = {"url_token": uuid4().hex, "title": "标题", "content": "正文", "user_puid": "1"}
         with mock.patch("api.task_center._extract_discussion_topic", return_value=info), \
              mock.patch.object(type(tc), "_load_discussion_replies", return_value=([], False)):
             draft = tc.draft_reply("bbs", "uuid", course={"title": "课"}, name="帖子")
@@ -393,7 +404,7 @@ class DraftSubmitSplitTestCase(unittest.TestCase):
 
     def test_redraft_passes_hint_and_previous_reply_to_writer(self):
         tc = self._tc()
-        info = {"url_token": "tok", "title": "标题", "content": "正文", "user_puid": "1"}
+        info = {"url_token": uuid4().hex, "title": "标题", "content": "正文", "user_puid": "1"}
         with mock.patch("api.task_center._extract_discussion_topic", return_value=info), \
              mock.patch.object(type(tc), "_load_discussion_replies", return_value=([], False)):
             tc.draft_reply("bbs", "uuid", course={"title": "课"}, name="帖子",
@@ -405,7 +416,7 @@ class DraftSubmitSplitTestCase(unittest.TestCase):
         tc = self._tc()
         with mock.patch("api.task_center.review.record") as recorder:
             ok = tc.submit_reply("bbs", "uuid", course={"title": "课"}, name="帖子",
-                                 topic_info={"url_token": "tok"}, reply="正文内容",
+                                 topic_info={"url_token": uuid4().hex}, reply="正文内容",
                                  referer="https://x/y", echo=False)
         self.assertTrue(ok)
         self.assertEqual(len(tc.session.posts), 1)

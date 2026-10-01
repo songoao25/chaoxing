@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """任务中心作业任务点（planType=4）离线回归."""
-# 
+#
 # 覆盖：
 # * 新版作业页（mooc2/work/dowork）解析：题型、题干、选项、表单字段、提交地址
 # * study_homework：选择题/填空题作答 + 提交表单字段 + 填空题按空提交
@@ -223,6 +223,8 @@ class JobListParseTestCase(unittest.TestCase):
         cx = base_mod.Chaoxing()
 
         class Sess:
+            """Provide a synthetic test dependency."""
+
             def get(self, url, params=None, **kwargs):
                 num = str((params or {}).get("num", ""))
                 return FakeResponse(text=pages.get(num, ""))
