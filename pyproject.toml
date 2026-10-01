@@ -13,6 +13,14 @@ dynamic = ["dependencies"]
 
 [tool.setuptools]
 py-modules = ["main", "setup_wizard"]
+packages = ["api"]
+
+[tool.setuptools.data-files]
+"share/chaoxing" = ["config_template.ini", "resource/font_map_table.json"]
+
+[project.scripts]
+chaoxing = "main:main"
+chaoxing-setup = "setup_wizard:main"
 
 [tool.setuptools.dynamic]
 dependencies = {file=["requirements.txt"]}

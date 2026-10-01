@@ -20,6 +20,7 @@ from api import paths
 from api.display import ChapterProgress, course_plan_summary, safe_console
 from api.logger import set_quiet as set_console_quiet
 from api.logger import log_file_only, logger
+from api.privacy import redact
 from requests import RequestException
 from api.notification import Notification
 from api.live import Live
@@ -62,7 +63,7 @@ def log_error(func):
             func(*args, **kwargs)
         except BaseException as e:
             logger.error(f"Error in thread {threading.current_thread().name}: {e}")
-            traceback.print_exception(type(e), e, e.__traceback__)
+            logger.error(redact(traceback.format_exc()))
             raise
 
     return wrapper
@@ -276,6 +277,8 @@ def load_config_from_file(config_path):
             common_config["work_max_retries"] = safe_int(common_config["work_max_retries"], 3, low=0, high=10)
         else:
             common_config["work_max_retries"] = 3
+        if "work_redo_enabled" in common_config:
+            common_config["work_redo_enabled"] = str_to_bool(common_config["work_redo_enabled"])
         if "use_cookies" in common_config:
             common_config["use_cookies"] = str_to_bool(common_config["use_cookies"])
         if "add_learning_count" in common_config:
@@ -454,6 +457,8 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
 
     # 视频是否串行：默认并发（快）；遇到"刷完又变回没刷"可以打开
     serial_video = str_to_bool(common_config.get("serial_video", False))
+    # 是否允许自动重做(默认false: 仅检查并记录成绩, 适用于只允许作答一次的课程)
+    work_redo_enabled = common_config.get("work_redo_enabled", False)
 
     # 实例化超星API
     chaoxing = Chaoxing(
@@ -462,6 +467,7 @@ def init_chaoxing(common_config, tiku_config, config_path=None):
         query_delay=query_delay,
         work_max_retries=work_max_retries,
         serial_video=serial_video,
+        work_redo_enabled=work_redo_enabled,
     )
 
     return chaoxing
@@ -1947,7 +1953,7 @@ def main():
         # 只给一行清晰提示 + 处理办法，不打印一堆 traceback 吓人。
         log_file_only(str(e))
         print()
-        print("  ✘ " + str(e))
+        print("  ✘ " + redact(e))
         if isinstance(e, NetworkRetryFailed):
             print("  网络不太稳定，请检查网络 / 代理后重试。")
         else:
@@ -1968,7 +1974,7 @@ def main():
             )
         except Exception:
             pass  # 如果通知发送失败，忽略异常
-        raise e
+        raise RuntimeError(redact(f"{type(e).__name__}: {e}")) from None
     finally:
         # 兜底恢复 tqdm 全局格式：中途 return / sys.exit / 异常都不能把它留在补丁状态
         if _old_format_sizeof is not None:

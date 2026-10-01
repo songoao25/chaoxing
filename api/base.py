@@ -126,6 +126,9 @@ class Account:
     isSuccess = None
 
     def __init__(self, _username, _password):
+        from api.privacy import register_secret
+        register_secret(_username)
+        register_secret(_password)
         self.username = _username
         self.password = _password
 
@@ -450,6 +453,10 @@ def _parse_work_record_list(html_text: str) -> list[tuple[int, float]]:
     records = []
     times_list = re.findall(r'viewNum">第(\d+)次', html_text)
     scores = re.findall(r'viewScore">([\d.]+)分', html_text)
+    if len(times_list) != len(scores):
+        # 次数/成绩数量不齐时 zip 会错位, 成绩按 0 处理(放弃分数捷径, 仅做逐题比对)
+        logger.warning(f"作答记录次数/成绩数量不匹配({len(times_list)}/{len(scores)}), 成绩按0处理")
+        scores = ['0'] * len(times_list)
     for t, s in zip(times_list, scores):
         try:
             records.append((int(t), float(s)))
@@ -483,20 +490,30 @@ def _parse_work_record_detail(html_text: str) -> list[dict]:
             title = ""
         title = re.sub(r'\s+', ' ', title).strip()
 
-        # 我的答案
-        mam = re.search(r'我的答案：</span>\s*<div class="fl answerCon">\s*(.*?)\s*</div>', qb, re.S)
-        my_answer = re.sub(r'<[^>]+>', '', mam.group(1)).strip() if mam else ''
+        # 我的答案/正确答案: 多模式匹配, 兼容属性顺序变化与额外 class 的页面变体
+        ans_patterns = [
+            r'{label}[:：]</span>\s*<div class="fl answerCon">\s*(.*?)\s*</div>',
+            r'{label}[:：]\s*</span>\s*<div[^>]*class="[^"]*answerCon[^"]*"[^>]*>\s*(.*?)\s*</div>',
+            r'{label}[:：]\s*</span>\s*<span[^>]*>\s*(.*?)\s*</span>',
+        ]
 
-        # 正确答案
-        cam = re.search(r'正确答案：</span>\s*<div class="fl answerCon">\s*(.*?)\s*</div>', qb, re.S)
-        correct_answer = re.sub(r'<[^>]+>', '', cam.group(1)).strip() if cam else ''
+        def _extract_answer(label):
+            for pat in ans_patterns:
+                m = re.search(pat.format(label=label), qb, re.S)
+                if m:
+                    return re.sub(r'<[^>]+>', '', m.group(1)).strip()
+            return None
+
+        my_raw = _extract_answer('我的答案')
+        correct_raw = _extract_answer('正确答案')
 
         questions.append({
             "id": qid,
             "title": title,
             "type_label": type_label,
-            "my_answer": my_answer,
-            "correct_answer": correct_answer,
+            "my_answer": my_raw or '',
+            "correct_answer": correct_raw or '',
+            "parse_ok": my_raw is not None and correct_raw is not None,
         })
     return questions
 
@@ -691,8 +708,13 @@ def evaluate_work_detail(detail) -> dict:
     all_correct = True
     mismatched = 0
     empty_mine = 0
+    unknown = 0
 
     for q in detail:
+        if not q.get("parse_ok", True):
+            unknown += 1
+            all_correct = False
+            continue
         my_ans = (q.get("my_answer") or "").strip()
         correct_ans = (q.get("correct_answer") or "").strip()
         if answers_equal(my_ans, correct_ans, q.get("type_label")):
@@ -712,7 +734,28 @@ def evaluate_work_detail(detail) -> dict:
         "all_correct": all_correct,
         "feedback": feedback,
         "unjudgeable": bool(mismatched) and empty_mine == mismatched,
+        "unknown": unknown,
     }
+_JUDGE_TRUE_SET = {'TRUE', 'T', '1', '对', '正确', '√', '是', 'YES', 'Y'}
+_JUDGE_FALSE_SET = {'FALSE', 'F', '0', '错', '错误', '×', 'X', '否', 'NO', 'N', '不对', '不正确'}
+
+
+def normalize_answer_text(ans) -> str:
+    """作答详情答案归一化: 消除 对/错与true/false、全半角标点等格式差异.
+
+    归一化是确定性的, 两侧同格式必然相等; 跨格式差异(如字母 vs 选项全文)
+    交由调用方的满分分数兜底处理.
+    """
+    s = re.sub(r'\s+', '', str(ans or '')).upper()
+    if s in _JUDGE_TRUE_SET:
+        return 'TRUE'
+    if s in _JUDGE_FALSE_SET:
+        return 'FALSE'
+    if re.fullmatch(r'[A-Z0-9]+', s):
+        return s
+    s = re.sub(r'^[A-Z][.、:：)?）]', '', s)
+    s = re.sub(r'[，。、！？；：,.!?;:()（）\[\]【】"“”‘’\-_/\\|]', '', s)
+    return s
 
 
 class Chaoxing:
@@ -740,7 +783,7 @@ class Chaoxing:
         if login_with_cookies:
             logger.info("Logging in with cookies")
             SessionManager.update_cookies()
-            logger.debug(f"Logged in with cookies: {SessionManager.get_instance()._session.cookies}")
+            logger.debug("Cookie session loaded")
             if not self._validate_cookie_session():
                 logger.warning("Cookie 登录校验失败，尝试使用账号密码重新登录")
                 if self.account and self.account.username and self.account.password:
@@ -1441,7 +1484,7 @@ class Chaoxing:
                             if refreshed_play_time is not None:
                                 play_time = int(refreshed_play_time)
 
-                            logger.debug("刷新后的令牌: {}, 持续时间: {}, 播放时间: {}", _dtoken, duration, play_time)
+                            logger.debug("视频令牌已刷新，持续时间: {}, 播放时间: {}", duration, play_time)
                             pbar = self._close_pbar_safe(pbar)
                             continue
                         else:
@@ -1654,12 +1697,17 @@ class Chaoxing:
             raise RuntimeError(f"请求返回无效数据 (Code: {_resp.status_code})")
 
         # 章节检测最大重做次数（答错后收集错误反馈并重新提交，直到全对）
-        try:
-            max_retries = max(1, int(self.kwargs.get("work_max_retries", 3)))
-        except (TypeError, ValueError):
-            max_retries = 3
+        # work_redo_enabled=false 时为单轮模式: 提交+检查+报告成绩, 不自动重做(适用于只允许作答一次的课程)
+        if bool(self.kwargs.get("work_redo_enabled", False)):
+            try:
+                max_retries = max(1, int(self.kwargs.get("work_max_retries", 3)))
+            except (TypeError, ValueError):
+                max_retries = 3
+        else:
+            max_retries = 0
         query_delay = self.kwargs.get("query_delay", 0)
         feedback_history = None
+        last_submitted_score = None
 
         for attempt in range(max_retries + 1):
             if attempt > 0:
@@ -1676,7 +1724,11 @@ class Chaoxing:
                 logger.warning(f"跳过章节检测: {e}")
                 return StudyResult.SUCCESS
             except Exception as e:
-                logger.error(f"获取章节检测题目失败, 达到最大重试次数: {e}")
+                if attempt > 0:
+                    logger.error(f"重做轮无法获取题目(上一轮提交成绩 {last_submitted_score} 分), "
+                                 f"该课程可能仅允许作答一次: {e}")
+                else:
+                    logger.error(f"获取章节检测题目失败, 达到最大重试次数: {e}")
                 return StudyResult.ERROR
 
             _ORIGIN_HTML_CONTENT = final_resp.text  # 用于配合输出网页源码, 帮助修复#391错误
@@ -1703,7 +1755,7 @@ class Chaoxing:
                 answers = list(answers) + [None] * (total_questions - len(answers))
                 answers = answers[:total_questions]
 
-            from api.display import answer_line as _answer_line, answers_header as _answers_header, emit as _emit
+            from api.display import answer_line as _answer_line, answers_header as _answers_header, emit as _emit, emit_block as _emit_block
             _emit(_answers_header(str(_job.get("name") or "章节测验"), len(questions["questions"])))
             for _qi, (q, res) in enumerate(zip(questions["questions"], answers), 1):
                 logger.debug(f"当前题目信息 -> {q}")
@@ -1752,23 +1804,9 @@ class Chaoxing:
                 # 填充答案 + 实时留痕（控制台与运行日志各一份）
                 q["answerField"][f'answer{q["id"]}'] = answer
                 _emit(_answer_line(_qi, q.get("type"), answer, q.get("title")))
+                if q.get("type") == "shortanswer":
+                    _emit_block(f"简答 {_qi}", answer)
                 logger.debug(f'{q["title"]} 填写答案为 {answer}')
-            # 复核留痕：AI 生成的简答题文字（客观题字母没有复核价值，不记）
-            try:
-                from api import review as _review
-                for _q in questions["questions"]:
-                    if str(_q.get("type")) != "shortanswer":
-                        continue
-                    _text = (_q.get("answerField") or {}).get(f"answer{_q['id']}")
-                    if _text:
-                        _review.record(
-                            _review.KIND_QUIZ, _text,
-                            course=str(_course.get("title") or ""),
-                            task=str(_job.get("name") or ""),
-                            status="已提交" if questions.get("pyFlag") == "" else "已保存未提交",
-                        )
-            except Exception:
-                pass
             cover_rate = (found_answers / total_questions) * 100
             logger.info(f"章节检测题库覆盖率： {cover_rate:.0f}%")
             # 提交模式  现在与题库绑定,留空直接提交, 1保存但不提交
@@ -1811,38 +1849,62 @@ class Chaoxing:
                 if isinstance(_q, dict):
                     build_completion_fields(questions, _q)
 
+            from api import review as _review
+            review_items = []
+            for question in questions["questions"]:
+                if question.get("type") != "shortanswer":
+                    continue
+                text = questions.get(f"answer{question['id']}", "")
+                if text:
+                    item = _review.record(_review.KIND_QUIZ, text,
+                                          course=_course.get("title", ""), task=_job.get("name", ""),
+                                          status="待提交" if questions["pyFlag"] == "" else "待保存")
+                    if not item:
+                        for previous in review_items:
+                            _review.update(previous, "复核写入失败，未提交")
+                        logger.error("简答题复核记录写入失败，本次不提交")
+                        return StudyResult.ERROR
+                    review_items.append(item)
+
             del questions["questions"]
 
             # 4. 提交
-            res = _session.post(
-                "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew",
-                data=questions,
-                headers={
-                    "Host": "mooc1.chaoxing.com",
-                    "sec-ch-ua-platform": '"Windows"',
-                    "X-Requested-With": "XMLHttpRequest",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                    "sec-ch-ua": '"Microsoft Edge";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "sec-ch-ua-mobile": "?0",
-                    "Origin": "https://mooc1.chaoxing.com",
-                    "Sec-Fetch-Site": "same-origin",
-                    "Sec-Fetch-Mode": "cors",
-                    "Sec-Fetch-Dest": "empty",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5",
-                },
-            )
-            if res.status_code == 200:
-                res_json = res.json()
-                if res_json["status"]:
-                    logger.info(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题成功 -> {res_json["msg"]}')
+            accepted = False
+            try:
+                res = _session.post(
+                    "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew",
+                    data=questions,
+                    headers={
+                        "Host": "mooc1.chaoxing.com",
+                        "sec-ch-ua-platform": '"Windows"',
+                        "X-Requested-With": "XMLHttpRequest",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                        "sec-ch-ua": '"Microsoft Edge";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        "sec-ch-ua-mobile": "?0",
+                        "Origin": "https://mooc1.chaoxing.com",
+                        "Sec-Fetch-Site": "same-origin",
+                        "Sec-Fetch-Mode": "cors",
+                        "Sec-Fetch-Dest": "empty",
+                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,ja;q=0.5",
+                    },
+                )
+                if res.status_code == 200:
+                    res_json = res.json()
+                    if res_json["status"]:
+                        accepted = True
+                        logger.info(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题成功 -> {res_json["msg"]}')
+                    else:
+                        logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res_json["msg"]}')
+                        return StudyResult.ERROR
                 else:
-                    logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res_json["msg"]}')
+                    logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res.text}')
                     return StudyResult.ERROR
-            else:
-                logger.error(f'{"提交" if questions["pyFlag"] == "" else "保存"}答题失败 -> {res.text}')
-                return StudyResult.ERROR
+
+            finally:
+                for item in review_items:
+                    _review.update(item, ("平台已接受提交" if questions["pyFlag"] == "" else "平台已保存，未提交") if accepted else "请求失败或平台未确认")
 
             # 5. 只保存未提交：平台不会把任务点记为完成，不能返回成功（铁律 1）
             if questions["pyFlag"] == "1":
@@ -1861,18 +1923,38 @@ class Chaoxing:
                 logger.error("提交后连续 3 次读不到章节检测成绩，本任务点不记为完成")
                 return StudyResult.ERROR
 
+            score = float(result_info.get("score", 0.0) or 0.0)
+            unknown = int(result_info.get("unknown", 0) or 0)
             if result_info.get("all_correct", False):
-                logger.info(f"章节检测全部正确（成绩 {result_info.get('score', '?')} 分），通过！")
+                logger.info(f"章节检测全部正确（成绩 {score} 分），通过！")
+                return StudyResult.SUCCESS
+            if score >= 99.95:
+                # 逐题比对存在格式差异或解析失配, 但满分成绩说明实际全对, 以分数为准
+                if unknown > 0:
+                    logger.warning(f"成绩 {score} 分达到满分, 以分数为准通过"
+                                   f"（{unknown} 题答案字段未能解析, 建议人工复核）")
+                else:
+                    logger.info(f"逐题比对存在格式差异, 但成绩 {score} 分达到满分, 以分数为准, 通过！")
+                return StudyResult.SUCCESS
+            if unknown > 0:
+                # 解析失配且未达满分: 判定不可信, 不触发重做, 保留已提交成绩
+                logger.warning(f"{unknown} 题答案字段解析失败且成绩 {score} 分未达满分, 跳过重做判定")
                 return StudyResult.SUCCESS
 
             # 7. 未全对：收集错误反馈，进入下一轮重做
             feedback_history = result_info.get("feedback", [])
             wrong_count = len(feedback_history)
+            if attempt >= max_retries:
+                # 已是最后一轮(含单轮模式), 保留已提交成绩, 不再触发无意义的重做
+                logger.warning(f"章节检测有 {wrong_count}/{total_questions} 题回答错误（成绩 {score} 分），"
+                               f"已保留本次成绩, 请人工检查处理")
+                return StudyResult.SUCCESS
             logger.warning(
-                f"章节检测有 {wrong_count}/{total_questions} 题回答错误（成绩 {result_info.get('score', '?')} 分），"
+                f"章节检测有 {wrong_count}/{total_questions} 题回答错误（成绩 {score} 分），"
                 f"已将错误反馈给AI，准备重新作答提交 (第 {attempt + 1}/{max_retries + 1} 轮)"
             )
             self.rollback_times += 1
+            last_submitted_score = score
 
         # 达到最大重试次数仍未全对
         logger.error(f"章节检测重试 {max_retries + 1} 次仍未全部正确，请人工检查处理")
@@ -1955,8 +2037,8 @@ class Chaoxing:
                 )
                 html = resp.text
                 if 'answerwqbid' in html:
-                    # 可编辑页面：说明未全部正确，可重新作答
-                    logger.warning("题目页仍可编辑，判定章节检测未全部正确")
+                    # 可编辑页面：说明未全部正确，可重新作答（该判定为页面状态推断, 未核对实际成绩）
+                    logger.warning("题目页仍可编辑, 推断章节检测未全部正确(未核对成绩)")
                     return {
                         "all_correct": False,
                         "feedback": [],
@@ -1969,7 +2051,7 @@ class Chaoxing:
                     if detail:
                         evaluated = evaluate_work_detail(detail)
                         if evaluated["unjudgeable"]:
-                            logger.warning("页面没有渲染出「我的答案」，无法判断对错，按已通过处理")
+                            logger.warning("页面没有渲染出「我的答案」，无法逐题判断对错，本项等待复查")
                             return None
                         m = re.search(r'本次成绩<i>([\d.]+)</i>分', html)
                         score = float(m.group(1)) if m else 0.0
@@ -1978,6 +2060,7 @@ class Chaoxing:
                             "feedback": evaluated["feedback"],
                             "score": score,
                             "times": 0,
+                            "unknown": evaluated["unknown"],
                         }
                 return None
             except Exception as e:
@@ -2022,7 +2105,7 @@ class Chaoxing:
         evaluated = evaluate_work_detail(detail)
         if evaluated["unjudgeable"]:
             # 页面没给出"我的答案"（只渲染了图标之类），判定不可信
-            logger.warning("作答详情里没有「我的答案」，无法判断对错，按已通过处理")
+            logger.warning("作答详情里没有「我的答案」，无法逐题判断对错，本项等待复查")
             return None
 
         logger.debug(
@@ -2034,6 +2117,7 @@ class Chaoxing:
             "feedback": evaluated["feedback"],
             "score": latest_score,
             "times": latest_times,
+            "unknown": evaluated["unknown"],
         }
 
     def study_read(self, _course, _job, _job_info) -> StudyResult:

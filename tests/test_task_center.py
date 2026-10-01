@@ -864,11 +864,11 @@ class DocumentWatchDurationTestCase(unittest.TestCase):
             self.assertFalse(tc.study_document("https://task.chaoxing.com/documentStudy/learnPage?x=1", plan))
         self.assertFalse(any("readEnd" in c[1] for c in tc.session.calls))
 
-    def test_enc_matches_captured_browser_sample(self):
-        """脱敏浏览器样例的 enc 必须能由本地实现逐字复现"""
-        artifact = Path(__file__).parents[1] / "docs" / "artifacts" / "ac_mark_samples.json"
-        sample = json.loads(artifact.read_text(encoding="utf-8"))[0]["params"]
-        self.assertEqual(tc_mod._read_point_enc(sample), sample["enc"])
+    def test_enc_matches_synthetic_known_answer(self):
+        """Only synthetic identifiers are needed for the protocol digest fixture."""
+        sample = {"f": "readPoint", "u": "test-user", "d": "test-document",
+                  "t": "20000101000000000"}
+        self.assertEqual(tc_mod._read_point_enc(sample), "9b94f9c71e8f85c82f316cafbdbe129f")
 
     def test_timestamp_and_enc_are_generated_together(self):
         tc = make_task_center([])
@@ -1260,7 +1260,7 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
         return {
             "jobid": "1548984627901674",
             "objectid": "011155377179e72459aae8a97edbfbe8",
-            "otherinfo": "nodeId_1199477652-cpi_1000003-rt_d-ds_0-ff_1-be_0_0-vt_1-v_6-enc_c64478",
+            "otherinfo": "nodeId_100001-cpi_1000003-rt_d-ds_0-ff_1-be_0_0-vt_1-v_6-enc_c64478",
             "videoFaceCaptureEnc": "",
             "attDuration": "",
             "attDurationEnc": "",
@@ -1285,7 +1285,7 @@ class ChapterEngineInfoTestCase(unittest.TestCase):
 
     def test_engine_info_adds_course_engine_info_param(self):
         cx = self._chaoxing()
-        stu = {"knowledgeId": 1199477652, "uid": "100000001", "finishCount": 3,
+        stu = {"knowledgeId": 100001, "uid": "100000001", "finishCount": 3,
                "clazzId": 1000002, "enc": "17414ced", "time": 1, "jobCount": 3}
         passed, state, calls = self._run_log(
             cx, True, {"isPassed": True, "stuJobInfo": stu}
@@ -1364,16 +1364,16 @@ class EngineDocumentSyncTestCase(unittest.TestCase):
     def test_study_document_engine_context_captures_stujobinfo(self):
         from api import base as base_mod
         calls = []
-        stu = {"knowledgeId": 1199477652, "uid": "100000001", "finishCount": 3,
+        stu = {"knowledgeId": 100001, "uid": "100000001", "finishCount": 3,
                "clazzId": 1000002, "enc": "17414ced", "time": 1, "jobCount": 3}
         cx = base_mod.Chaoxing()
         with mock.patch.object(base_mod.SessionManager, "get_session",
                                return_value=self._sess(calls, stu)):
             result = cx.study_document(
                 {"courseId": "1000001", "clazzId": "1000002"},
-                {"jobid": "1552539912594178",
-                 "otherinfo": "nodeId_1199477652-cpi_1000003",
-                 "jtoken": "6bce2659f6658ea37db63a9ce5c2104f"},
+                {"jobid": "10001",
+                 "otherinfo": "nodeId_100001-cpi_1000003",
+                 "jtoken": "test-document-token"},
                 engine_info=True,
             )
         self.assertEqual(result, base_mod.StudyResult.SUCCESS)
@@ -1381,7 +1381,7 @@ class EngineDocumentSyncTestCase(unittest.TestCase):
         self.assertEqual(len(engine_calls), 1)
         self.assertEqual(engine_calls[0][1].get("courseEngineInfo"), "true")
         self.assertEqual(engine_calls[0][1].get("checkMicroTopic"), "true")
-        self.assertEqual(engine_calls[0][1].get("knowledgeid"), "1199477652")
+        self.assertEqual(engine_calls[0][1].get("knowledgeid"), "100001")
         self.assertEqual(cx.last_student_job_info, stu)
 
     def test_study_document_without_engine_context_keeps_old_behavior(self):
@@ -1392,8 +1392,8 @@ class EngineDocumentSyncTestCase(unittest.TestCase):
                                return_value=self._sess(calls, {"enc": "不应被暂存"})):
             result = cx.study_document(
                 {"courseId": "1000001", "clazzId": "1000002"},
-                {"jobid": "1552539912594178",
-                 "otherinfo": "nodeId_1199477652-cpi_1000003",
+                {"jobid": "10001",
+                 "otherinfo": "nodeId_100001-cpi_1000003",
                  "jtoken": "jtoken-x"},
             )
         self.assertEqual(result, base_mod.StudyResult.SUCCESS)

@@ -159,7 +159,8 @@ def answers_header(title, count) -> str:
 
 def emit(text):
     '''把一行留痕同时写到控制台和运行日志（普通运行日志即可回溯）'''
-    line = str(text or '')
+    from api.privacy import redact
+    line = redact(str(text or ''))
     if not line.strip():
         return
     try:

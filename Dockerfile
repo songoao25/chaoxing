@@ -7,6 +7,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY api ./api
+COPY resource ./resource
 COPY tools ./tools
 COPY main.py setup_wizard.py config_template.ini Makefile ./
 

@@ -1,6 +1,6 @@
 # 常用命令：给人和 Agent 共用
 PY := ./.venv/bin/python
-.PHONY: help test lint compile status classify probes doctor
+.PHONY: help test lint compile publication status classify probes doctor
 
 help:  ## 列出所有命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -27,7 +27,10 @@ test:  ## 跑全量单测（离线）
 compile:  ## 语法编译检查
 	$(PY) -m compileall -q api main.py tools tests
 
-lint: compile test  ## 提交前必跑：编译 + 单测
+publication:
+	$(PY) tools/audit/publication_guard.py
+
+lint: publication compile test  ## 提交前必跑：编译 + 单测
 
 status:  ## 当前账号任务中心进度快照（只读）
 	$(PY) tools/probe/02_当前任务状态快照.py

@@ -25,6 +25,7 @@ from loguru import logger
 
 from api import llm
 from api import paths
+from api.privacy import register_config
 
 # 一眼假的 AI 腔，生成后直接替换/删掉
 # 这些词出现在句首/段首就是模板腔，连同后面的顿断一起删掉
@@ -48,6 +49,7 @@ class HumanLikeWriter:
         cfg = dict(tiku_config or {})
         if not cfg:
             cfg = self._read_tiku_config(config_path)
+        register_config(cfg)
         self.endpoint = (cfg.get("endpoint") or "").strip()
         self.key = (cfg.get("key") or "").strip()
         self.model = (cfg.get("model") or "").strip()
@@ -188,9 +190,8 @@ class HumanLikeWriter:
         "这类说法必须有素材支撑；没给素材就只写课程概念、公开报道或假设句。\n"
         "7.3 不许写\"往往/通常/多半\"开头的普适经验断言（例：\"总部给的模型和一线看到的往往差很多\"），"
         "这类句子既没有来源又容易被追问。\n"
-        "7.4 每篇至少有一个课程锚点（课上讲的框架、教材上的说法、老师提过的案例），"
-        "但**不要每篇都放在第一句**、也不要用同一个句式；没有课程材料时宁可用\"教材上\"\""
-        "老师提过\"这类别的说法。\n"
+        "7.4 回答要围绕题目里的概念。只有提供了真实课程材料，才能引用教材、老师或课堂；"
+        "没有素材就解释题目概念或使用明确的假设句，不得编造材料来源。\n"
         "7.5 引用政策/事件要小心时间线和因果，拿不准就只说背景、不下因果结论。\n"
         "8. 引用公开政策/事件时，必须能说出时间或文件名称；说不出来就别举例。"
         "不要写\"某公司\"\"某个区域\"\"多少小时\"\"几十单\"这种既模糊又当事实用的说法。\n"
@@ -246,12 +247,17 @@ class HumanLikeWriter:
         r"我(在|曾经在)[^，。；]{0,8}(兼职|打工|上班|实习)",
         r"我(做|干|打)过[^，。；]{0,4}(兼职|暑假工|临时工|小时工)",
         r"我们(公司|单位|企业)(里|的|在|要求|规定|考核)",
+        r"我(去年|前年|以前|曾经|曾|今年)[^。！？]{0,20}(参加|参与|做过|调查|实习|培训|面试)",
     )
     # 认领共同经历（没有素材支撑时一律算编造）
     CLAIMED_COMMUNITY = (
         r"我们(小组|班|社团|团队)(上次|之前|课上|讨论|做|在)",
         r"(上次|之前|课上)(我们)?(小组|讨论|活动|讲)时",
         r"课上(讲|说|提)(过|的)",
+        r"老师(说|讲|提)(过|的)|教材(上|里)(说|讲|提)|教材上",
+        r"我们(的)?(小组|班级?|社团|团队)[^。！？]{0,20}(曾经|做过|调查|讨论过|参加过)",
+        r"(根据|按照|正如)[^，。！？]{0,20}(教材|课本|老师|教师)",
+        r"(老师|教师|教材|课本|课堂|课上)[^。！？]{0,20}(强调|指出|讲过|说过|写过|论述|介绍过|解释过|教过)",
     )
     # 示弱收尾：上一版为了防"金句收尾"引入，结果自己变成了统一口癖
     WEAK_ENDING = (r"(没太想明白|没完全(想|搞)明白|还在(琢磨|想)|也说不好|说不好|没搞懂|没想清楚)[。？!]*$",)
@@ -292,6 +298,15 @@ class HumanLikeWriter:
         """
         text = str(text or "")
         problems = []
+        # No authenticated course or personal source material is accepted by this
+        # API. Reject source attribution and narrated experience conservatively,
+        # rather than enumerating time adverbs that a model can paraphrase.
+        if re.search(r"教材|课本|老师|教师|教授|授课|课上|课堂|(?:本章|本节|课程|讲义|原文).{0,8}(?:写|说|指出|提及|提到|强调)", text):
+            problems.append("未经提供的课程来源")
+        if re.search(r"(?<!如果)(?<!假如)(?<!假设)我(?!觉得|认为|倾向|更支持|不支持|建议|理解|赞同|同意|支持|们(?:可以|应该|需要|认为))", text):
+            problems.append("未经提供的个人经历")
+        if "我" in text and re.search(r"曾经|去年|前年|当时|参加过|参加的|实习|培训|亲身|我们组", text):
+            problems.append("未经提供的个人经历")
         if cls.find_leak(text):
             problems.append("平台判分话术")
         stats = cls.habit_stats(text)
@@ -342,7 +357,7 @@ class HumanLikeWriter:
         last_problems = []
         for attempt in range(1, 4):
             raw = self._chat(self.SYSTEM_STYLE, user, **kwargs)
-            text = self.clean(raw)
+            text = self.cut_at_sentence(self.clean(raw), max_chars)
             last_problems = self.style_problems(
                 text, require_hesitation=require_hesitation,
                 require_course_anchor=require_course_anchor,
@@ -360,17 +375,16 @@ class HumanLikeWriter:
                            "口语词不要反复用同一个；句子长短要拉开，"
                            "至少插一句 12 字以内的短句，不要每句都是四五十字的长句；"
                            "不要用\"我还没太想明白\"结尾；不要认领小组/社团/课堂经历；"
-                           "不要写\"往往/通常\"开头的普适断言；要有课程锚点；"
+                           "不要写\"往往/通常\"开头的普适断言；围绕题目中的概念；"
                            "可以留一处不那么确定的表达，但不要用固定的那几句；"
                            "结尾不要每篇都点题或落在一句有味道的话上；"
-                           "课程锚点不要总放在第一句，换个位置、换个说法" + extra + "。")
+                           "不要编造教材、老师或课堂来源" + extra + "。")
         if "平台判分话术" in last_problems:
             raise RuntimeError("生成内容里仍带有平台判分话术")
         # 编造个人履历（实习/兼职/在职）是硬伤：宁可不提交，也不能把假经历发给老师
         if "编造的个人琐事" in last_problems:
             raise RuntimeError("生成内容里仍在编造个人经历（实习/兼职/在职）")
-        logger.debug("生成内容重写 3 次仍有真人化问题（{}），按原样返回", "、".join(last_problems))
-        return self.cut_at_sentence(text, max_chars)
+        raise RuntimeError("生成内容重写后仍未通过检查：" + "、".join(last_problems))
 
     def answer(self, question: str, requirement: str = "", references=None,
                max_chars: int = 220) -> str:
@@ -383,7 +397,7 @@ class HumanLikeWriter:
             + "请写一段 " + str(max(60, max_chars - 60)) + "~" + str(max_chars) + " 字的回答，"
               "不要照抄参考内容，用你自己的话讲清楚观点和理由。"
         )
-        return self._generate_text(user, max_chars, require_course_anchor=True)
+        return self._generate_text(user, max_chars)
 
     def discussion(self, topic: str, requirement: str = "", existing_posts=None,
                    max_chars: int = 180, revision_hint: str = "",

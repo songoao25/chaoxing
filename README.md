@@ -2,16 +2,15 @@
 
 **English** | [中文](README.zh-CN.md)
 
-[![CI](https://github.com/songoao25/chaoxing/actions/workflows/tests.yml/badge.svg)](https://github.com/songoao25/chaoxing/actions/workflows/tests.yml)
-[![Release](https://img.shields.io/github/v/release/songoao25/chaoxing?include_prereleases)](https://github.com/songoao25/chaoxing/releases)
-[![Last commit](https://img.shields.io/github/last-commit/songoao25/chaoxing)](https://github.com/songoao25/chaoxing/commits/main)
-[![License](https://img.shields.io/github/license/songoao25/chaoxing)](LICENSE)
+[![CI](https://github.com/Samueli924/chaoxing/actions/workflows/tests.yml/badge.svg)](https://github.com/Samueli924/chaoxing/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/Samueli924/chaoxing?include_prereleases)](https://github.com/Samueli924/chaoxing/releases)
+[![Last commit](https://img.shields.io/github/last-commit/Samueli924/chaoxing)](https://github.com/Samueli924/chaoxing/commits/main)
+[![License](https://img.shields.io/github/license/Samueli924/chaoxing)](LICENSE)
 
 A command-line tool that studies Chaoxing (Xuexitong / Fanya) courses without opening a browser. It covers both entries the platform has: **Chapters** (the table of contents) and the **Task Center · Teaching Tasks**.
 
-It is a fork of [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing) with Task Center support added on top.
 
-> **Status.** Chapters are complete. In the Task Center, videos, chapter sync, AI practice, homework and topic discussions have been verified on a real account. Documents send 30-second heartbeats, but the platform was not observed counting duration-only documents. Thinking questions and classroom check-in are not supported.
+> **Coverage.** Chapter task types and Task Center videos, chapter sync, think-ladder practice, homework and discussions are implemented. Duration-only documents, situational dialogue, thinking questions and classroom activities require manual completion.
 >
 > Completion always comes from the platform's own status re-check — the tool never reports a task as finished because it pressed submit.
 
@@ -31,7 +30,7 @@ Console samples in this document are translated from the Chinese output the CLI 
 | AI practice | 🟡 | The thinking-ladder type: dialogue over `main-talk` SSE, then the end-report call that makes the platform score it. The newer situational-dialogue type is a different API and is not adapted |
 | Homework | ✅ | Multiple choice / true-false / fill-in through the question bank or AI; short answers written by `api/ai_writer.py` |
 | Topic discussion | ✅ | Reads existing replies for style, writes a non-duplicate reply, submits it |
-| Document | ⚠️ | Finish-reading documents complete. Duration-only documents were not counted by the platform even with 600 s of heartbeats plus the final readEnd call (verified twice), so they stay unfinished and are retried at most once per 24 h |
+| Document | ⚠️ | Documents use 30-second reporting and platform status checks. Duration-only requirements remain unsupported; attempts are limited to once per 24 hours |
 | Thinking questions | ❌ | Not supported — the tool says so and leaves them to you |
 | Classroom activities / check-in | ❌ | Not supported |
 
@@ -59,7 +58,7 @@ Download it from [python.org](https://www.python.org/downloads/) and run the ins
 ### 2. Download the project
 
 ```bash
-git clone https://github.com/songoao25/chaoxing.git
+git clone https://github.com/Samueli924/chaoxing.git
 cd chaoxing
 python -m pip install -r requirements.txt
 ```
@@ -221,7 +220,6 @@ Objective answers (letters, true/false) are not recorded — there is nothing to
 - Each phone number keeps its own credentials and cookies, so accounts never overwrite each other.
 - The tool talks only to Chaoxing and the answering provider you configure. There is no telemetry and no upload of course content.
 - Login captchas are recognised locally with OCR; nothing is sent to a third-party service.
-- Packet-capture samples under `docs/artifacts/` have account numbers, user ids, course parameters and tokens replaced with placeholders.
 - Use it only with an account you own, and follow your school's rules.
 
 ## Troubleshooting
@@ -254,7 +252,6 @@ make doctor    # environment self-check
 
 Tests use the standard library `unittest` against fakes (`FakeSession`, `FakeTC`) — no pytest, no ruff, no network. CI ([.github/workflows/tests.yml](.github/workflows/tests.yml)) runs them on Python 3.13 for every push and pull request.
 
-Behaviour changes need an offline test under `tests/` and must follow the guardrails in [AGENTS.md](AGENTS.md). Status and handoff notes are in [docs/handoff/HANDOFF.md](docs/handoff/HANDOFF.md).
 
 | Path | Purpose |
 | --- | --- |
@@ -276,12 +273,10 @@ Behaviour changes need an offline test under `tests/` and must follow the guardr
 
 - Issues and pull requests are welcome; keep each change small and focused.
 - Never commit credentials, cookies, tokens or personal data. Samples must be sanitized.
-- This is a fork: upstream attribution is kept, and improvements that belong upstream are welcome there too.
 
 ## References
 
 - Upstream project: [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing)
-- Platform structure notes: [docs/PLATFORM-NOTES.md](docs/PLATFORM-NOTES.md)
 
 ## License
 

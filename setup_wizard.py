@@ -32,6 +32,8 @@ from api.display import safe_console
 # 模板在项目目录；用户配置在数据目录（~/.chaoxing/config.ini），
 # 这样升级代码不会影响用户的配置。
 TEMPLATE = os.path.join(BASE, "config_template.ini")
+if not os.path.isfile(TEMPLATE):
+    TEMPLATE = os.path.join(sys.prefix, "share", "chaoxing", "config_template.ini")
 paths.init()          # 确保数据目录存在，并完成一次旧数据迁移
 CONFIG = paths.config_path()
 

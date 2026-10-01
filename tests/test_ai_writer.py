@@ -68,7 +68,7 @@ class WriterTestCase(unittest.TestCase):
 
         def fake_chat(system, user, **kwargs):
             captured["user"] = user
-            return "我赞同前面同学的看法，我们组当时做案例也遇到类似情况。"
+            return "我赞同前面同学的看法，使命是长期方向，愿景更像目标画面。"
 
         posts = [{"content": "我认为使命是长期方向"}, {"content": "愿景更像是目标画面"}]
         with mock.patch.object(self.writer, "_chat", side_effect=fake_chat):

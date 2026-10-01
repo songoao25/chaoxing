@@ -9,7 +9,7 @@
     username = 13800000000
     password = xxxxx
     name     = 张三          ; 登录后自动记录，用于列表显示
-    last_used = 2026-09-15     ; 最后使用时间
+    last_used = YYYY-MM-DD     ; 最后使用时间
 """
 
 import configparser

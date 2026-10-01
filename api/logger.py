@@ -3,6 +3,7 @@ import sys
 
 from loguru import logger
 from tqdm import tqdm
+from api.privacy import patch_record
 
 tqdm_stream = sys.stderr
 
@@ -109,8 +110,9 @@ def tqdm_sink(msg):
 
 
 logger.remove()
+logger.configure(patcher=patch_record)
 logger.add(tqdm_sink, colorize=False, enqueue=True, filter=_console_filter,
-           format=_console_format)
+           format=_console_format, diagnose=False)
 
 # 日志文件放在用户数据目录，升级代码不会丢掉历史日志
 try:
@@ -119,4 +121,9 @@ try:
 except Exception:
     _LOG_FILE = "chaoxing.log"
 logger.add(_LOG_FILE, rotation="10 MB",
-           level=(os.environ.get("CX_LOG_LEVEL") or "DEBUG").strip().upper())
+           level=(os.environ.get("CX_LOG_LEVEL") or "DEBUG").strip().upper(),
+           diagnose=False)
+try:
+    os.chmod(_LOG_FILE, 0o600)
+except OSError:
+    pass

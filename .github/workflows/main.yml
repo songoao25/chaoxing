@@ -23,7 +23,7 @@ jobs:
       - name: Build binaries
         run: |
           pyinstaller -F main.py -n chaoxing --add-data "resource;resource"
-          pyinstaller -F setup_wizard.py -n chaoxing-setup --add-data "resource;resource" --hidden-import main
+          pyinstaller -F setup_wizard.py -n chaoxing-setup --add-data "resource;resource" --add-data "config_template.ini;." --hidden-import main
 
       - name: Create release package
         run: |

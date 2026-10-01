@@ -18,10 +18,13 @@ import json
 import os
 import textwrap
 import time
+import threading
+from uuid import uuid4
 from typing import List, Optional
 
 from api import paths
 from api.logger import logger
+from api.privacy import redact
 
 KIND_QUIZ = "测验简答"
 KIND_HOMEWORK = "作业简答"
@@ -29,6 +32,7 @@ KIND_DISCUSSION = "讨论回复"
 KIND_PRACTICE = "AI实践作答"
 
 _INDEX_NAME = "index.jsonl"
+_write_lock = threading.RLock()
 
 
 def index_path() -> str:
@@ -48,34 +52,49 @@ def _today() -> str:
 
 
 def record(kind: str, text: str, course: str = "", task: str = "",
-           status: str = "已提交", extra: Optional[dict] = None) -> Optional[dict]:
+           status: str = "待提交", extra: Optional[dict] = None) -> Optional[dict]:
     """留一条痕。返回记录；失败返回 None，且绝不影响主流程。"""
-    body = str(text or "").strip()
+    body = redact(str(text or "").strip())
     if not body:
         return None
     item = {
         "ts": _now(),
         "day": _today(),
         "kind": str(kind or "AI 生成"),
-        "course": str(course or ""),
-        "task": str(task or ""),
+        "course": redact(course or ""),
+        "task": redact(task or ""),
         "status": str(status or ""),
         "chars": len(body),
         "text": body,
+        "submission_id": str((extra or {}).get("submission_id") or uuid4().hex),
     }
-    if extra:
-        item.update({k: v for k, v in extra.items() if k not in item})
     try:
-        os.makedirs(paths.reviews_dir(), exist_ok=True)
-        with open(index_path(), "a", encoding="utf-8") as fp:
-            fp.write(json.dumps(item, ensure_ascii=False) + "\n")
-        with open(markdown_path(item["day"]), "a", encoding="utf-8") as fp:
-            fp.write(_markdown_block(item))
+        with _write_lock:
+            os.makedirs(paths.reviews_dir(), exist_ok=True)
+            os.chmod(paths.reviews_dir(), 0o700)
+            for path, content in (
+                (markdown_path(item["day"]), _markdown_block(item)),
+                (index_path(), json.dumps(item, ensure_ascii=False) + "\n"),
+            ):
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+                with os.fdopen(fd, "a", encoding="utf-8") as fp:
+                    os.chmod(path, 0o600)
+                    fp.write(content)
+                    fp.flush()
+                    os.fsync(fp.fileno())
     except Exception as e:  # 留痕失败不能影响刷课
-        logger.debug("复核记录写入失败: {}", e)
+        logger.warning("复核记录写入失败，本项不得提交: {}", e)
         return None
     logger.debug("已留痕待复核: {} · {}", item["kind"], item["task"])
     return item
+
+
+def update(item: Optional[dict], status: str) -> Optional[dict]:
+    """Append an honest status event; never erase the pre-request record."""
+    if not item:
+        return None
+    return record(item["kind"], item["text"], course=item["course"], task=item["task"],
+                  status=status, extra={"submission_id": item["submission_id"]})
 
 
 def _markdown_block(item: dict) -> str:
@@ -111,7 +130,10 @@ def load(days: Optional[int] = None, limit: Optional[int] = None) -> List[dict]:
                     continue
     except OSError:
         return items
-    items.reverse()
+    latest = {}
+    for number, item in enumerate(items):
+        latest[item.get("submission_id") or "legacy-" + str(number)] = item
+    items = list(reversed(list(latest.values())))
     if days:
         edge = time.strftime("%Y-%m-%d", time.localtime(time.time() - (int(days) - 1) * 86400))
         items = [i for i in items if str(i.get("day") or "") >= edge]

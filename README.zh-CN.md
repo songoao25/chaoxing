@@ -2,16 +2,15 @@
 
 [English](README.md) | **中文**
 
-[![CI](https://github.com/songoao25/chaoxing/actions/workflows/tests.yml/badge.svg)](https://github.com/songoao25/chaoxing/actions/workflows/tests.yml)
-[![Release](https://img.shields.io/github/v/release/songoao25/chaoxing?include_prereleases)](https://github.com/songoao25/chaoxing/releases)
-[![Last commit](https://img.shields.io/github/last-commit/songoao25/chaoxing)](https://github.com/songoao25/chaoxing/commits/main)
-[![许可证](https://img.shields.io/github/license/songoao25/chaoxing)](LICENSE)
+[![CI](https://github.com/Samueli924/chaoxing/actions/workflows/tests.yml/badge.svg)](https://github.com/Samueli924/chaoxing/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/Samueli924/chaoxing?include_prereleases)](https://github.com/Samueli924/chaoxing/releases)
+[![Last commit](https://img.shields.io/github/last-commit/Samueli924/chaoxing)](https://github.com/Samueli924/chaoxing/commits/main)
+[![许可证](https://img.shields.io/github/license/Samueli924/chaoxing)](LICENSE)
 
 一个命令行工具：不打开浏览器就能完成超星学习通（泛雅）的课程任务，覆盖平台上的两个入口——**章节**（目录）和**任务中心 · 教学任务**。
 
-本项目是 [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing) 的分支，在其命令行底座上补全了任务中心。
 
-> **项目状态。** 章节已完整支持。任务中心的视频、章节同步、AI 实践、作业、主题讨论已用真实账号验证通过；文档会按 30 秒节奏打点，但只要求阅读时长的文档实测平台不计入；思考题与课堂活动/签到不支持。
+> **支持范围。** 任务中心支持视频、章节同步、思维阶梯、作业和主题讨论；文档时长类、新版情景对话、思考题与课堂活动/签到需要手动处理。
 >
 > 只有平台自己的状态复查返回「完成」，程序才会记为完成——绝不因为点过提交就算完成。
 
@@ -31,7 +30,7 @@
 | AI 实践 | 🟡 | 支持「思维阶梯」：走 `main-talk` SSE 对话，提交后再请求 end-report 让平台现算成绩。新版情景对话是另一套接口，暂未适配 |
 | 作业 | ✅ | 选择 / 判断 / 填空走题库或 AI；简答题由 `api/ai_writer.py` 生成 |
 | 主题讨论 | ✅ | 读已有回复做风格参考，生成一条不重复的回复并提交 |
-| 文档 | ⚠️ | 需要读到底（readEnd）的文档能完成；只要求阅读时长的文档实测打点 600 秒 + readEnd 后平台仍不计入（两次验证），因此保持未完成，同一文档 24 小时内不重复读 |
+| 文档 | ⚠️ | 需要读到底（readEnd）的文档能完成；只要求阅读时长的文档未能确认平台计入阅读时长，因此保持未完成，同一文档 24 小时内不重复读 |
 | 思考题 | ❌ | 不支持——程序会明确提示你手动完成 |
 | 课堂活动 / 签到 | ❌ | 不支持 |
 
@@ -59,7 +58,7 @@
 ### 2. 下载项目
 
 ```bash
-git clone https://github.com/songoao25/chaoxing.git
+git clone https://github.com/Samueli924/chaoxing.git
 cd chaoxing
 python -m pip install -r requirements.txt
 ```
@@ -221,7 +220,6 @@ AI 写过并提交上去的实质内容——测验简答、作业简答、讨�
 - 每个手机号各自保存凭据和 cookie，账号之间不会互相覆盖。
 - 程序只与超星和你配置的答题服务通信，没有埋点，也不会上传课程内容。
 - 登录验证码在本机用 OCR 识别，不发给第三方。
-- `docs/artifacts/` 下的抓包样例里，账号、用户 id、课程参数和 token 都已替换成占位符。
 - 请只用于你自己的账号，并遵守学校的相关规定。
 
 ## 常见问题
@@ -254,7 +252,6 @@ make doctor    # 环境自检
 
 单测用标准库 `unittest` + 假实现（`FakeSession`、`FakeTC`），不用 pytest、不用 ruff、不联网。CI（[.github/workflows/tests.yml](.github/workflows/tests.yml)）在每次 push 和 PR 时用 Python 3.13 跑一遍。
 
-改行为要带上 `tests/` 下的离线单测，并遵守 [AGENTS.md](AGENTS.md) 里的铁律。当前状态与交接记录见 [docs/handoff/HANDOFF.md](docs/handoff/HANDOFF.md)。
 
 | 路径 | 作用 |
 | --- | --- |
@@ -270,18 +267,16 @@ make doctor    # 环境自检
 | `api/ai_writer.py` | 作业与讨论的去 AI 味写作 |
 | `tools/probe/` | 只读探针：进度快照、分类总表 |
 | `tests/` | 离线单测 |
-| `docs/` | 交接记录、运行手册、架构、抓包样例 |
+| `docs/` | 使用、排错与架构说明 |
 
 ## 仓库约定
 
 - 欢迎提 issue 和 PR，一次改动尽量小而聚焦。
 - 不要提交凭据、cookie、token 或个人信息，样例必须脱敏。
-- 这是分支项目：保留上游署名，适合上游的改进也欢迎提给上游。
 
 ## 参考
 
 - 上游项目：[Samueli924/chaoxing](https://github.com/Samueli924/chaoxing)
-- 平台结构说明：[docs/PLATFORM-NOTES.md](docs/PLATFORM-NOTES.md)
 
 ## 许可证
 

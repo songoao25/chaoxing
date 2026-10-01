@@ -18,7 +18,7 @@
             不够就回看；只要求"播完"时可用配置倍速。
     * 文档：阅读器每 30 秒向 data-xxt 上报一次 readPoint，服务端据此累计阅读时长，
             凑够 documentWatchDuration 分钟后按需调 /documentStudy/readEnd。
-    * 章节：任务点里带 knowledgeId，但任务引擎同步参数仍缺真实完成事件证据，暂不自动接入。
+    * 章节：任务点里带 knowledgeId，但通过平台返回的 stuJobInfo 同步完成状态。
     * 作业：任务引擎的学习页是 mooc2/work/dowork（新版结构），提交接口
             addStudentWorkNewWeb；选择题/判断题/填空题走题库，简答题走 ai_writer，
             提交前走统一确认门禁（章节测验的 api/work 接口对课程级作业返回 403，不能复用）。
@@ -26,7 +26,6 @@
             POST /pc/invitation/{topicUuid}/addReplys；文本有硬伤（编造经历等）直接不提交。
 其余类型（思考题）目前不做，会明确写日志提示手动完成，绝不会假装成功。
 
-结构分类和实测结论见 docs/PLATFORM-NOTES.md。
 接口全部是只读探测出来的，任何一步失败都只影响该任务点，不会影响章节刷课。
 """
 
@@ -1577,7 +1576,7 @@ class TaskCenter:
 
     def _ai_answer(self, turn: dict, data: dict, exclude=None) -> str:
         stem = str(turn.get("questionStem") or turn.get("content") or "").strip()
-        question_type = str(turn.get("questionTypeInt") or "").strip()
+        question_type = str(turn.get("questionTypeInt") if turn.get("questionTypeInt") is not None else "").strip()
         options = self._ai_options(turn.get("options"))
         if not question_type:
             question_label = str(turn.get("questionType") or "")
@@ -1668,17 +1667,22 @@ class TaskCenter:
 
     @staticmethod
     def _ai_turn_type(turn: dict) -> str:
-        """AI 实践里的一道题属于什么题型（仅用于留痕显示）"""
-        q_type = str((turn or {}).get("questionType") or "").strip()
-        if q_type in {"0", "1"}:
-            return "single" if q_type == "0" else "multiple"
-        if q_type == "2":
+        raw = (turn or {}).get("questionTypeInt")
+        label = str((turn or {}).get("questionType") or "").strip()
+        value = str(raw) if raw is not None else label
+        if value in {"0", "1", "3"}:
+            return {"0": "single", "1": "multiple", "3": "judgement"}[value]
+        if "判断" in label:
             return "judgement"
+        if "多选" in label:
+            return "multiple"
+        if "单选" in label or (turn or {}).get("options"):
+            return "single"
         return "shortanswer"
 
     @staticmethod
     def _ai_turn_title(turn: dict) -> str:
-        for key in ("stem", "question", "title", "content"):
+        for key in ("questionStem", "stem", "question", "title", "content"):
             value = str((turn or {}).get(key) or "").strip()
             if value:
                 return value
@@ -1870,43 +1874,50 @@ class TaskCenter:
         }
         if echo:
             emit_block(f"讨论 · {clip(name, 24)}", reply)
-        post_url = f"{DISCUSSION_BASE}/pc/invitation/{quote(str(topic_uuid))}/addReplys"
+        item = review.record(review.KIND_DISCUSSION, reply, course=course.get("title", ""),
+                             task=name, status="待提交")
+        if not item:
+            logger.warning("讨论复核记录写入失败，本次不提交")
+            return False
+        status = "请求失败或平台未确认"
         try:
-            posted = self.session.post(
-                post_url,
-                data=payload,
-                timeout=TASK_CENTER_TIMEOUT,
-                headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "Origin": DISCUSSION_BASE,
-                    "Referer": study_url,
-                },
-            )
-        except Exception as e:
-            logger.warning("主题讨论提交请求失败: {} - {}", name, e)
-            return False
-        if getattr(posted, "status_code", 0) != 200:
-            logger.warning("主题讨论提交失败: {} HTTP {}", name, getattr(posted, "status_code", "?"))
-            return False
-        try:
-            data = posted.json()
-        except ValueError:
-            logger.warning("主题讨论提交返回的不是 JSON，本次不判定成功: {}", name)
-            return False
-        if not isinstance(data, dict) or not data.get("status"):
-            logger.warning("主题讨论提交被平台拒绝: {} -> {}", name, str(data)[:200])
-            return False
-        if not data.get("datas"):
-            logger.info("主题讨论已提交，平台提示需要审核: {}", name)
-            review.record(review.KIND_DISCUSSION, reply, course=course.get("title", ""),
-                          task=name, status="已提交，平台提示需审核")
-        else:
-            logger.info("主题讨论已回复（等待任务中心状态复查）: {}", name)
-            review.record(review.KIND_DISCUSSION, reply, course=course.get("title", ""),
-                          task=name, status="已提交，等平台确认")
-        return True
+            post_url = f"{DISCUSSION_BASE}/pc/invitation/{quote(str(topic_uuid))}/addReplys"
+            try:
+                posted = self.session.post(
+                    post_url,
+                    data=payload,
+                    timeout=TASK_CENTER_TIMEOUT,
+                    headers={
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        "Origin": DISCUSSION_BASE,
+                        "Referer": study_url,
+                    },
+                )
+            except Exception as e:
+                logger.warning("主题讨论提交请求失败: {} - {}", name, e)
+                return False
+            if getattr(posted, "status_code", 0) != 200:
+                logger.warning("主题讨论提交失败: {} HTTP {}", name, getattr(posted, "status_code", "?"))
+                return False
+            try:
+                data = posted.json()
+            except ValueError:
+                logger.warning("主题讨论提交返回的不是 JSON，本次不判定成功: {}", name)
+                return False
+            if not isinstance(data, dict) or not data.get("status"):
+                logger.warning("主题讨论提交被平台拒绝: {} -> {}", name, str(data)[:200])
+                return False
+            if not data.get("datas"):
+                logger.info("主题讨论已提交，平台提示需要审核: {}", name)
+            else:
+                logger.info("主题讨论已回复（等待任务中心状态复查）: {}", name)
+            status = "平台已接受，等待任务状态复查" if data.get("datas") else "平台已接受，待审核"
+            return True
+
+        finally:
+            review.update(item, status)
 
     # ------------------------------------------------------------ 提交去重
 
@@ -1991,16 +2002,23 @@ class TaskCenter:
                 writer = getattr(self, "writer", None)
                 if writer is None or not getattr(writer, "available", False):
                     return f"简答题需要 AI 写作器，当前不可用：{str(q.get('title'))[:40]}"
-                answer = writer.answer(str(q.get("title") or ""))
+                try:
+                    answer = writer.answer(str(q.get("title") or ""))
+                except Exception as exc:
+                    return "简答题未通过检查：" + str(exc)
                 answer = str(answer or "").strip()
                 if not answer:
                     return f"简答题没有生成内容：{str(q.get('title'))[:40]}"
-                review.record(
+                item = review.record(
                     review.KIND_HOMEWORK, answer,
                     course=(course or {}).get("title", ""),
                     task=task_name or "",
-                    status="已提交，等平台确认",
+                    status="待确认",
                 )
+                if not item:
+                    return "简答题复核记录写入失败"
+                q["_review_item"] = item
+                emit_block(f"简答 {_qi}", answer)
             elif not res:
                 answer = random_answer(q.get("options", ""), q_type)
             elif q_type == "multiple":
@@ -2074,68 +2092,79 @@ class TaskCenter:
 
         failure = self._fill_homework_answers(questions, course=course, task_name=name)
         if failure:
+            for question in questions:
+                review.update(question.get("_review_item"), "生成或复核失败，未提交")
             logger.warning("作业 [{}] 未提交：{}", name, failure)
             return False
 
-        if not self.confirm_submission("作业", f"{name}：共 {len(questions)} 题"):
-            return False
-
-        action = str(page.get("form_action") or "").strip()
-        if not action:
-            logger.warning("作业页没有提交地址，本次不提交: {}", name)
-            return False
-        if action.startswith("/"):
-            action = "https://mooc1.chaoxing.com" + action
-
-        payload = {
-            key: value for key, value in page.items()
-            if key not in ("questions", "form_action", "form_method")
-        }
-        payload["answerwqbid"] = page.get("answerwqbid", "")
-        payload["pyFlag"] = ""
-        for question in questions:
-            answer_field = question.get("answerField") or {}
-            payload[f"answer{question['id']}"] = answer_field.get(f"answer{question['id']}", "")
-            payload[f"answertype{question['id']}"] = answer_field.get(
-                f"answertype{question['id']}", ""
-            )
-        # 填空题按空提交（answerEditor{id}{n} + tiankongsize{id}），与章节测验同一规则
-        for question in questions:
-            build_completion_fields(payload, question)
-
-        sep = "&" if "?" in action else "?"
-        submit_url = action + sep + "pyFlag=&ua=pc&formType=post&saveStatus=1&version=1"
+        review_items = [q["_review_item"] for q in questions if q.get("_review_item")]
+        review_status = "请求失败或平台未确认"
         try:
-            submitted = self.session.post(
-                submit_url,
-                data=payload,
-                timeout=TASK_CENTER_TIMEOUT,
-                headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "Origin": "https://mooc1.chaoxing.com",
-                    "Referer": study_url,
-                },
-            )
-        except Exception as e:
-            logger.warning("作业提交请求失败: {} - {}", name, e)
-            return False
-        if getattr(submitted, "status_code", 0) != 200:
-            logger.warning("作业提交失败: {} HTTP {}", name, getattr(submitted, "status_code", "?"))
-            return False
-        try:
-            data = submitted.json()
-        except ValueError:
-            logger.warning("作业提交返回的不是 JSON，本次不判定成功: {}", name)
-            return False
-        if not isinstance(data, dict) or not data.get("status"):
-            logger.warning("作业提交被平台拒绝: {} -> {}", name, str(data)[:200])
-            return False
+            if not self.confirm_submission("作业", f"{name}：共 {len(questions)} 题"):
+                review_status = "用户取消，未提交"
+                return False
 
-        self._mark_submitted(plan)
-        logger.info("作业已提交（等待任务中心状态复查）: {}", name)
-        return True
+            action = str(page.get("form_action") or "").strip()
+            if not action:
+                logger.warning("作业页没有提交地址，本次不提交: {}", name)
+                return False
+            if action.startswith("/"):
+                action = "https://mooc1.chaoxing.com" + action
+
+            payload = {
+                key: value for key, value in page.items()
+                if key not in ("questions", "form_action", "form_method")
+            }
+            payload["answerwqbid"] = page.get("answerwqbid", "")
+            payload["pyFlag"] = ""
+            for question in questions:
+                answer_field = question.get("answerField") or {}
+                payload[f"answer{question['id']}"] = answer_field.get(f"answer{question['id']}", "")
+                payload[f"answertype{question['id']}"] = answer_field.get(
+                    f"answertype{question['id']}", ""
+                )
+            # 填空题按空提交（answerEditor{id}{n} + tiankongsize{id}），与章节测验同一规则
+            for question in questions:
+                build_completion_fields(payload, question)
+
+            sep = "&" if "?" in action else "?"
+            submit_url = action + sep + "pyFlag=&ua=pc&formType=post&saveStatus=1&version=1"
+            try:
+                submitted = self.session.post(
+                    submit_url,
+                    data=payload,
+                    timeout=TASK_CENTER_TIMEOUT,
+                    headers={
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        "Origin": "https://mooc1.chaoxing.com",
+                        "Referer": study_url,
+                    },
+                )
+            except Exception as e:
+                logger.warning("作业提交请求失败: {} - {}", name, e)
+                return False
+            if getattr(submitted, "status_code", 0) != 200:
+                logger.warning("作业提交失败: {} HTTP {}", name, getattr(submitted, "status_code", "?"))
+                return False
+            try:
+                data = submitted.json()
+            except ValueError:
+                logger.warning("作业提交返回的不是 JSON，本次不判定成功: {}", name)
+                return False
+            if not isinstance(data, dict) or not data.get("status"):
+                logger.warning("作业提交被平台拒绝: {} -> {}", name, str(data)[:200])
+                return False
+
+            review_status = "平台已接受，等待任务状态复查"
+            self._mark_submitted(plan)
+            logger.info("作业已提交（等待任务中心状态复查）: {}", name)
+            return True
+
+        finally:
+            for item in review_items:
+                review.update(item, review_status)
 
     def study_ai_practice(self, study_url: str, plan: Optional[dict] = None) -> bool:
         """续接/完成一次 AI 实践，并在达到最低分后才返回 True。
@@ -2268,11 +2297,16 @@ class TaskCenter:
                 attempts[question_key] = attempts.get(question_key, 0) + 1
                 try:
                     answer = self._ai_answer(turn, data, exclude=used)
-                    review.record(
-                        review.KIND_PRACTICE, answer,
-                        course="", task=(plan or {}).get("name") or "",
-                        status="已提交给平台评分",
-                    )
+                    item = None
+                    if self._ai_turn_type(turn) == "shortanswer":
+                        item = review.record(
+                            review.KIND_PRACTICE, answer,
+                            course="", task=(plan or {}).get("name") or "",
+                            status="待发送给平台评分",
+                        )
+                        if not item:
+                            logger.warning("AI实践复核记录写入失败，本次不发送")
+                            return False
                 except Exception as e:
                     logger.warning("AI实践生成答案失败: {}", e)
                     return False
@@ -2281,10 +2315,17 @@ class TaskCenter:
                 turn_count += 1
                 emit(answer_line(turn_count, self._ai_turn_type(turn), answer,
                                  self._ai_turn_title(turn)))
+                if self._ai_turn_type(turn) == "shortanswer":
+                    emit_block(f"AI实践简答 {turn_count}", answer)
                 if turn_count > 1:
                     time.sleep(1.0)
                 before_msgs = len((data or {}).get("messageList") or [])
-                next_turn = self._ai_stream(params, record_uuid, answer)
+                try:
+                    next_turn = self._ai_stream(params, record_uuid, answer)
+                except Exception:
+                    review.update(item, "请求失败或平台未确认")
+                    raise
+                review.update(item, "平台返回对话响应" if next_turn is not None else "请求失败或平台未确认")
                 if next_turn is None:
                     return False
 

@@ -22,6 +22,8 @@ jobs:
           python-version: '3.13'
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Public contribution guard
+        run: python tools/audit/publication_guard.py
       - name: Compile check
         run: python -m compileall -q api main.py setup_wizard.py tools tests
       - name: Unit tests (offline)

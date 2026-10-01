@@ -57,6 +57,9 @@ def cookie_path(username=None):
 
 
 def save_cookies(session: requests.Session, username=None):
+    from api.privacy import register_secret
+    for value in session.cookies.values():
+        register_secret(value)
     with cookie_lock:
         buffer = ""
         for k, v in session.cookies.items():
@@ -94,6 +97,9 @@ def use_cookies(username=None) -> dict:
                         cookies[parts[0]] = parts[1]
         except Exception:
             return {}
+        from api.privacy import register_secret
+        for value in cookies.values():
+            register_secret(value)
         return cookies
 
 

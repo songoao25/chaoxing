@@ -264,6 +264,8 @@ class Tiku(ABC):
         pass
 
     def config_set(self, config):
+        from api.privacy import register_config
+        register_config(config)
         self._conf = config
 
     def _get_conf(self):
@@ -955,7 +957,7 @@ class TikuLike(Tiku):
 
         # 检查该token是否有余额
         if self._balance.get(token, 0) <= 0:
-            logger.error(f'{self.name}当前Token查询次数不足: ...{token[-5:]}')
+            logger.error(f'{self.name}当前Token查询次数不足: [redacted]')
             # 尝试选择其他有余额的token
             available_tokens = [t for t in self._tokens if self._balance.get(t, 0) > 0]
             if available_tokens:
@@ -973,10 +975,10 @@ class TikuLike(Tiku):
             try_times += 1
             if ans:  # 如果查询成功，减少余额
                 self._balance[token] -= 1
-                logger.info(f'使用Token ...{token[-5:]} 查询成功，剩余次数: {self._balance[token]}')
+                logger.info(f'使用Token [redacted] 查询成功，剩余次数: {self._balance[token]}')
                 break
             elif try_times < self._retry_times:
-                logger.warning(f'使用Token ...{token[-5:]} 查询失败，进行第 {try_times + 1} 次重试...')
+                logger.warning(f'使用Token [redacted] 查询失败，进行第 {try_times + 1} 次重试...')
 
         # 10次查询后更新余额
         self._count = (self._count + 1) % 10
@@ -1203,7 +1205,7 @@ class TikuLike(Tiku):
             balance = self.get_api_balance(token)
             self._balance[token] = balance
             logger.info(
-                f"当前LIKE知识库Token: ...{token[-5:]} 的剩余查询次数为: {balance} (仅供参考, 实际次数以查询结果为准)")
+                f"当前LIKE知识库Token: [redacted] 的剩余查询次数为: {balance} (仅供参考, 实际次数以查询结果为准)")
 
     def load_tokens(self) -> None:
         tokens_str = self._conf.get('tokens')

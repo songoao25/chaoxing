@@ -11,7 +11,7 @@
 - [ ] `make lint` (compile check + full offline unit tests)
 - [ ] Behaviour changes come with an offline test under `tests/` (no network, no real account)
 - [ ] Failure, skip and "platform has not confirmed" messages are still honest
-- [ ] If verified against a real account: sanitized account info and the verification date are noted
+- [ ] Any platform validation states its scope without publishing account details
 - [ ] Unverified paths are clearly marked in the docs
 - [ ] Commit messages use a Conventional Commit prefix (`feat:` / `fix:` / `docs:` / `test:` / `chore:`)
 
@@ -24,4 +24,4 @@
 
 ## Related
 
-<!-- Refs: TASKS#xxx / Closes #xxx -->
+<!-- Closes #xxx, if applicable -->
