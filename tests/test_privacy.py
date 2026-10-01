@@ -44,6 +44,10 @@ class PrivacyTest(unittest.TestCase):
                       'Set-Cookie: synthetic_sid=alpha-demo; Path=/'):
             self.assertNotIn("alpha-demo", privacy.redact(value))
             self.assertNotIn("beta-demo", privacy.redact(value))
+        for value in ('payload={"token": ["alpha-demo", "beta-demo"]}',
+                      'payload={"authorization": {"primary": "alpha-demo", "secondary": "beta-demo"}}'):
+            self.assertNotIn("alpha-demo", privacy.redact(value))
+            self.assertNotIn("beta-demo", privacy.redact(value))
         record = {"message": "safe", "extra": {"request": {"cookies": {"sid": "alpha-demo"}}}}
         privacy.patch_record(record)
         self.assertNotIn("alpha-demo", str(record))

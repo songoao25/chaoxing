@@ -560,7 +560,7 @@ def _curl_get(session, url, params, headers=None, timeout: int = 20):
 
     存在的意义：部分网络环境下 urllib3/OpenSSL 的 TLS 指纹会被超星风控在
     mooc 视频打点接口上拒绝，返回 403 错误页；同一时刻用相同的 URL、查询参数、
-    Cookie、User-Agent 走 curl（SecureTransport/LibreSSL）却是 200（2026-09-17 实测）。
+    Cookie、User-Agent 走 curl（SecureTransport/LibreSSL）却是 200（）。
     所以这里只在 requests 拿到 403 时做一次等价重放，不影响正常环境。
     """
     import shutil

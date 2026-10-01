@@ -293,7 +293,7 @@ class HumanLikeWriter:
                        require_course_anchor: bool = False) -> list:
         """真人化自检：返回命中的问题（空列表=过检）
 
-        这些规则来自 2026-09-17 两次独立真人化审计：
+        检查范围：
         结尾金句、无来源的假具体、口癖分布过密、长文没有一处真实的犹豫。
         """
         text = str(text or "")
@@ -301,11 +301,11 @@ class HumanLikeWriter:
         # No authenticated course or personal source material is accepted by this
         # API. Reject source attribution and narrated experience conservatively,
         # rather than enumerating time adverbs that a model can paraphrase.
-        if re.search(r"教材|课本|老师|教师|教授|授课|课上|课堂|(?:本章|本节|课程|讲义|原文).{0,8}(?:写|说|指出|提及|提到|强调)", text):
+        if re.search(r"教材|课本|讲义|老师|教师|教授|授课|课上|课堂|(?:本章|本节|课程|讲义|原文).{0,8}(?:写|说|指出|提及|提到|强调)", text):
             problems.append("未经提供的课程来源")
         if re.search(r"(?<!如果)(?<!假如)(?<!假设)我(?!觉得|认为|倾向|更支持|不支持|建议|理解|赞同|同意|支持|们(?:可以|应该|需要|认为))", text):
             problems.append("未经提供的个人经历")
-        if "我" in text and re.search(r"曾经|去年|前年|当时|参加过|参加的|实习|培训|亲身|我们组", text):
+        if "我" in text and re.search(r"曾经|去年|前年|当时|参加过|参加的|实习|培训|亲身|亲自|经营过|我们组", text):
             problems.append("未经提供的个人经历")
         if cls.find_leak(text):
             problems.append("平台判分话术")
@@ -351,7 +351,7 @@ class HumanLikeWriter:
         """生成 + 自检：不合格就重写，平台判分话术残留直接报错。
 
         宁可失败也不能把"回答正确/依据：/本题考核知识点"这类平台判分话术
-        写进要提交给老师的正文里（2026-09-17 真实事故）。
+        写进要提交给老师的正文里（）。
         """
         text = ""
         last_problems = []

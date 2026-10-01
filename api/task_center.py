@@ -84,10 +84,10 @@ PLAN_TYPE_NAMES = {
 
 # 目前能自动完成且能由任务中心状态复查的类型。
 # 章节类型现在能打通：刷 mooc 章节时带 courseEngineInfo，平台下发 stuJobInfo 后
-# 调 autoPullChapterScore，最后用 isFinish 复查（2026-09-17 真实账号已验收）。
-# 作业：2026-09-20 已拿到真实学习页与提交表单（mooc2/work/dowork +
+# 调 autoPullChapterScore，最后用 isFinish 复查。
+# 作业： 读取学习页与提交表单（mooc2/work/dowork +
 # addStudentWorkNewWeb），按"接口业务成功 + 任务中心状态复查"接入。
-# 思考题/讨论待真实接口证据后再加入。
+# 思考题暂不支持，不能按完成处理。
 SUPPORTED_PLAN_TYPES = {
     PLAN_TYPE_CHAPTER, PLAN_TYPE_VIDEO, PLAN_TYPE_DOCUMENT, PLAN_TYPE_AI,
     PLAN_TYPE_HOMEWORK, PLAN_TYPE_DISCUSS,
@@ -1736,7 +1736,7 @@ class TaskCenter:
         """
         完成「任务中心 -> 主题讨论」任务点（planType=14）。
 
-        真实接口（groupweb.chaoxing.com，2026-09-20 取证）：
+        真实接口（groupweb.chaoxing.com，）：
           * 话题详情页：GET study_url（302 到 .../replysList?courseId=&classId=），
             页面里的 window.obj 带 urlToken / topic.title / topic.content；
           * 已有回复：GET /pc/invitation/getReplyList?bbsid=&uuid=&order=2；

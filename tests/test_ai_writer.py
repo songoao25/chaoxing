@@ -122,7 +122,7 @@ class WriterTestCase(unittest.TestCase):
 
 class ThinkingPolicyPayloadTestCase(unittest.TestCase):
     """
-    thinking 策略（2026-09-20 调整）：
+    thinking 策略：
       auto（默认）= 第一次请求不带 thinking，让 V4.1 flash 自己推理；
       正文为空才自动降级成 thinking=disabled 再试一次。
     """

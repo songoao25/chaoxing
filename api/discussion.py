@@ -6,7 +6,7 @@
 模式 2 就是这里：先只读统计讨论区有多少帖子 → 用户挑要回复哪几条 → 逐条给草稿、
 确认后再发送。
 
-接口（2026-09-21 只读取证，groupweb.chaoxing.com）：
+接口（，groupweb.chaoxing.com）：
   * 帖子列表 GET /pc/topic/topiclist/{bbsid}/getTopicList
       ?folder_uuid=&page=1&pageSize=20&kw=&last_reply_time=&searchType=&authMappId=&isSetTop=1
   * 帖子详情与发回复复用 TaskCenter.draft_reply / submit_reply（与模式 1 同一条链路）。

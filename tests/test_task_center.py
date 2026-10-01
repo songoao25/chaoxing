@@ -931,7 +931,7 @@ class SubmitModeTestCase(unittest.TestCase):
 class ConfirmPromptStdinTestCase(unittest.TestCase):
     """确认提示必须先让键盘监听让出 stdin
 
-    真机踩坑（独立审计用 pty 复现）：章节阶段起的键盘监听线程会把终端设成
+    终端并发约束：章节阶段起的键盘监听线程会把终端设成
     cbreak 并一直 os.read(stdin,1)，与 input() 抢字符——逐字敲 "yes" 会被
     吃成 "ye"/"ys"（按取消处理），甚至让 input() 永久挂住且看不到回显。
     """

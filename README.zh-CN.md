@@ -191,7 +191,7 @@ python main.py -u <phone> -p <password> -l <ids>    # 指定账号和课程
 AI 写过并提交上去的实质内容——测验简答、作业简答、讨论回复、AI 实践作答——运行时会实时打印，同时落盘：
 
 ```text
-~/.chaoxing/reviews/2026-09-21.md     # 每天一个 Markdown 文件
+~/.chaoxing/reviews/YYYY-MM-DD.md     # 每天一个 Markdown 文件
 ~/.chaoxing/reviews/index.jsonl       # cx review 用的索引
 ```
 
@@ -246,7 +246,6 @@ AI 写过并提交上去的实质内容——测验简答、作业简答、讨�
 make test      # 离线单测（335 个，不联网、不碰真实账号）
 make lint      # 编译检查 + 单测，提交前跑一遍
 make test-313  # 用 CI 的版本（3.13）再跑一遍；本机可能是 3.14
-make status    # 只读的任务中心进度快照
 make doctor    # 环境自检
 ```
 
@@ -265,7 +264,6 @@ make doctor    # 环境自检
 | `api/review.py` | AI 文本留痕（`cx review`） |
 | `api/answer.py` | 题库（含大模型 provider）与答题 |
 | `api/ai_writer.py` | 作业与讨论的去 AI 味写作 |
-| `tools/probe/` | 只读探针：进度快照、分类总表 |
 | `tests/` | 离线单测 |
 | `docs/` | 使用、排错与架构说明 |
 

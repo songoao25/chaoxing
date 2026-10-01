@@ -5,6 +5,4 @@ __pycache__/
 *.pyc
 docs/
 tests/
-tools/probe/local.env
-tools/probe/__pycache__/
 *.log

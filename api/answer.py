@@ -1363,7 +1363,7 @@ class AI(Tiku):
         """
         统一的答题模型调用：thinking 默认交给模型自己（auto）。
 
-        2026-09-20 实测：DeepSeek V4.1 flash 默认带推理且正文正常，
+        ：DeepSeek V4.1 flash 默认带推理且正文正常，
         强关 thinking 只会降低正确率；旧版本"正文为空"的情况由
         api/llm.create_completion 自动降级重试，reasoning_content 也能兜底。
         """

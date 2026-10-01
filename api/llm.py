@@ -2,11 +2,7 @@
 """
 大模型调用的统一策略层（thinking 模式自适应）。
 
-背景（2026-09-20 实测）：
-  DeepSeek flash 系列不同版本的 thinking 行为不一样——
-  旧版默认开 thinking 且 message.content 为空（当时只能强关）；
-  新版（V4.1 起）默认带推理，content 正常，而且带推理的正确率明显更高。
-  所以不能再写死"永远关 thinking"，也不能假设"一定有 content"。
+不同模型可能返回正文、推理正文或空响应，需要按实际响应降级。
 
 策略（thinking = auto/on/off，默认 auto）：
   auto: 按模型默认行为调用；正文为空但有 reasoning 时用 reasoning 兜底；

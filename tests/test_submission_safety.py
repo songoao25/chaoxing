@@ -80,7 +80,9 @@ class SubmissionSafetyTest(unittest.TestCase):
                      "我们小组曾经做过成本调查。", "我去年参加过企业培训。",
                      "教材第二章明确写道，成本需要分摊。", "我参加过一次企业培训。", "我理解这个问题，是因为曾经参加过企业培训。",
                      "我认为去年参加的企业培训很有帮助。", "教授在授课时明确提及固定成本不会随产量变化。",
-                     "本章原文写道，固定成本不会随产量变化。"):
+                     "本章原文写道，固定成本不会随产量变化。",
+                     "我认为亲自经营过店铺以后，更能理解成本。",
+                     "讲义中将固定成本定义为不随产量变化的成本。"):
             writer = HumanLikeWriter({})
             with mock.patch.object(writer, "_chat", return_value=text) as chat:
                 with self.assertRaises(RuntimeError):

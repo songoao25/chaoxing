@@ -5,12 +5,12 @@ AI 生成内容复核（留痕 + 查阅）。
 刷课过程中由 AI 生成、最终提交给平台的"实质性文字"——章节测验简答、作业简答、
 主题讨论回复、AI 实践作答——都会在这里留一份可读记录：
 
-    ~/.chaoxing/reviews/2026-09-21.md   人读（Markdown，可直接打开看）
+    ~/.chaoxing/reviews/YYYY-MM-DD.md   人读（Markdown，可直接打开看）
     ~/.chaoxing/reviews/index.jsonl     机读（cx review 用它做翻阅）
 
 设计原则：
   * 只记录"会被平台看到的文字"；客观题的字母答案没有复核价值，不记；
-  * 记录失败绝不影响刷课（软着陆），只写一行 DEBUG；
+  * 记录失败阻止本项提交，其他任务可以继续；
   * 不含账号、密码、cookie 等敏感信息，只有课程名 / 任务名 / 时间 / 正文 / 平台状态。
 """
 
@@ -53,7 +53,7 @@ def _today() -> str:
 
 def record(kind: str, text: str, course: str = "", task: str = "",
            status: str = "待提交", extra: Optional[dict] = None) -> Optional[dict]:
-    """留一条痕。返回记录；失败返回 None，且绝不影响主流程。"""
+    """留一条痕。返回记录；失败返回 None，调用方必须阻止本项提交。"""
     body = redact(str(text or "").strip())
     if not body:
         return None
@@ -82,7 +82,7 @@ def record(kind: str, text: str, course: str = "", task: str = "",
                     fp.write(content)
                     fp.flush()
                     os.fsync(fp.fileno())
-    except Exception as e:  # 留痕失败不能影响刷课
+    except Exception as e:  # 调用方必须在 None 时阻止提交
         logger.warning("复核记录写入失败，本项不得提交: {}", e)
         return None
     logger.debug("已留痕待复核: {} · {}", item["kind"], item["task"])

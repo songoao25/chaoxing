@@ -191,7 +191,7 @@ The wizard writes `~/.chaoxing/config.ini`; `config_template.ini` documents ever
 Every substantive text an AI wrote and the tool submitted — quiz short answers, homework essays, discussion replies, AI-practice answers — is printed while the run is going and saved to disk:
 
 ```text
-~/.chaoxing/reviews/2026-09-21.md     # one Markdown file per day
+~/.chaoxing/reviews/YYYY-MM-DD.md     # one Markdown file per day
 ~/.chaoxing/reviews/index.jsonl       # index used by cx review
 ```
 
@@ -246,7 +246,6 @@ Objective answers (letters, true/false) are not recorded — there is nothing to
 make test      # offline unit tests (335 tests, no network, no real account)
 make lint      # compile check + tests — run before every commit
 make test-313  # the same suite on the CI version (3.13); local Python may be 3.14
-make status    # read-only Task Center progress snapshot
 make doctor    # environment self-check
 ```
 
@@ -265,7 +264,6 @@ Tests use the standard library `unittest` against fakes (`FakeSession`, `FakeTC`
 | `api/review.py` | Review log for AI-written text |
 | `api/answer.py` | Question banks (including AI providers) and answering |
 | `api/ai_writer.py` | Human-like writing for homework and discussions |
-| `tools/probe/` | Read-only probes: progress snapshots, classification tables |
 | `tests/` | Offline unit tests |
 | `docs/` | Handoff notes, runbook, architecture, capture samples |
 
