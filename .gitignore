@@ -180,3 +180,12 @@ HANDOFF*
 AUDIT-REPORT*
 .env.*
 !.env.example
+
+# 桌面端（desktop/）：Wails 的构建脚手架与静态前端是源码，需要入库；
+# 上面的 build/、dist/ 规则只针对 Python 打包产物，这里显式放行。
+!desktop/build/
+!desktop/build/**
+!desktop/frontend/dist/
+!desktop/frontend/dist/**
+desktop/build/bin/
+desktop/frontend/wailsjs/

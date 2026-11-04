@@ -1,0 +1,8 @@
+# Wails 构建产物
+build/bin/
+# wails build 自动生成的 JS 绑定（前端直接调用 window.go，不需要入库）
+frontend/wailsjs/
+# 依赖与本地配置
+node_modules/
+# 本地编译的验收工具（源码入库，产物不入库）
+tools/bin/

@@ -1,9 +1,11 @@
 # 常用命令：给人和 Agent 共用
 PY := ./.venv/bin/python
-.PHONY: help test lint compile publication doctor
+WAILS ?= $(shell command -v wails 2>/dev/null || echo $(HOME)/go/bin/wails)
+APP := desktop/build/bin/chaoxing-desktop.app
+.PHONY: help test lint compile publication doctor desktop-build desktop-test desktop-selftest desktop-run
 
 help:  ## 列出所有命令
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # 本地默认解释器可能比 CI 新（如 3.14）：注解求值时机不同，
 # 提交前用 CI 同版本再跑一遍，避免"本地绿、CI 红"。
@@ -37,3 +39,17 @@ doctor:  ## 环境自检
 	@echo "venv   : $$(test -x $(PY) && echo ok || echo missing)"
 	@echo "data   : $$(test -d $$HOME/.chaoxing && echo $$HOME/.chaoxing || echo 'missing (~/.chaoxing)')"
 	@$(PY) -c "import requests, bs4, loguru, tqdm; print('deps   : ok')"
+
+# ---- 桌面端（desktop/，Go + Wails，仅 macOS） ----
+
+desktop-build:  ## 构建桌面端 .app（需要 Wails CLI）
+	cd desktop && $(WAILS) build
+
+desktop-test:  ## 桌面端 Go 检查与测试
+	cd desktop && go vet ./... && go test -race ./...
+
+desktop-selftest:  ## 桌面端无头自检（mock 数据，不联网）
+	CX_DESKTOP_MOCK=1 $(APP)/Contents/MacOS/chaoxing-desktop --self-test
+
+desktop-run:  ## 打开构建好的桌面端
+	open $(APP)

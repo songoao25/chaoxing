@@ -187,6 +187,24 @@ python setup_wizard.py
 删除当前文件不会清除 Git 历史。公开贡献仅包含可维护的代码、
 用户文档和合成测试数据；工作笔记保存在仓库之外。
 
+## 桌面图形界面（macOS）
+
+`desktop/` 下是基于 Go + Wails 的图形界面，复用本仓库的 Python 引擎，不改变 CLI 行为：
+选账号、勾课程、一键开刷、实时阶段与日志、随时停止、结果汇总、AI 文字复核和常用设置。
+凭据、账号和复核记录沿用 `~/.chaoxing/`，GUI 不额外保存密码。
+
+```sh
+cd desktop
+~/go/bin/wails build        # 产物：desktop/build/bin/chaoxing-desktop.app
+open build/bin/chaoxing-desktop.app
+```
+
+构建与开发说明见 [desktop/README.md](desktop/README.md)，三端接口契约见
+[desktop/docs/INTERFACE.md](desktop/docs/INTERFACE.md)，视觉规范见
+[desktop/docs/DESIGN.md](desktop/docs/DESIGN.md)。界面与同作者的「雨课堂刷课助手」
+共用一套 macOS 系统设置风格设计语言（令牌/组件同名同值）。
+v1 只在 macOS 上构建与验证；Windows/Linux 可自行构建，但需要本机有 Python 3.13+ 和依赖。
+
 ## 安装包和离线验证
 
 ```sh

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "chaoxing-desktop",
+  "outputfilename": "chaoxing-desktop",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "assetsdir": "frontend/dist",
+  "info": {
+    "companyName": "Chaoxing Desktop",
+    "productName": "超星助手",
+    "productVersion": "0.1.0",
+    "copyright": "GPL-3.0 · 基于 Samueli924/chaoxing",
+    "comments": "超星学习通命令行工具的桌面图形界面"
+  },
+  "author": {
+    "name": "songsong"
+  }
+}
