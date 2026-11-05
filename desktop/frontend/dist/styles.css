@@ -2302,10 +2302,13 @@ input[type="number"]::-webkit-inner-spin-button {
 
 /* 关于页 App 标记：暖白纸 + 墨色字（与雨课助手图标同一家族） */
 .about-icon-app {
-  color: #1f3a5f;
-  background: #f7f4ec;
-  border: 1px solid rgba(31, 58, 95, 0.14);
-  font: 600 19px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  color: #1b2630;
+  background: #f6f1e7;
+  border: 1px solid rgba(27, 38, 48, 0.14);
+  font-family: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STSong", serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 /* ==========================================================================

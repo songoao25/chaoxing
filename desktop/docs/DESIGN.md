@@ -241,3 +241,12 @@ row-title 13px；row-desc 11px `--label-2`；mono 数字 tabular-nums；日志 1
 - 文案只写「点哪里、会发生什么」；不写营销词、不堆要点列表、不重复底部说明。
 - 完成/跳过写入 `desktop.json` 的 `onboarding_done`；「设置 → 帮助 → 新手教程」可重开；
   Esc/遮罩/跳过都按完成处理，不再重复弹出。
+
+## 12. App 图标（2026-11-05，文隐风格）
+
+- 方向：去 AI 味后的「文隐」——温润纸底、墨色思源宋体单字「超」，不画线条、圆点、渐变或任何装饰。
+- 规格：1024×1024 PNG；macOS 图标网格 824×824、圆角 186；纸色 `#F6F1E7`、墨色 `#1B2630`、
+  1px 墨线纸边（alpha 0.16）。
+- 字形：思源宋体 SC SemiBold；字面重心略偏下，向上抬 8px 做视觉居中。
+- 生成：`desktop/tools/makeicon.swift`（默认 paper/SemiBold；可选 ink 深色底变体）。
+  应用内「关于 / 新手教程」的「超」标记使用同一字体栈（思源宋体 → Noto Serif SC → 宋体）。
