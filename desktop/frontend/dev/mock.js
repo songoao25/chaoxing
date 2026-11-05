@@ -277,6 +277,8 @@
   var bridgeState = scenario === 'engine-down' ? 'failed' : 'ready';
 
   var runState = { active: false, run_id: '', started_at: '', course_ids: [] };
+  var batchState = { running: false, stopping: false, items: [], current: '', message: '', started_at: '' };
+  var batchTimer = null;
   var runTimers = [];
   var runToken = 0;
 
@@ -605,6 +607,39 @@
     StartRun: function (opts) { return startMockRun(opts); },
 
     StopRun: function () { return stopMockRun(); },
+
+    GetBatchState: function () { return delay(80, batchState); },
+
+    StartBatch: function (ids, opts) {
+      var selected = accounts.filter(function (a) { return (ids || []).indexOf(a.id) >= 0; });
+      batchState = {
+        running: true, stopping: false, current: '', message: '准备运行 ' + selected.length + ' 个账号',
+        started_at: fullTs(new Date()),
+        items: selected.map(function (a) { return { account_id: a.id, name: a.name || a.username_masked, status: 'queued' }; })
+      };
+      var index = 0;
+      if (batchTimer) clearInterval(batchTimer);
+      batchTimer = setInterval(function () {
+        if (index >= selected.length) {
+          clearInterval(batchTimer); batchTimer = null;
+          batchState.running = false;
+          batchState.message = '批量结束：成功 ' + selected.length + '，失败 0，取消 0';
+          delay(10, batchState);
+          return;
+        }
+        batchState.current = selected[index].id;
+        batchState.items[index] = { account_id: selected[index].id, name: selected[index].name || selected[index].username_masked, status: 'running', courses: 3 };
+        index += 1;
+      }, 1600);
+      return delay(120, batchState);
+    },
+
+    StopBatch: function () {
+      if (batchTimer) { clearInterval(batchTimer); batchTimer = null; }
+      batchState.running = false;
+      batchState.message = '已停止';
+      return delay(80, batchState);
+    },
 
     GetRunState: function () {
       return delay(120, {

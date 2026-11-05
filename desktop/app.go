@@ -76,6 +76,13 @@ type App struct {
 	mockAccounts []Account
 	mockSettings Settings
 	mockRun      *mockRunState
+
+	// 多账号批量（见 batch.go）
+	batchMu        sync.Mutex
+	batchRunning   bool
+	batchStop      bool
+	batchRunEvents chan map[string]any
+	batchState     BatchState
 }
 
 // NewApp 创建应用实例；不做重活（探测/启动在 startup 或首次调用时进行）。
@@ -146,6 +153,11 @@ func (a *App) startup(ctx context.Context) {
 
 // shutdown 在应用退出时调用，确保子进程被清理。
 func (a *App) shutdown(_ context.Context) {
+	a.batchMu.Lock()
+	if a.batchRunning {
+		a.batchStop = true
+	}
+	a.batchMu.Unlock()
 	a.mu.Lock()
 	b := a.bridge
 	a.bridge = nil
@@ -225,6 +237,7 @@ func (a *App) handleBridgeEvent(event string, data json.RawMessage) {
 		}
 		a.mu.Unlock()
 	case "run.finished":
+		a.notifyBatchRunFinished(decoded)
 		a.clearActiveRun()
 	}
 	a.emit(name, decoded)

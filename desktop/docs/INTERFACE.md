@@ -253,6 +253,9 @@ params：
 | `OpenConfigFile()` | — | `null` | 用默认编辑器打开 `~/.chaoxing/config.ini` |
 | `GetAppInfo()` | — | `{version, protocol, license, platform}` | 关于页；`platform` = runtime.GOOS（additive，用于判断 darwin 透明材质） |
 | `GetUpdateState()` | — | `UpdateState` | 取缓存的更新状态（不联网；启动自动检查通过事件刷新） |
+| `StartBatch(ids, opts)` | `{account_ids, run_options}` | `BatchState` | 顺序运行多个账号（每账号自动拉全部课程） |
+| `StopBatch()` | — | `BatchState` | 停止当前批量 |
+| `GetBatchState()` | — | `BatchState` | 取批量队列快照（含每账号状态） |
 | `CheckForUpdate()` | — | `UpdateState` | 联网检查 GitHub Releases（设置页「检查更新」） |
 | `StartUpdate()` | — | `{started:boolean}` | 开始下载并安装更新；立即返回，进度走事件 |
 
@@ -274,6 +277,7 @@ params：
 | `update:state` | `UpdateState` | 更新状态变化（检查中 / 有新版本 / 失败 / 安装中 / 完成） |
 | `update:progress` | `{phase, downloaded, total, percent, message}` | 下载与安装进度（低频）；phase ∈ download/verify/install/restart |
 | `update:error` | `{message}` | 更新失败（同时 update:state 里带 error） |
+| `batch:state` | `BatchState` | 批量队列变化（开始/当前账号/每账号终态/结束） |
 
 ### UpdateState（additive）
 

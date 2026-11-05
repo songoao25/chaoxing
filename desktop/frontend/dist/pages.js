@@ -331,6 +331,54 @@
     return '';
   }
 
+  function batchRowsHTML(s) {
+    var accounts = s.accounts || [];
+    var batch = s.batch || {};
+    var selected = batch.selected || {};
+    var rows = '';
+    if (!accounts.length) {
+      rows = row('还没有账号', '先在设置里添加学习通账号，才能批量运行',
+        '<button class="btn btn-sm" data-action="add-account">添加账号</button>');
+    } else {
+      rows = accounts.map(function (account) {
+        var checked = !!selected[account.id];
+        return '<div class="row">' +
+          '<div class="row-copy"><div class="row-title">' + esc(account.name || account.username_masked || '账号') + '</div>' +
+          '<div class="row-desc">' + esc(account.username_masked || '') + '</div></div>' +
+          '<div class="row-control">' +
+          '<button class="switch" type="button" role="switch" data-action="toggle-batch-account" data-id="' + esc(account.id) + '"' +
+          ' aria-checked="' + (checked ? 'true' : 'false') + '" aria-label="批量运行时包含 ' + esc(account.name || '该账号') + '">' +
+          '<span class="switch-knob" aria-hidden="true"></span></button></div></div>';
+      }).join('');
+    }
+    var items = batch.items || [];
+    var done = items.filter(function (item) { return ['ok', 'failed', 'cancelled'].indexOf(item.status) >= 0; }).length;
+    var currentName = '';
+    items.forEach(function (item) { if (item.account_id === batch.current) currentName = item.name; });
+    var statusText = batch.running
+      ? '批量运行中 ' + done + '/' + items.length + (currentName ? ' · 当前：' + currentName : '')
+      : (batch.message || '勾选要运行的账号；每个账号会自动拉取全部课程');
+    var control = batch.running
+      ? '<button class="btn btn-sm" data-action="stop-batch"' + (batch.stopping ? ' disabled' : '') + '>停止批量</button>'
+      : '<button class="btn btn-sm btn-primary" data-action="start-batch"' + (accounts.length ? '' : ' disabled') + '>开始批量</button>';
+    rows += '<div class="row"><div class="row-copy"><div class="row-title">批量运行</div>' +
+      '<div class="row-desc">' + esc(statusText) + '</div></div>' +
+      '<div class="row-control">' + control + '</div></div>';
+    return rows;
+  }
+
+  function batchStripHTML(s) {
+    var batch = s.batch || {};
+    if (!batch.running) return '';
+    var items = batch.items || [];
+    var done = items.filter(function (item) { return ['ok', 'failed', 'cancelled'].indexOf(item.status) >= 0; }).length;
+    var currentName = '';
+    items.forEach(function (item) { if (item.account_id === batch.current) currentName = item.name; });
+    return '<p class="group-note">批量：' + done + '/' + items.length +
+      (currentName ? ' · 当前账号 ' + esc(currentName) : '') +
+      (batch.stopping ? ' · 正在停止' : '') + '</p>';
+  }
+
   function runConfigView(s) {
     var o = s.run.options;
     var hint = validationHint(s);
@@ -378,6 +426,7 @@
 
     return pageHead('刷课', '选账号与课程，然后开始', headSide) +
       group('账号', accountsBox) +
+      group('多账号批量', batchRowsHTML(s), '按顺序运行，账号之间停顿 30–90 秒；请确保账号本人知情同意，并遵守平台规则。') +
       group('课程', coursesBox) +
       group('范围', scopeBox, '<span id="scope-note">' + esc(scopeNoteHTML(s)) + '</span>') +
       group('参数', paramsBox);
@@ -473,6 +522,7 @@
       '<span class="run-timer mono" id="run-timer">' + UI.fmtDuration(s.run.elapsed) + '</span>' +
       '<button class="btn btn-sm btn-danger-quiet" id="stop-run" data-action="stop-run"' + (stopping ? ' disabled' : '') + '>停止</button>';
     return pageHead('刷课', '<span id="run-page-sub">' + esc(stageText) + '</span>', headSide) +
+      batchStripHTML(s) +
       group('进度', '<div class="run-steps" id="run-steps">' + stepsHTML(s) + '</div><div id="run-progress">' + progressHTML(s) + '</div>') +
       logCardHTML(s);
   }
@@ -723,6 +773,8 @@
     selectedCount: selectedCount,
     validationHint: validationHint,
     scopeNoteHTML: scopeNoteHTML,
+    batchRowsHTML: batchRowsHTML,
+    batchStripHTML: batchStripHTML,
     stepsHTML: stepsHTML,
     progressHTML: progressHTML,
     logFilteredLines: logFilteredLines,

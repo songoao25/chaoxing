@@ -200,6 +200,10 @@
       startError: '',
       stopping: false
     },
+    batch: {
+      selected: {}, running: false, stopping: false, items: [], current: '',
+      message: '', startedAt: ''
+    },
     review: {
       days: 1,
       loading: false,
@@ -500,6 +504,13 @@
       if (onboardingState && typeof onboardingState === 'object') S.onboarding.needs = !!onboardingState.needs;
     } catch (e) { /* 老版本没有教程接口时忽略 */ }
     if (S.status && S.status.engine_ready) S.engineReady = true;
+    try {
+      var batchState = await call('GetBatchState');
+      if (batchState && typeof batchState === 'object') {
+        batchState.selected = S.batch.selected || {};
+        S.batch = Object.assign({}, S.batch, batchState);
+      }
+    } catch (e) { /* 老版本没有批量接口 */ }
     try {
       var runState = await call('GetRunState');
       if (runState && runState.active) {
@@ -888,6 +899,49 @@
     var base = started ? started.getTime() : S.run.localStart;
     if (base) S.run.elapsed = Math.max(0, Math.round((Date.now() - base) / 1000));
     if (S.page === 'run') patchLiveStatus();
+  }
+
+  /* ---------- 多账号批量 ---------- */
+  function selectedBatchIDs() {
+    var selected = S.batch.selected || {};
+    return Object.keys(selected).filter(function (id) { return selected[id]; });
+  }
+
+  async function startBatch() {
+    if (S.batch.running) return;
+    var ids = selectedBatchIDs();
+    if (!ids.length) { UI.toast('先勾选要批量运行的账号', 'warning'); return; }
+    var names = S.accounts.filter(function (a) { return ids.indexOf(a.id) >= 0; }).map(function (a) { return a.name || a.username_masked; });
+    var ok = await UI.confirm({
+      title: '开始批量运行？',
+      message: '将按顺序运行 ' + ids.length + ' 个账号（' + names.join('、') + '）。每个账号自动拉取全部课程，沿用当前范围与参数；账号之间停顿 30–90 秒。运行期间可以随时停止。',
+      confirmLabel: '开始批量'
+    });
+    if (!ok) return;
+    S.batch.message = '正在启动批量…';
+    render();
+    try {
+      var state = await call('StartBatch', ids, buildRunOptions());
+      state.selected = S.batch.selected;
+      S.batch = Object.assign({}, S.batch, state);
+      UI.toast('已开始批量运行');
+    } catch (e) {
+      UI.toast(friendlyError(errText(e)), 'error');
+    }
+    if (S.page === 'run') render();
+  }
+
+  async function stopBatch() {
+    if (!S.batch.running) return;
+    try {
+      var state = await call('StopBatch');
+      state.selected = S.batch.selected;
+      S.batch = Object.assign({}, S.batch, state);
+      UI.toast('正在停止批量…');
+    } catch (e) {
+      UI.toast(friendlyError(errText(e)), 'error');
+    }
+    if (S.page === 'run') render();
   }
 
   function confirmStartRun() {
@@ -1329,6 +1383,13 @@
       if (S.page === 'run') render();
     });
 
+    on('batch:state', function (data) {
+      if (!data || typeof data !== 'object') return;
+      data.selected = S.batch.selected || {};
+      S.batch = Object.assign({}, S.batch, data);
+      if (S.page === 'run') render();
+    });
+
     on('run:finished', function (data) {
       S.run.phase = 'finished';
       S.run.finished = data || {};
@@ -1472,6 +1533,16 @@
     'goto-review-today': function () { S.review.days = 1; S.review.selectedId = ''; S.review.item = null; navigate('review'); },
     'goto-settings': function () { navigate('settings'); },
     'refresh-page': function () { refreshPage(); },
+    'toggle-batch-account': function (el) {
+      var id = el.getAttribute('data-id');
+      if (!id) return;
+      var next = el.getAttribute('aria-checked') !== 'true';
+      el.setAttribute('aria-checked', next ? 'true' : 'false');
+      S.batch.selected[id] = next;
+      if (!next) delete S.batch.selected[id];
+    },
+    'start-batch': function () { startBatch(); },
+    'stop-batch': function () { stopBatch(); },
 
     'refresh-overview': function () { refreshOverview(); },
     'choose-engine': function () { chooseEngine(); },
