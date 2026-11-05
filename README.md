@@ -201,7 +201,7 @@ open build/bin/chaoxing-desktop.app
 
 构建与开发说明见 [desktop/README.md](desktop/README.md)，三端接口契约见
 [desktop/docs/INTERFACE.md](desktop/docs/INTERFACE.md)，视觉规范见
-[desktop/docs/DESIGN.md](desktop/docs/DESIGN.md)。界面与同作者的「雨课堂刷课助手」
+[desktop/docs/DESIGN.md](desktop/docs/DESIGN.md)。界面与同作者的「雨课助手」
 共用一套 macOS 系统设置风格设计语言（令牌/组件同名同值）。
 v1 只在 macOS 上构建与验证；Windows/Linux 可自行构建，但需要本机有 Python 3.13+ 和依赖。
 

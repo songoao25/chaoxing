@@ -195,7 +195,7 @@
       day: ymd(dayOffset(-1)),
       kind: '讨论回复',
       course: '大学英语（二）',
-      task: 'Discussion: How to learn a language',
+      task: '第二章 讨论：语言学习的有效方法',
       status: '取消',
       chars: discussionText.length,
       text: discussionText
@@ -674,6 +674,11 @@
     if (scenario === 'review' || scenario === 'review-empty') {
       document.querySelector(navSel('review')).click();
       await waitFor('#review-items .row, #review-items .empty-state', 7000);
+      if (scenario === 'review') {
+        var firstItem = document.querySelector('#review-items .row[data-action="open-review"]');
+        if (firstItem) firstItem.click();
+        await waitFor('.review-text', 7000);
+      }
       return;
     }
     if (scenario === 'run') {

@@ -252,7 +252,7 @@
     var navItems = [
       ['工作台', null],
       ['overview', '概览', 'grid', '⌘1'],
-      ['run', '刷课', 'play', '⌘2'],
+      ['run', '刷课', 'play-line', '⌘2'],
       ['review', '复核', 'file', '⌘3'],
       ['系统', null],
       ['settings', '设置', 'gear', '⌘4']
@@ -280,11 +280,10 @@
       '<aside class="sidebar" aria-label="应用侧栏"><div class="sidebar-inner">' +
       '<nav class="nav" role="tablist" aria-label="主导航" aria-orientation="vertical">' + nav + '</nav>' +
       '<div class="sidebar-footer">' +
-      '<div class="mini-status" id="mini-status" aria-live="polite">' +
-      '<span class="mini-dot" id="mini-dot" aria-hidden="true"></span>' +
-      '<span class="mini-text" id="mini-text">正在连接…</span></div>' +
-      '<div class="sidebar-version mono" id="sidebar-version">v0.1.0</div>' +
-      '</div></div></aside>' +
+      '<div class="sidebar-brand">' +
+      '<span class="sidebar-brand-name">超星助手</span>' +
+      '<span class="sidebar-version mono" id="sidebar-version">v0.1.0</span>' +
+      '</div></div></div></aside>' +
       '<main class="main" id="main"><div class="main-scroll" id="main-scroll">' +
       '<div class="page" id="page"></div></div></main></div>';
   }
@@ -304,7 +303,7 @@
     if (!mounted) return;
     var pageEl = document.getElementById('page');
     if (!pageEl) return;
-    var wide = S.page === 'review' || (S.page === 'run' && S.run.phase !== 'config');
+    var wide = S.page === 'review';
     pageEl.className = 'page' + (wide ? ' page-wide' : '');
     pageEl.innerHTML = Pages[S.page](S);
     updateSidebar();
@@ -325,17 +324,13 @@
     var dotCls = ready ? 'is-running' : (state === 'failed' ? 'is-error' : '');
     var dot = document.getElementById('sync-dot');
     if (dot) dot.className = 'sync-dot' + (dotCls ? ' ' + dotCls : '');
-    var miniDot = document.getElementById('mini-dot');
-    if (miniDot) miniDot.className = 'mini-dot' + (dotCls ? ' ' + dotCls : '');
     var syncText = document.getElementById('toolbar-sync-text');
-    var miniText = document.getElementById('mini-text');
     var label = ready ? '引擎已就绪'
       : state === 'starting' ? '引擎启动中'
         : state === 'restarting' ? '引擎重连中'
           : state === 'failed' ? '引擎连接失败'
             : '引擎未就绪';
     if (syncText) syncText.textContent = label;
-    if (miniText) miniText.textContent = ready ? '引擎已就绪' : label;
     var versionEl = document.getElementById('sidebar-version');
     if (versionEl && S.appInfo && S.appInfo.version) versionEl.textContent = 'v' + S.appInfo.version;
   }
@@ -389,8 +384,6 @@
     if (sub) sub.textContent = S.run.phase === 'stopping' ? '正在停止' : (S.run.stageText || '正在启动');
     var timer = document.getElementById('run-timer');
     if (timer) timer.textContent = UI.fmtDuration(S.run.elapsed);
-    var pageTimer = document.getElementById('run-page-timer');
-    if (pageTimer) pageTimer.textContent = UI.fmtDuration(S.run.elapsed);
     var stop = document.getElementById('stop-run');
     if (stop) stop.disabled = S.run.phase === 'stopping';
   }

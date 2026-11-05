@@ -1,5 +1,5 @@
 /* ==========================================================================
-   雨课堂刷课助手 · 管理台
+   超星助手 · 管理台（设计语言与「雨课助手」共享，组件沿用共享定义）
    设计基准：macOS 系统设置（分组列表 + 语义色 + SF 字体），纯原生 CSS。
    无外部字体 / 图片 / CDN；全部离线可用。
    ========================================================================== */
@@ -267,7 +267,6 @@ label,
 .mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
 }
 
 /* macOS 式细滚动条 */
@@ -374,7 +373,8 @@ label,
 }
 
 .platform-darwin:not(.mock) .sidebar {
-  background: var(--sidebar-glass);
+  background: var(--sidebar);
+  background-image: linear-gradient(var(--sidebar-glass), var(--sidebar-glass));
   -webkit-backdrop-filter: blur(28px) saturate(1.6);
   backdrop-filter: blur(28px) saturate(1.6);
 }
@@ -737,6 +737,7 @@ label,
 .row-value {
   font-size: 12px;
   color: var(--label-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .row-top {
@@ -794,6 +795,10 @@ label,
   border-radius: 50%;
   background: currentColor;
   flex: none;
+}
+
+.badge:not(.is-success):not(.is-warning):not(.is-danger):not(.is-running) .badge-dot {
+  display: none;
 }
 
 .badge.is-success {
@@ -1432,12 +1437,12 @@ label,
 
 .log-level {
   font-family: var(--font-ui);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
-.log-level.is-info { color: var(--accent); }
+.log-level.is-info { color: var(--label-2); }
 .log-level.is-warn { color: var(--orange-text); }
 .log-level.is-error { color: var(--red-text); }
 .log-level.is-success { color: var(--green-text); }
@@ -2031,6 +2036,7 @@ button.row:focus-visible,
 
 /* 日志卡：运行时使用固定高度，头部容纳级别与工具 */
 .log-card.is-runtime { flex: none; height: 320px; }
+.log-card.is-result { flex: none; height: auto; max-height: 320px; }
 .log-card-head.has-tools {
   height: auto;
   min-height: 36px;
@@ -2050,7 +2056,7 @@ button.row:focus-visible,
 /* ---------- 复核 ---------- */
 .review-layout {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 340px minmax(0, 1fr);
   gap: 22px;
   align-items: start;
 }
@@ -2071,8 +2077,9 @@ button.row:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.review-list .row-control { flex-direction: row; align-items: center; gap: 8px; }
-.review-list .row-time { font-family: var(--font-mono); font-size: 10px; color: var(--label-3); }
+.review-list .row-control { flex-direction: column; align-items: flex-end; gap: 3px; }
+.review-list .row + .row::before { left: 56px; }
+.review-list .row-time { font-family: var(--font-mono); font-size: 10.5px; color: var(--label-3); }
 .review-detail { display: flex; flex-direction: column; overflow: hidden; }
 .review-detail-head { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border-bottom: 1px solid var(--separator); }
 .review-detail-icon {
@@ -2136,15 +2143,12 @@ button.row:focus-visible,
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  margin: 12px 14px 0;
-  padding: 7px 9px;
-  border-radius: 6px;
-  background: var(--fill);
-  font-size: 11px;
-  line-height: 1.5;
+  margin: 10px 14px 0;
+  font-size: 11.5px;
+  line-height: 1.55;
   color: var(--label-2);
 }
-.review-status-note .icon { width: 13px; height: 13px; margin-top: 1px; color: var(--label-3); }
+.review-status-note .icon { width: 13px; height: 13px; margin-top: 2px; color: var(--label-3); }
 .review-empty { padding: 32px 20px; }
 
 /* ---------- 设置 ---------- */
@@ -2245,3 +2249,61 @@ input[type="number"]::-webkit-inner-spin-button {
 
 /* 禁用态控件 */
 .input[disabled], .select-wrap select[disabled] { opacity: 0.5; cursor: default; }
+
+
+/* ==========================================================================
+   2026-11-05 unslop polish（第二轮）：去重复、去死白、统一数字与时间
+   ========================================================================== */
+
+/* 侧栏底部：产品名 + 版本（引擎状态只保留 toolbar 一处） */
+.sidebar-brand {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sidebar-brand-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--label-2);
+}
+.sidebar-footer .sidebar-version { padding-left: 0; }
+
+/* 概览空态：紧凑一档，不留一整张空卡 */
+.overview-empty .empty-state { padding: 26px 24px; }
+.overview-empty .empty-icon { width: 34px; height: 34px; }
+.overview-empty .empty-icon .icon { width: 17px; height: 17px; }
+
+/* 复核：条数放在过滤行里，安静等宽 */
+.review-count {
+  font-size: 11px;
+  color: var(--label-3);
+  margin-right: 2px;
+}
+.review-row-meta { gap: 3px; }
+
+/* 账号删除：行尾图标按钮，hover 才转红 */
+.icon-btn.is-danger:hover { color: var(--red); background: var(--red-soft); }
+
+/* 进度行与步骤文字对齐（14px 行内边距 + 22px 步骤圆 + 12px 间距） */
+.progress-row { padding-left: 48px; }
+
+/* 结果页：失败/停止的说明只留一行；状态 badge 与操作同排 */
+.run-result-note {
+  display: flex;
+  gap: 6px;
+  margin: 12px 14px 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--label-2);
+}
+.run-result-note .icon { width: 13px; height: 13px; margin-top: 2px; color: var(--label-3); }
+.result-foot-spacer { flex: 1; }
+
+/* 关于页 App 标记：暖白纸 + 墨色字（与雨课助手图标同一家族） */
+.about-icon-app {
+  color: #1f3a5f;
+  background: #f7f4ec;
+  border: 1px solid rgba(31, 58, 95, 0.14);
+  font: 600 19px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}

@@ -1,5 +1,5 @@
 /* 超星助手 · 通用 UI 基础（图标 / Toast / 弹层 / 格式化）
-   设计语言与雨课堂刷课助手一致：图标为内联 SVG sprite，class 对齐 ykt app.css。 */
+   设计语言与雨课助手一致：图标为内联 SVG sprite，class 对齐 ykt app.css。 */
 (function () {
   'use strict';
 
@@ -7,6 +7,7 @@
     '<svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">',
     '<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7.2" height="7.2" rx="1.7"/><rect x="13.3" y="3.5" width="7.2" height="7.2" rx="1.7"/><rect x="3.5" y="13.3" width="7.2" height="7.2" rx="1.7"/><rect x="13.3" y="13.3" width="7.2" height="7.2" rx="1.7"/></symbol>',
     '<symbol id="i-play" viewBox="0 0 24 24"><path d="M8.4 5.8a.9.9 0 0 1 1.37-.77l9.1 6.2a.9.9 0 0 1 0 1.54l-9.1 6.2a.9.9 0 0 1-1.37-.77V5.8Z" fill="currentColor" stroke="none"/></symbol>',
+    '<symbol id="i-play-line" viewBox="0 0 24 24"><path d="M8.4 5.8a.9.9 0 0 1 1.37-.77l9.1 6.2a.9.9 0 0 1 0 1.54l-9.1 6.2a.9.9 0 0 1-1.37-.77V5.8Z"/></symbol>',
     '<symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.6" y="6.6" width="10.8" height="10.8" rx="2" fill="currentColor" stroke="none"/></symbol>',
     '<symbol id="i-file" viewBox="0 0 24 24"><path d="M6.2 3.8h7.4l5 5.2v10.2a1.7 1.7 0 0 1-1.7 1.7H6.2a1.7 1.7 0 0 1-1.7-1.7V5.5a1.7 1.7 0 0 1 1.7-1.7Z"/><polyline points="13.4 3.8 13.4 9.2 18.8 9.2"/><line x1="8.4" y1="12.9" x2="15.4" y2="12.9"/><line x1="8.4" y1="16.4" x2="13.2" y2="16.4"/></symbol>',
     '<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M19.3 14.9a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03Z"/></symbol>',
@@ -77,6 +78,35 @@
     var now = new Date();
     if (isSameDay(d, now)) return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+
+  // 中文时间：今天 08:42 / 昨天 21:10 / 11月3日 21:10 / 2025年11月3日
+  function fmtClockCn(ts) {
+    var d = parseDateTime(ts);
+    if (!d) return ts || '';
+    var now = new Date();
+    var hm = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    if (isSameDay(d, now)) return '今天 ' + hm;
+    if (isSameDay(d, new Date(now.getTime() - 86400000))) return '昨天 ' + hm;
+    if (d.getFullYear() === now.getFullYear()) return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + hm;
+    return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  }
+
+  // 相对时间：刚刚 / 8 分钟前 / 3 小时前 / 44 天前
+  function fmtRelative(ts) {
+    var d = parseDateTime(ts);
+    if (!d) return '';
+    var diff = Math.max(0, Date.now() - d.getTime());
+    var min = Math.floor(diff / 60000);
+    if (min < 1) return '刚刚';
+    if (min < 60) return min + ' 分钟前';
+    var hours = Math.floor(min / 60);
+    if (hours < 24) return hours + ' 小时前';
+    var days = Math.floor(hours / 24);
+    if (days < 30) return days + ' 天前';
+    var months = Math.floor(days / 30);
+    if (months < 12) return months + ' 个月前';
+    return Math.floor(months / 12) + ' 年前';
   }
 
   function fmtTimeOfDay(ts) {
@@ -291,6 +321,8 @@
     openModal: openModal,
     confirm: confirmDialog,
     fmtClock: fmtClock,
+    fmtClockCn: fmtClockCn,
+    fmtRelative: fmtRelative,
     fmtTimeOfDay: fmtTimeOfDay,
     fmtDuration: fmtDuration,
     fmtDurationCn: fmtDurationCn,

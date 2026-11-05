@@ -33,15 +33,7 @@
   /* ================= 基础片段 ================= */
 
   function appMark() {
-    return '<span class="about-icon is-app" aria-hidden="true">' +
-      '<svg viewBox="0 0 40 40" role="img" aria-hidden="true">' +
-      '<rect width="40" height="40" rx="10" fill="#0a84ff"/>' +
-      '<text x="20" y="27" text-anchor="middle" font-size="19" font-weight="600" fill="#ffffff" ' +
-      'font-family="-apple-system, BlinkMacSystemFont, PingFang SC, sans-serif">超</text>' +
-      '<circle cx="32.5" cy="32.5" r="6.4" fill="#34c759" stroke="#ffffff" stroke-width="1.5"/>' +
-      '<polyline points="29.5 32.6 31.5 34.6 35.5 30.5" fill="none" stroke="#ffffff" ' +
-      'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
-      '</svg></span>';
+    return '<span class="about-icon about-icon-app" aria-hidden="true">超</span>';
   }
 
   function pageHead(title, sub, side) {
@@ -198,39 +190,28 @@
 
     var engineRow = '<div class="row">' +
       rowIcon('server', ready ? 'is-green' : 'is-orange') +
-      '<div class="row-copy"><div class="row-title">引擎' + badge(ready ? '已就绪' : '未就绪', ready ? 'success' : 'warning') + '</div>' +
-      '<div class="row-desc mono">' + esc(engine.message || (engine.python ? 'Python ' + engine.python : '尚未检测到可用环境')) +
-      (engine.repo ? ' · ' + esc(engine.repo) : '') + '</div></div>' +
+      '<div class="row-copy"><div class="row-title">引擎' + (ready ? '' : badge('未就绪', 'warning')) + '</div>' +
+      '<div class="row-desc mono">' + esc(ready
+        ? [engine.python ? 'Python ' + engine.python : '', engine.repo || ''].filter(Boolean).join(' · ')
+        : (engine.message || '尚未检测到可用环境')) + '</div></div>' +
       '<div class="row-control">' +
       (ready ? '' : '<button class="btn btn-sm btn-primary" data-action="choose-engine">选择目录</button>') +
+      '<button class="icon-btn" data-action="open-data-dir" aria-label="打开数据目录" title="打开数据目录">' + icon('folder') + '</button>' +
       '<button class="btn btn-sm" data-action="retry-engine">重新检测</button>' +
       '</div></div>';
 
     var statusBox =
       '<div class="row">' + rowIcon('clock', 'is-blue') +
       '<div class="row-copy"><div class="row-title">上次运行</div>' +
-      '<div class="row-desc">' + (lastRun.log_mtime ? '最近日志 ' + esc(UI.fmtClock(lastRun.log_mtime)) : '暂无运行记录') + '</div></div>' +
-      '<div class="row-control"><span class="row-value mono">' + (lastRun.at ? esc(UI.fmtClock(lastRun.at)) : '—') + '</span></div></div>' +
+      '<div class="row-desc">' + (lastRun.at ? esc(UI.fmtRelative(lastRun.at)) : '还没有运行记录') + '</div></div>' +
+      '<div class="row-control"><span class="row-value mono">' + (lastRun.at ? esc(UI.fmtClockCn(lastRun.at)) : '—') + '</span></div></div>' +
       '<div class="row">' + rowIcon('user', 'is-indigo') +
       '<div class="row-copy"><div class="row-title">账号</div><div class="row-desc">保存在本机的学习通账号</div></div>' +
       '<div class="row-control"><span class="row-value">' + accounts.length + ' 个</span></div></div>' +
       '<div class="row">' + rowIcon('file', 'is-orange') +
-      '<div class="row-copy"><div class="row-title">今日复核</div><div class="row-desc">AI 生成并已提交的文字</div></div>' +
+      '<div class="row-copy"><div class="row-title">今日复核</div><div class="row-desc">AI 生成并已提交的文字，可回看</div></div>' +
       '<div class="row-control"><span class="row-value">' + (reviews.today || 0) + ' 条</span></div></div>' +
       engineRow;
-
-    var quickBox =
-      '<div class="row">' + rowIcon('play', 'is-blue') +
-      '<div class="row-copy"><div class="row-title">开始刷课</div><div class="row-desc">选账号与课程，进度自动保存</div></div>' +
-      '<div class="row-control"><button class="btn btn-primary" data-action="goto-run">开始刷课</button></div></div>' +
-      '<div class="row">' + rowIcon('file', 'is-gray') +
-      '<div class="row-copy"><div class="row-title">查看复核</div><div class="row-desc">' +
-      ((reviews.today || 0) ? '今天有 ' + (reviews.today || 0) + ' 条记录' : '暂时没有今天的记录') + '</div></div>' +
-      '<div class="row-control"><button class="btn btn-sm" data-action="goto-review">查看</button></div></div>' +
-      '<div class="row">' + rowIcon('folder', 'is-gray') +
-      '<div class="row-copy"><div class="row-title">打开数据目录</div><div class="row-desc mono">' +
-      esc((engineStatus && engineStatus.data_dir) || '~/.chaoxing') + '</div></div>' +
-      '<div class="row-control"><button class="btn btn-sm" data-action="open-data-dir">打开</button></div></div>';
 
     var recent = s.overviewRecent || [];
     var recentBox;
@@ -243,16 +224,16 @@
         action: '<button class="btn" data-action="refresh-overview">重试</button>'
       });
     } else if (!recent.length) {
-      recentBox = emptyState({
+      recentBox = '<div class="overview-empty">' + emptyState({
         icon: 'file', title: '暂无复核记录',
         desc: '刷课中 AI 生成并提交的文字会出现在这里。'
-      });
+      }) + '</div>';
     } else {
       recentBox = recent.slice(0, 5).map(function (item) {
         return '<button class="row" data-action="open-review" data-id="' + esc(item.submission_id) + '">' +
           '<div class="row-copy"><div class="row-title">' + esc(item.task || item.kind || '未命名任务') + '</div>' +
           '<div class="row-desc">' + esc(item.kind || '') + (item.course ? ' · ' + esc(item.course) : '') + '</div></div>' +
-          '<div class="row-control"><span class="row-value mono">' + esc(UI.fmtClock(item.ts)) + '</span>' +
+          '<div class="row-control"><span class="row-value mono">' + esc(UI.fmtClockCn(item.ts)) + '</span>' +
           statusBadge(item.status) + '</div></button>';
       }).join('');
     }
@@ -267,10 +248,11 @@
     }
     body += group('运行状态', statusBox,
       ready ? '' : '选择 chaoxing 仓库目录，或确认已安装 Python 3.13 以上版本。') +
-      group('快捷操作', quickBox) +
       group('最近复核', recentBox);
 
-    return pageHead('概览', subtitle) + body;
+    return pageHead('概览', subtitle,
+      '<button class="btn btn-sm" data-action="goto-review">查看复核</button>' +
+      '<button class="btn btn-primary" data-action="goto-run">开始刷课</button>') + body;
   }
 
   /* ================= 刷课：配置 ================= */
@@ -289,7 +271,7 @@
       return '<button class="row' + (selected ? ' is-selected' : '') + '" role="radio" aria-checked="' + selected + '" data-action="select-account" data-id="' + esc(a.id) + '">' +
         rowIcon('user', 'is-indigo') +
         '<div class="row-copy"><div class="row-title">' + esc(a.name || a.username_masked) + '</div>' +
-        '<div class="row-desc">' + esc(a.name ? a.username_masked : '未设置昵称') + (a.last_used ? ' · 最近使用 ' + esc(UI.fmtClock(a.last_used)) : '') + '</div></div>' +
+        '<div class="row-desc">' + esc(a.name ? a.username_masked : '未设置昵称') + (a.last_used ? ' · 最近使用 ' + esc(UI.fmtClockCn(a.last_used)) : '') + '</div></div>' +
         '<div class="row-control"><span class="row-check">' + icon('check') + '</span></div></button>';
     }).join('');
   }
@@ -426,9 +408,9 @@
     var done = Number(p.done) || 0;
     var pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
     return '<div class="row progress-row">' +
-      '<div class="row-copy"><span class="row-value">' + esc(p.title || '当前课程') + '</span>' +
+      '<div class="row-copy"><span class="row-title">' + esc(p.title || '当前课程') + '</span>' +
       '<span class="progress-track"><span class="progress-bar" style="width:' + pct + '%"></span></span>' +
-      '<span class="row-value mono">' + done + '/' + total + '</span></div></div>';
+      '<span class="row-value mono">第 ' + done + '/' + total + ' 节</span></div></div>';
   }
 
   function logFilteredLines(s) {
@@ -464,7 +446,7 @@
 
   function logCardHTML(s) {
     var filters = [['all', '全部'], ['info', '信息'], ['warning', '警告'], ['error', '错误']];
-    return '<div class="log-card is-runtime' + (s.run.logCollapsed ? ' is-collapsed' : '') + '" id="log-card">' +
+    return '<div class="log-card' + (s.run.phase === 'finished' ? ' is-result' : ' is-runtime') + (s.run.logCollapsed ? ' is-collapsed' : '') + '" id="log-card">' +
       '<div class="log-card-head has-tools">' +
       '<span class="log-live"><span class="live-dot" aria-hidden="true"></span>日志流</span>' +
       '<span class="log-count" id="log-count">' + logCountText(s) + '</span>' +
@@ -490,7 +472,7 @@
       '<span class="badge is-running" id="run-state-badge"><span class="badge-dot" aria-hidden="true"></span>' + (stopping ? '停止中' : '运行中') + '</span>' +
       '<span class="run-timer mono" id="run-timer">' + UI.fmtDuration(s.run.elapsed) + '</span>' +
       '<button class="btn btn-sm btn-danger-quiet" id="stop-run" data-action="stop-run"' + (stopping ? ' disabled' : '') + '>停止</button>';
-    return pageHead('刷课', '<span id="run-page-sub">' + esc(stageText) + '</span> · 已用 <span class="mono" id="run-page-timer">' + UI.fmtDuration(s.run.elapsed) + '</span>', headSide) +
+    return pageHead('刷课', '<span id="run-page-sub">' + esc(stageText) + '</span>', headSide) +
       group('进度', '<div class="run-steps" id="run-steps">' + stepsHTML(s) + '</div><div id="run-progress">' + progressHTML(s) + '</div>') +
       logCardHTML(s);
   }
@@ -501,24 +483,25 @@
     var failed = !stopped && f.ok === false;
     var tone = failed ? 'danger' : stopped ? 'warning' : 'success';
     var toneText = failed ? '中断' : stopped ? '已停止' : '已完成';
-    var title = failed ? '刷课中断' : stopped ? '已停止' : '刷课完成';
-    var message = f.message || (failed
-      ? '运行时出了点问题，日志里有详细原因。'
-      : stopped ? '已完成的进度会保留，未开始的任务不再继续。'
-        : '任务都处理完了，可以到复核里查看生成的文字。');
-    var duration = f.duration_s != null ? f.duration_s : s.run.elapsed;
     var summary = f.summary || {};
-    var rows =
-      row('状态', message, badge(toneText, tone)) +
-      row('课程', '', '<span class="row-value">' + (summary.courses != null ? summary.courses : selectedCount(s)) + '</span>') +
-      row('错误', '', '<span class="row-value">' + (summary.errors != null ? summary.errors : 0) + '</span>') +
+    var duration = f.duration_s != null ? f.duration_s : s.run.elapsed;
+    var courses = summary.courses != null ? summary.courses : selectedCount(s);
+    var errors = summary.errors != null ? summary.errors : 0;
+    var note = (failed || stopped)
+      ? '<p class="run-result-note">' + icon('alert') + '<span>' +
+        esc(f.message || (failed ? '运行时出了点问题，详细原因见日志。' : '已完成的进度会保留，未开始的任务不再继续。')) +
+        '</span></p>'
+      : '';
+    var rows = note +
+      row('课程', '', '<span class="row-value">' + courses + ' 门</span>') +
+      row('错误', '', '<span class="row-value">' + errors + ' 个</span>') +
       row('耗时', '', '<span class="row-value mono">' + UI.fmtDuration(duration) + '</span>') +
-      '<div class="settings-foot-row">' +
+      '<div class="settings-foot-row">' + badge(toneText, tone) +
+      '<span class="result-foot-spacer"></span>' +
       '<button class="btn btn-primary" data-action="goto-review">查看复核</button>' +
       '<button class="btn" data-action="run-again">再刷一轮</button>' +
-      (failed ? '<button class="btn" data-action="toggle-log">查看日志</button>' : '') +
       '</div>';
-    return pageHead('刷课', '本轮已结束') +
+    return pageHead('刷课') +
       group('结果', rows) +
       logCardHTML(s);
   }
@@ -554,7 +537,7 @@
         rowIcon('file', KIND_COLOR[item.kind] || 'is-gray') +
         '<div class="row-copy"><div class="row-title">' + esc(item.task || '未命名任务') + '</div>' +
         '<div class="row-desc">' + esc(item.course || '未知课程') + ' · ' + esc(item.kind || '') + '</div></div>' +
-        '<div class="row-control"><span class="row-time">' + esc(UI.fmtClock(item.ts)) + '</span>' +
+        '<div class="row-control review-row-meta"><span class="row-time">' + esc(UI.fmtClockCn(item.ts)) + '</span>' +
         statusBadge(item.status) + '</div></button>';
     }).join('');
   }
@@ -579,7 +562,7 @@
     var meta = [];
     if (item.course) meta.push('<span><span class="k">课程</span> ' + esc(item.course) + '</span>');
     if (item.kind) meta.push('<span><span class="k">类型</span> ' + esc(item.kind) + '</span>');
-    if (item.ts) meta.push('<span><span class="k">时间</span> ' + esc(item.ts) + '</span>');
+    if (item.ts) meta.push('<span><span class="k">时间</span> ' + esc(UI.fmtClockCn(item.ts)) + '</span>');
     meta.push('<span><span class="k">字数</span> ' + (item.chars || 0) + '</span>');
     meta.push('<span><span class="k">状态</span> ' + item.status + '</span>');
     return '<div class="review-detail-head">' +
@@ -601,10 +584,13 @@
     }).join('') + '</div>' +
       '<button class="btn btn-sm" data-action="open-reviews-dir">打开记录文件夹</button>';
     var count = (s.review.items || []).length;
+    if (!s.review.loading && !s.review.error) {
+      filters = filters.replace('<button class="btn btn-sm" data-action="open-reviews-dir">',
+        '<span class="review-count mono">' + count + ' 条</span><button class="btn btn-sm" data-action="open-reviews-dir">');
+    }
     return pageHead('复核', 'AI 生成并已提交给平台的文字，可回看与复制', filters) +
       '<div class="review-layout">' +
-      '<section class="group"><div class="group-box review-list" id="review-items">' + reviewListHTML(s) + '</div>' +
-      '<p class="group-note">' + (s.review.error ? '' : (s.review.loading ? '正在读取…' : '共 ' + count + ' 条记录')) + '</p></section>' +
+      '<section class="group"><div class="group-box review-list" id="review-items">' + reviewListHTML(s) + '</div></section>' +
       '<section class="group"><div class="group-box review-detail" id="review-detail">' + reviewDetailHTML(s) + '</div></section>' +
       '</div>';
   }
@@ -623,25 +609,26 @@
     var ready = !!s.engineReady;
     var dirty = !!s.settingsPage.dirty;
 
-    var headSide =
-      '<span class="dirty-chip" id="settings-dirty"' + (dirty ? '' : ' hidden') + '>有未保存的更改</span>' +
-      '<button class="btn btn-sm" id="revert-settings" data-action="revert-settings"' + (dirty ? '' : ' hidden') + '>撤销</button>' +
-      '<button class="btn btn-primary" id="save-settings" data-action="save-settings"' + (dirty && !s.settingsPage.saving ? '' : ' disabled') + '>' +
-      (s.settingsPage.saving ? '保存中…' : '保存设置') + '</button>';
+    var headSide = dirty
+      ? '<span class="dirty-chip" id="settings-dirty">有未保存的更改</span>' +
+        '<button class="btn btn-sm" id="revert-settings" data-action="revert-settings">撤销</button>' +
+        '<button class="btn btn-primary" id="save-settings" data-action="save-settings"' + (s.settingsPage.saving ? ' disabled' : '') + '>' +
+        (s.settingsPage.saving ? '保存中…' : '保存设置') + '</button>'
+      : '';
 
     var accountsBox = (s.accounts || []).map(function (a) {
       return '<div class="row">' + rowIcon('user', 'is-green') +
         '<div class="row-copy"><div class="row-title">' + esc(a.name || a.username_masked) + '</div>' +
         '<div class="row-desc">' + esc(a.name ? a.username_masked : '未设置昵称') +
-        (a.last_used ? ' · 最近使用 ' + esc(UI.fmtClock(a.last_used)) : '') +
+        (a.last_used ? ' · 最近使用 ' + esc(UI.fmtClockCn(a.last_used)) : '') +
         (a.has_password ? '' : ' · 没有保存密码') + '</div></div>' +
-        '<div class="row-control"><button class="btn btn-sm btn-danger-quiet" data-action="remove-account" data-id="' + esc(a.id) + '" data-label="' + esc(a.username_masked) + '">删除</button></div>' +
+        '<div class="row-control"><button class="icon-btn is-danger" data-action="remove-account" data-id="' + esc(a.id) + '" data-label="' + esc(a.username_masked) + '" aria-label="删除账号" title="删除账号">' + icon('trash') + '</button></div>' +
         '</div>';
     }).join('');
     if (!accountsBox) accountsBox = emptyState({ icon: 'user', title: '还没有账号', desc: '添加学习通账号后才能拉取课程。' });
     accountsBox += '<div class="row">' + rowIcon('plus', 'is-blue') +
       '<div class="row-copy"><div class="row-title">添加账号</div><div class="row-desc">账号只保存在本机</div></div>' +
-      '<div class="row-control"><button class="btn btn-sm" data-action="add-account">添加账号</button></div></div>';
+      '<div class="row-control"><button class="btn btn-sm" data-action="add-account">添加</button></div></div>';
 
     var speedOptions = [];
     for (var v = 10; v <= 20; v++) speedOptions.push([(v / 10).toFixed(1), (v / 10).toFixed(1) + '×']);
@@ -675,7 +662,7 @@
       '<div class="row-control"><button class="btn btn-sm" data-action="choose-engine">选择目录</button></div></div>' +
       row('Python', '运行引擎使用的解释器', '<span class="row-value mono">' + esc(engine.python || statusEngine.python || '未检测到') + '</span>') +
       '<div class="row"><div class="row-copy"><div class="row-title">检测状态</div>' +
-      '<div class="row-desc">' + esc(engine.message || (ready ? '仓库和 Python 都正常' : '选择目录后重新检测')) + '</div></div>' +
+      '<div class="row-desc">' + esc(ready ? '仓库与 Python 均可运行' : (engine.message || '选择目录后重新检测')) + '</div></div>' +
       '<div class="row-control">' + badge(ready ? '已就绪' : '未就绪', ready ? 'success' : 'warning') +
       '<button class="btn btn-sm" data-action="retry-engine">重新检测</button></div></div>' +
       '<div class="row"><div class="row-copy"><div class="row-title">数据目录</div>' +
@@ -686,7 +673,6 @@
     var aboutBox = '<div class="about-head">' + appMark() +
       '<div class="about-copy"><div class="about-name">超星助手</div>' +
       '<div class="about-version mono">' + esc(info.version || '0.1.0') + '</div></div></div>' +
-      row('协议版本', '', '<span class="row-value mono">' + esc(info.protocol != null ? info.protocol : 1) + '</span>') +
       row('许可证', '', '<span class="row-value">' + esc(info.license || 'GPL-3.0') + '</span>');
 
     return pageHead('设置', '账号、刷课参数与引擎环境', headSide) +
