@@ -8,3 +8,6 @@ node_modules/
 tools/bin/
 # go build ./... 可能在 desktop/ 下生成名为 desktop 的可执行文件
 desktop
+
+# 发布签名材料（本机）
+.private/
