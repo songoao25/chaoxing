@@ -55,6 +55,8 @@ func main() {
 		Height:    windowHeight,
 		MinWidth:  windowMinWidth,
 		MinHeight: windowMinHeight,
+		// 关窗不退出：批量可以继续在后台跑，Dock/再次启动可唤回窗口
+		HideWindowOnClose: true,
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: singleInstanceID,
 			OnSecondInstanceLaunch: func(options.SecondInstanceData) {

@@ -6,10 +6,8 @@ package main
 // 执行器换成现有 Python 引擎（每个账号自动拉取全部课程后调用 StartRun）。
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
-	"sync"
 	"time"
 )
 
@@ -36,6 +34,9 @@ type BatchState struct {
 }
 
 const (
+	batchMaxAttempts = 2 // 单账号最多尝试次数（含首次）
+	batchRetryWait   = 20 * time.Second
+
 	batchStatusQueued    = "queued"
 	batchStatusRunning   = "running"
 	batchStatusOK        = "ok"
@@ -186,6 +187,9 @@ func (a *App) runBatch(accounts []Account, opts RunOptions) {
 		state := a.batchState
 		a.batchMu.Unlock()
 		a.emit("batch:state", state)
+		if len(state.Items) > 0 {
+			notifyUser("批量运行结束", state.Message)
+		}
 	}()
 
 	for index, account := range accounts {
@@ -193,70 +197,53 @@ func (a *App) runBatch(accounts []Account, opts RunOptions) {
 			a.cancelBatchRemaining(accounts[index:], "已停止")
 			return
 		}
-		startedAt := time.Now().Format(time.RFC3339)
 		a.batchMu.Lock()
 		a.batchState.Current = account.ID
 		a.batchState.Message = "正在准备账号：" + account.Name
 		a.batchMu.Unlock()
-		a.updateBatchItem(account.ID, func(item *BatchAccountState) {
-			item.Status = batchStatusRunning
-			item.StartedAt = startedAt
-			item.Message = "正在拉取课程…"
-		})
 
-		courses, err := a.ListCourses(account.ID)
-		if err != nil {
-			a.finishBatchItem(account.ID, batchStatusFailed, "拉取课程失败："+err.Error(), 0)
-			continue
-		}
-		if a.batchStopped() {
-			a.finishBatchItem(account.ID, batchStatusCancelled, "已停止", 0)
-			a.cancelBatchRemaining(accounts[index+1:], "已停止")
-			return
-		}
-		if len(courses.Courses) == 0 {
-			a.finishBatchItem(account.ID, batchStatusFailed, "这个账号没有拉取到课程", 0)
-			continue
-		}
-		courseIDs := make([]string, 0, len(courses.Courses))
-		for _, course := range courses.Courses {
-			if course.CourseID != "" {
-				courseIDs = append(courseIDs, course.CourseID)
+		status, message, courses := batchStatusFailed, "", 0
+		stopped := false
+		for attempt := 1; attempt <= batchMaxAttempts; attempt++ {
+			if a.batchStopped() {
+				stopped = true
+				break
+			}
+			attemptNumber := attempt
+			a.updateBatchItem(account.ID, func(item *BatchAccountState) {
+				item.Status = batchStatusRunning
+				if item.StartedAt == "" {
+					item.StartedAt = time.Now().Format(time.RFC3339)
+				}
+				if attemptNumber == 1 {
+					item.Message = "正在拉取课程…"
+				} else {
+					item.Message = fmt.Sprintf("第 %d 次重试中…", attemptNumber-1)
+				}
+			})
+			status, message, courses, stopped = a.runBatchAccount(account, opts)
+			if stopped {
+				break
+			}
+			if status == batchStatusOK || status == batchStatusCancelled {
+				break
+			}
+			if attempt < batchMaxAttempts {
+				a.updateBatchItem(account.ID, func(item *BatchAccountState) {
+					item.Message = fmt.Sprintf("%s；%s 后重试", message, batchRetryWait.Round(time.Second))
+				})
+				if !a.sleepBatch(batchRetryWait) {
+					stopped = true
+					break
+				}
 			}
 		}
-		a.updateBatchItem(account.ID, func(item *BatchAccountState) {
-			item.Courses = len(courseIDs)
-			item.Message = fmt.Sprintf("运行中（%d 门课程）", len(courseIDs))
-		})
-
-		runOpts := opts
-		runOpts.AccountID = account.ID
-		runOpts.CourseIDs = courseIDs
-		if _, err := a.StartRun(runOpts); err != nil {
-			a.finishBatchItem(account.ID, batchStatusFailed, "启动失败："+err.Error(), len(courseIDs))
-			continue
-		}
-
-		result, stopped := a.waitBatchRunFinished()
 		if stopped || a.batchStopped() {
-			a.finishBatchItem(account.ID, batchStatusCancelled, "已停止", len(courseIDs))
+			a.finishBatchItem(account.ID, batchStatusCancelled, "已停止", courses)
 			a.cancelBatchRemaining(accounts[index+1:], "已停止")
 			return
 		}
-		ok, _ := result["ok"].(bool)
-		reason, _ := result["reason"].(string)
-		message, _ := result["message"].(string)
-		switch {
-		case ok && reason != "stopped":
-			a.finishBatchItem(account.ID, batchStatusOK, "完成", len(courseIDs))
-		case reason == "stopped":
-			a.finishBatchItem(account.ID, batchStatusCancelled, "已停止", len(courseIDs))
-		default:
-			if message == "" {
-				message = "运行中断"
-			}
-			a.finishBatchItem(account.ID, batchStatusFailed, message, len(courseIDs))
-		}
+		a.finishBatchItem(account.ID, status, message, courses)
 
 		if index < len(accounts)-1 {
 			delay := time.Duration(30+rand.Intn(61)) * time.Second
@@ -269,6 +256,55 @@ func (a *App) runBatch(accounts []Account, opts RunOptions) {
 				return
 			}
 		}
+	}
+}
+
+// runBatchAccount 运行单个账号的一次尝试，返回状态、消息与课程数。
+func (a *App) runBatchAccount(account Account, opts RunOptions) (status, message string, courses int, stopped bool) {
+	courseList, err := a.ListCourses(account.ID)
+	if err != nil {
+		return batchStatusFailed, "拉取课程失败：" + err.Error(), 0, false
+	}
+	if a.batchStopped() {
+		return batchStatusCancelled, "已停止", 0, true
+	}
+	if len(courseList.Courses) == 0 {
+		return batchStatusFailed, "这个账号没有拉取到课程", 0, false
+	}
+	courseIDs := make([]string, 0, len(courseList.Courses))
+	for _, course := range courseList.Courses {
+		if course.CourseID != "" {
+			courseIDs = append(courseIDs, course.CourseID)
+		}
+	}
+	a.updateBatchItem(account.ID, func(item *BatchAccountState) {
+		item.Courses = len(courseIDs)
+		item.Message = fmt.Sprintf("运行中（%d 门课程）", len(courseIDs))
+	})
+
+	runOpts := opts
+	runOpts.AccountID = account.ID
+	runOpts.CourseIDs = courseIDs
+	if _, err := a.StartRun(runOpts); err != nil {
+		return batchStatusFailed, "启动失败：" + err.Error(), len(courseIDs), false
+	}
+	result, wasStopped := a.waitBatchRunFinished()
+	if wasStopped || a.batchStopped() {
+		return batchStatusCancelled, "已停止", len(courseIDs), true
+	}
+	ok, _ := result["ok"].(bool)
+	reason, _ := result["reason"].(string)
+	detail, _ := result["message"].(string)
+	switch {
+	case ok && reason != "stopped":
+		return batchStatusOK, "完成", len(courseIDs), false
+	case reason == "stopped":
+		return batchStatusCancelled, "已停止", len(courseIDs), false
+	default:
+		if detail == "" {
+			detail = "运行中断"
+		}
+		return batchStatusFailed, detail, len(courseIDs), false
 	}
 }
 
@@ -354,7 +390,3 @@ func (a *App) batchSummaryLocked() string {
 	}
 	return fmt.Sprintf("批量结束：成功 %d，失败 %d，取消 %d", okCount, failCount, cancelCount)
 }
-
-// ensure imports used (context kept for future cancellation wiring)
-var _ = context.Background
-var _ = sync.Mutex{}
