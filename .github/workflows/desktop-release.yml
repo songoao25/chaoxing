@@ -73,9 +73,11 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#desktop-v}"
           gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/SHA256SUMS.txt \
+            --repo "${GITHUB_REPOSITORY}" \
             --title "超星助手 ${VERSION}" \
             --notes "macOS Apple Silicon 桌面端。已安装的用户可在「设置 → 版本更新」一键升级。"

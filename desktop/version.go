@@ -9,4 +9,4 @@ package main
 //  4. 已安装的 App 启动时检查更新，用户点「下载并安装」即可升级。
 //
 // 用 var 而不是 const，方便 CI 通过 -ldflags "-X main.appVersion=..." 覆盖。
-var appVersion = "0.2.1"
+var appVersion = "0.2.2"
