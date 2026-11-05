@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // desktopSettings 是 ~/.chaoxing/desktop.json 的结构。
@@ -66,7 +67,10 @@ func loadDesktopSettings(path string) (desktopSettings, error) {
 		return s, nil
 	}
 	if err := json.Unmarshal(data, &s); err != nil {
-		return desktopSettings{}, fmt.Errorf("桌面设置文件格式有误（%s）：请删除后重试", path)
+		// 先留一份带时间戳的备份，避免后续保存把用户原设置直接覆盖掉。
+		backup := path + ".corrupt-" + time.Now().Format("20060102-150405")
+		_ = os.WriteFile(backup, data, 0o600)
+		return desktopSettings{}, fmt.Errorf("桌面设置文件格式有误（%s）：已备份到 %s", path, backup)
 	}
 	return s, nil
 }

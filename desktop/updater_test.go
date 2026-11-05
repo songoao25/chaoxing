@@ -525,3 +525,39 @@ func TestRunUpdatePipelineRejectsBadDigest(t *testing.T) {
 		t.Fatalf("失败后当前版本应保持不变：%v %q", err, versionOut)
 	}
 }
+
+func TestCleanupStaleUpdateArtifactsOnlyRemovesOurPrefixes(t *testing.T) {
+	parent := t.TempDir()
+	app := filepath.Join(parent, "超星助手.app")
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dataDir := filepath.Join(parent, "user-data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(dataDir, "config.ini")
+	if err := os.WriteFile(sentinel, []byte("[ai]\nkey=keep-me\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	staleStage := filepath.Join(parent, updateStagePrefix+"old")
+	staleOld := filepath.Join(parent, updateOldBundlePrefix+"old-超星助手.app")
+	if err := os.MkdirAll(staleStage, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(staleOld, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanupStaleUpdateArtifacts(app)
+
+	if data, err := os.ReadFile(sentinel); err != nil || string(data) != "[ai]\nkey=keep-me\n" {
+		t.Fatalf("更新清理不应碰用户数据：%v %q", err, data)
+	}
+	if _, err := os.Stat(staleStage); !os.IsNotExist(err) {
+		t.Fatalf("更新临时目录应被清理：%v", err)
+	}
+	if _, err := os.Stat(staleOld); !os.IsNotExist(err) {
+		t.Fatalf("旧版本备份应被清理：%v", err)
+	}
+}
