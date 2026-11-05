@@ -116,6 +116,9 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.mu.Unlock()
 
+	// Dock / ⌘Tab 图标跟随系统深浅色（纸/墨两版）
+	startDockIconSync()
+
 	if a.mock {
 		a.emitBridgeState(bridgeStateReady, "演示模式：使用内置假数据。")
 		return

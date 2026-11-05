@@ -288,10 +288,11 @@
       '<aside class="sidebar" aria-label="应用侧栏"><div class="sidebar-inner">' +
       '<nav class="nav" role="tablist" aria-label="主导航" aria-orientation="vertical">' + nav + '</nav>' +
       '<div class="sidebar-footer">' +
-      '<div class="sidebar-brand">' +
-      '<span class="sidebar-brand-name">超星助手</span>' +
-      '<span class="sidebar-version mono" id="sidebar-version">v0.1.0</span>' +
-      '</div></div></div></aside>' +
+      '<div class="mini-status" id="mini-status" aria-live="polite">' +
+      '<span class="mini-dot" id="mini-dot" aria-hidden="true"></span>' +
+      '<span class="mini-text" id="mini-text">正在连接…</span></div>' +
+      '<div class="sidebar-version mono" id="sidebar-version">v0.2.0</div>' +
+      '</div></div></aside>' +
       '<main class="main" id="main"><div class="main-scroll" id="main-scroll">' +
       '<div class="page" id="page"></div></div></main></div>';
   }
@@ -332,13 +333,22 @@
     var dotCls = ready ? 'is-running' : (state === 'failed' ? 'is-error' : '');
     var dot = document.getElementById('sync-dot');
     if (dot) dot.className = 'sync-dot' + (dotCls ? ' ' + dotCls : '');
-    var syncText = document.getElementById('toolbar-sync-text');
+    var miniDot = document.getElementById('mini-dot');
+    if (miniDot) miniDot.className = 'mini-dot' + (dotCls ? ' ' + dotCls : '');
+    var miniText = document.getElementById('mini-text');
     var label = ready ? '引擎已就绪'
       : state === 'starting' ? '引擎启动中'
         : state === 'restarting' ? '引擎重连中'
           : state === 'failed' ? '引擎连接失败'
             : '引擎未就绪';
-    if (syncText) syncText.textContent = label;
+    if (miniText) miniText.textContent = label;
+
+    // 工具栏显示「最近运行」而不是重复引擎状态（与雨课助手的「最近同步」同一位置/口径）
+    var syncText = document.getElementById('toolbar-sync-text');
+    if (syncText) {
+      var lastRun = (S.status && S.status.last_run) || {};
+      syncText.textContent = lastRun.at ? '最近运行：' + UI.fmtClockCn(lastRun.at) : '最近运行：无记录';
+    }
     var versionEl = document.getElementById('sidebar-version');
     if (versionEl && S.appInfo && S.appInfo.version) versionEl.textContent = 'v' + S.appInfo.version;
   }
@@ -523,7 +533,8 @@
         icon: 'book',
         title: '这个应用帮你做什么',
         text: '它帮你在电脑上自动完成学习通的课程任务：按平台真实时长播放视频、阅读文档，并把 AI 写过的文字留一份记录。所有操作都在这个窗口里，不需要懂代码。',
-        note: '第一次用跟着下面几步走一遍即可；随时可以跳过，以后在「设置 → 帮助」重看。'
+        note: '第一次用跟着下面几步走一遍即可；随时可以跳过，以后在「设置 → 帮助」重看。',
+        points: ['按平台真实时长完成视频、文档等任务', '运行中可以随时停止，进度以平台为准', 'AI 写的文字会留痕，可以回看']
       },
       {
         icon: 'server',
@@ -538,7 +549,8 @@
         icon: 'user',
         title: '第 2 步 · 添加账号',
         text: '打开「设置 → 账号 → 添加」，填学习通手机号和密码。密码只保存在本机，不会上传到任何地方。',
-        note: '已经添加过的账号会直接列出来，点一下选中即可。'
+        note: '已经添加过的账号会直接列出来，点一下选中即可。',
+        points: ['密码只保存在本机，不会上传']
       },
       {
         icon: 'play-line',
@@ -550,7 +562,8 @@
         icon: 'check-circle',
         title: '第 4 步 · 看复核结果',
         text: '跑完后打开「复核」，可以回看、复制 AI 生成并提交给平台的文字；提交失败时那里会写原因和处理建议。',
-        note: '以后想再看教程：设置 → 帮助 → 新手教程。'
+        note: '以后想再看教程：设置 → 帮助 → 新手教程。',
+        points: ['提交失败时会写原因和处理建议']
       }
     ];
   }
@@ -603,6 +616,12 @@
     for (var d = 0; d < steps.length; d++) {
       dots += '<span class="onboarding-dot' + (d === i ? ' is-active' : '') + '"></span>';
     }
+    var pointsHTML = '';
+    if (step.points && step.points.length) {
+      pointsHTML = '<ul class="onboarding-points">' + step.points.map(function (line) {
+        return '<li>' + UI.esc(line) + '</li>';
+      }).join('') + '</ul>';
+    }
     var actionHTML = '';
     if (step.action) {
       actionHTML = '<button class="btn btn-sm" type="button" data-action="' + step.action.action + '">' +
@@ -620,6 +639,7 @@
       '<span class="onboarding-icon" aria-hidden="true"><svg class="icon"><use id="onboarding-icon-use" href="#i-' + step.icon + '"></use></svg></span>' +
       '<h2 class="onboarding-title" id="onboarding-title">' + UI.esc(step.title) + '</h2>' +
       '<p class="onboarding-text" id="onboarding-text">' + UI.esc(step.text) + '</p>' +
+      pointsHTML +
       '<div class="onboarding-actions" id="onboarding-actions">' + actionHTML + '</div>' +
       '<p class="onboarding-note" id="onboarding-note">' + UI.esc(step.note || '') + '</p>' +
       '</div>' +
@@ -1317,6 +1337,8 @@
       stopTimer();
       if (data && data.duration_s != null) S.run.elapsed = data.duration_s;
       if (S.page === 'run') render();
+      if (S.status) S.status.last_run = { at: data && data.finished_at ? data.finished_at : new Date().toISOString().slice(0, 19).replace('T', ' '), log_mtime: '' };
+      updateSidebar();
       var ok = data && data.ok;
       var reason = data && data.reason;
       if (ok && reason !== 'stopped') UI.toast('刷课完成');
