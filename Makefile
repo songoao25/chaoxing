@@ -51,7 +51,8 @@ desktop-test:  ## 桌面端 Go 检查与测试
 desktop-selftest:  ## 桌面端无头自检（mock 数据，不联网）
 	CX_DESKTOP_MOCK=1 $(APP)/Contents/MacOS/chaoxing-desktop --self-test
 
-desktop-install: desktop-build  ## 构建并安装到 /Applications（覆盖旧版本）
+desktop-install: desktop-build  ## 构建并安装到 /Applications（覆盖旧版本，嵌入 Sparkle 并签名）
+	bash desktop/tools/embed-sparkle.sh $(APP) "$${SPARKLE_DIR:-/tmp/sparkle}"
 	rm -rf "/Applications/超星助手.app"
 	ditto $(APP) "/Applications/超星助手.app"
 	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/超星助手.app" || true

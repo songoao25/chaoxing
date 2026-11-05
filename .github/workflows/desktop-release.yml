@@ -6,10 +6,11 @@ name: Desktop release (macOS)
 # 发版前先在本地把 desktop/version.go 的 appVersion 与 desktop/wails.json 的
 # info.productVersion 改成同一版本号并提交，再打 tag；版本不一致 CI 会直接失败。
 
+# Sparkle 版本的发布需要 Apple Development（或 Developer ID）证书签名；
+# 本机通过 desktop/tools/embed-sparkle.sh 签名并手动发布 Release。
+# 配好签名证书与 Sparkle 私钥 secrets 之前，这里只保留手动触发，避免 tag 触发
+# 发布未签名/未嵌入 Sparkle 的产物。
 on:
-  push:
-    tags:
-      - "desktop-v*"
   workflow_dispatch:
 
 permissions:

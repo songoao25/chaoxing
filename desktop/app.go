@@ -142,13 +142,11 @@ func (a *App) startup(ctx context.Context) {
 		a.emitBridgeState(bridgeStateFailed, finding.Message)
 	}
 
-	// 自动更新：清理上次遗留的备份，并在后台检查一次（失败静默，不打扰使用）。
+	// 自动更新：清理上次遗留的备份；Sparkle 负责检查/安装（GitHub 自更新仅保留为离线兜底）。
 	if appPath, err := currentAppBundlePath(); err == nil {
 		cleanupStaleUpdateArtifacts(appPath)
 	}
-	if runtime.GOOS == "darwin" && updateAutoCheckEnabled() {
-		go a.autoCheckForUpdate()
-	}
+	a.initSparkle()
 }
 
 // shutdown 在应用退出时调用，确保子进程被清理。
