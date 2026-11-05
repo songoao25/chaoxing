@@ -220,3 +220,44 @@ type BridgeStateEvent struct {
 	State   string `json:"state"`
 	Message string `json:"message"`
 }
+
+// UpdateState 是自动更新状态（§5，additive）：设置页与 update:state 事件共用。
+type UpdateState struct {
+	Supported      bool   `json:"supported"`
+	CurrentVersion string `json:"current_version"`
+	Available      bool   `json:"available"`
+	LatestVersion  string `json:"latest_version"`
+	Tag            string `json:"tag"`
+	ReleaseURL     string `json:"release_url"`
+	Notes          string `json:"notes"`
+	PublishedAt    string `json:"published_at"`
+	AssetName      string `json:"asset_name"`
+	AssetSize      int64  `json:"asset_size"`
+	Digest         string `json:"digest"`
+	CheckedAt      string `json:"checked_at"`
+	Checking       bool   `json:"checking"`
+	Installing     bool   `json:"installing"`
+	Progress       int    `json:"progress"`
+	Phase          string `json:"phase"`
+	Message        string `json:"message"`
+	Error          string `json:"error"`
+}
+
+// UpdateProgress 是 update:progress 事件的 payload。
+type UpdateProgress struct {
+	Phase      string `json:"phase"`
+	Downloaded int64  `json:"downloaded"`
+	Total      int64  `json:"total"`
+	Percent    int    `json:"percent"`
+	Message    string `json:"message"`
+}
+
+// UpdateStartResult 是 StartUpdate 的返回。
+type UpdateStartResult struct {
+	Started bool `json:"started"`
+}
+
+// OnboardingState 是 GetOnboardingState 的返回（§5，additive）。
+type OnboardingState struct {
+	Needs bool `json:"needs"`
+}

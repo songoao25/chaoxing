@@ -19,6 +19,7 @@ type selfTestReport struct {
 	Bridge   selfTestBridge `json:"bridge"`
 	Window   selfTestWindow `json:"window"`
 	Platform string         `json:"platform"`
+	Update   selfTestUpdate `json:"update"`
 	Error    string         `json:"error,omitempty"`
 }
 
@@ -61,6 +62,27 @@ func currentWindowReport() selfTestWindow {
 	return report
 }
 
+// selfTestUpdate 输出自动更新的静态能力（不联网、不检查 Release）。
+type selfTestUpdate struct {
+	CurrentVersion    string `json:"current_version"`
+	Supported         bool   `json:"supported"`
+	AutoCheckEnabled  bool   `json:"auto_check_enabled"`
+	UpdateSource      string `json:"update_source"`
+	ExpectedAssetName string `json:"expected_asset_name"`
+}
+
+// currentUpdateReport 汇总更新能力。
+func currentUpdateReport() selfTestUpdate {
+	assetName, _ := updateAssetName(runtime.GOOS, runtime.GOARCH)
+	return selfTestUpdate{
+		CurrentVersion:    appVersion,
+		Supported:         runtime.GOOS == "darwin",
+		AutoCheckEnabled:  updateAutoCheckEnabled(),
+		UpdateSource:      "github-releases:" + updateRepoSlug,
+		ExpectedAssetName: assetName,
+	}
+}
+
 type selfTestBridge struct {
 	State      string          `json:"state"`
 	Message    string          `json:"message,omitempty"`
@@ -75,6 +97,7 @@ func runSelfTest(stdout, stderr io.Writer) int {
 		Bridge:   selfTestBridge{State: bridgeStateStopped},
 		Window:   currentWindowReport(),
 		Platform: runtime.GOOS,
+		Update:   currentUpdateReport(),
 	}
 
 	if isMockMode() {

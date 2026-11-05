@@ -199,6 +199,20 @@ cd desktop
 open build/bin/chaoxing-desktop.app
 ```
 
+安装到 `/Applications` 用 `make desktop-install`；构建产物不进 git，所以 clone 下来不会自带 .app。
+应用内置自动更新（GitHub Releases，用户确认后下载校验并重启），发版流程见 desktop/README.md。
+
+### 零基础快速上手
+
+不需要懂代码，全部在窗口里完成。第一次打开会显示 5 步新手教程，以后可在「设置 → 帮助」重新打开。
+
+1. 打开 `/Applications/超星助手.app`（可在 Launchpad/Spotlight 搜「超星助手」）。
+2. 按教程确认「运行环境」；显示「引擎已就绪」就可以继续。若显示未就绪，在设置里选择
+   chaoxing 仓库目录，或把设置页截图发给帮你安装的人。
+3. 打开「设置 → 账号 → 添加」，填学习通手机号和密码（只保存在本机 `~/.chaoxing`，不会上传）。
+4. 打开「刷课」，选账号 → 勾课程 → 选范围 → 点「开始刷课」；运行中可以随时停止。
+5. 跑完后打开「复核」，查看 AI 生成并已提交的文字；「设置 → 版本更新」可以一键升级。
+
 构建与开发说明见 [desktop/README.md](desktop/README.md)，三端接口契约见
 [desktop/docs/INTERFACE.md](desktop/docs/INTERFACE.md)，视觉规范见
 [desktop/docs/DESIGN.md](desktop/docs/DESIGN.md)。界面与同作者的「雨课助手」

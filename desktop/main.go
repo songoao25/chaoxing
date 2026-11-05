@@ -40,6 +40,9 @@ const opaqueWindowHex = "#F4F4F5"
 var assets embed.FS
 
 func main() {
+	if hasFlag(os.Args[1:], "--check-update") {
+		os.Exit(runCheckUpdate(os.Stdout, os.Stderr))
+	}
 	if hasSelfTestFlag(os.Args[1:]) {
 		os.Exit(runSelfTest(os.Stdout, os.Stderr))
 	}
@@ -129,12 +132,17 @@ func windowBackgroundColour(opaque bool) *options.RGBA {
 	return &options.RGBA{R: 0, G: 0, B: 0, A: 0}
 }
 
-// hasSelfTestFlag 判断是否带 --self-test 参数。
-func hasSelfTestFlag(args []string) bool {
+// hasFlag 判断参数里是否包含指定 flag。
+func hasFlag(args []string, name string) bool {
 	for _, arg := range args {
-		if arg == "--self-test" || arg == "-self-test" {
+		if arg == name {
 			return true
 		}
 	}
 	return false
+}
+
+// hasSelfTestFlag 判断是否带 --self-test 参数。
+func hasSelfTestFlag(args []string) bool {
+	return hasFlag(args, "--self-test") || hasFlag(args, "-self-test")
 }

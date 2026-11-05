@@ -36,6 +36,33 @@
   var params = new URLSearchParams(window.location.search);
   var scenario = params.get('scenario') || '';
   var theme = params.get('theme');
+
+  // 自动更新的演示状态（scenario=update 时显示“发现新版本”）
+  var updateState = {
+    supported: true,
+    current_version: '0.2.0',
+    available: false,
+    latest_version: '',
+    tag: '',
+    release_url: '',
+    notes: '',
+    checked_at: '',
+    checking: false,
+    installing: false,
+    progress: 0,
+    phase: '',
+    message: '尚未检查更新',
+    error: ''
+  };
+  if (scenario === 'update') {
+    updateState.available = true;
+    updateState.latest_version = '0.2.1';
+    updateState.tag = 'desktop-v0.2.1';
+    updateState.release_url = 'https://github.com/songoao25/chaoxing/releases/tag/desktop-v0.2.1';
+    updateState.notes = '修复若干问题';
+    updateState.checked_at = '刚刚';
+    updateState.message = '发现新版本 v0.2.1';
+  }
   if (theme === 'dark' || theme === 'light') {
     document.documentElement.setAttribute('data-theme', theme);
   }
@@ -645,8 +672,34 @@
     OpenDataDir: function () { return delay(120, null); },
     OpenConfigFile: function () { return delay(120, null); },
 
+    GetOnboardingState: function () { return delay(60, { needs: scenario === 'onboarding' }); },
+
+    CompleteOnboarding: function () { return delay(80, null); },
+
+    GetUpdateState: function () { return delay(80, updateState); },
+
+    CheckForUpdate: function () {
+      updateState.checking = true;
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          updateState.checking = false;
+          updateState.checked_at = '刚刚';
+          updateState.message = updateState.available ? '发现新版本 v' + updateState.latest_version : '已是最新版本';
+          resolve(clone(updateState));
+        }, 420);
+      });
+    },
+
+    StartUpdate: function () {
+      updateState.installing = true;
+      updateState.progress = 0;
+      updateState.phase = 'download';
+      updateState.message = '准备下载更新…';
+      return delay(120, { started: true });
+    },
+
     GetAppInfo: function () {
-      return delay(120, { version: '0.1.0', protocol: 1, license: 'GPL-3.0' });
+      return delay(120, { version: '0.2.0', protocol: 1, license: 'GPL-3.0', platform: 'darwin' });
     }
   };
 
@@ -706,6 +759,15 @@
     if (scenario === 'settings') {
       document.querySelector(navSel('settings')).click();
       await waitFor('.settings-layout', 7000);
+      return;
+    }
+    if (scenario === 'update') {
+      document.querySelector(navSel('settings')).click();
+      await waitFor('#update-row', 7000);
+      return;
+    }
+    if (scenario === 'onboarding') {
+      await waitFor('.onboarding', 7000);
       return;
     }
     if (scenario === 'result') {

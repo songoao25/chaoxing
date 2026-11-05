@@ -2,7 +2,7 @@
 PY := ./.venv/bin/python
 WAILS ?= $(shell command -v wails 2>/dev/null || echo $(HOME)/go/bin/wails)
 APP := desktop/build/bin/chaoxing-desktop.app
-.PHONY: help test lint compile publication doctor desktop-build desktop-test desktop-selftest desktop-run
+.PHONY: help test lint compile publication doctor desktop-build desktop-install desktop-test desktop-selftest desktop-run
 
 help:  ## 列出所有命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -50,6 +50,12 @@ desktop-test:  ## 桌面端 Go 检查与测试
 
 desktop-selftest:  ## 桌面端无头自检（mock 数据，不联网）
 	CX_DESKTOP_MOCK=1 $(APP)/Contents/MacOS/chaoxing-desktop --self-test
+
+desktop-install: desktop-build  ## 构建并安装到 /Applications（覆盖旧版本）
+	rm -rf "/Applications/超星助手.app"
+	ditto $(APP) "/Applications/超星助手.app"
+	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/超星助手.app" || true
+	open "/Applications/超星助手.app"
 
 desktop-run:  ## 打开构建好的桌面端
 	open $(APP)

@@ -382,3 +382,25 @@ func TestSelfTestMockReport(t *testing.T) {
 		t.Errorf("自检 bridge.ping 异常：%+v", report.Bridge.Ping)
 	}
 }
+
+func TestOnboardingStatePersists(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "desktop.json")
+	app := &App{settingsPath: path, dataDir: dir}
+	if !app.GetOnboardingState().Needs {
+		t.Fatal("新用户应需要新手教程")
+	}
+	if err := app.CompleteOnboarding(); err != nil {
+		t.Fatalf("记录教程完成失败：%v", err)
+	}
+	if app.GetOnboardingState().Needs {
+		t.Fatal("完成教程后不应再次显示")
+	}
+	loaded, err := loadDesktopSettings(path)
+	if err != nil {
+		t.Fatalf("读取设置失败：%v", err)
+	}
+	if !loaded.OnboardingDone {
+		t.Fatal("onboarding_done 应已写入设置文件")
+	}
+}

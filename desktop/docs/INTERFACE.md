@@ -252,6 +252,9 @@ params：
 | `OpenDataDir()` | — | `null` | 用系统文件管理器打开 `~/.chaoxing` |
 | `OpenConfigFile()` | — | `null` | 用默认编辑器打开 `~/.chaoxing/config.ini` |
 | `GetAppInfo()` | — | `{version, protocol, license, platform}` | 关于页；`platform` = runtime.GOOS（additive，用于判断 darwin 透明材质） |
+| `GetUpdateState()` | — | `UpdateState` | 取缓存的更新状态（不联网；启动自动检查通过事件刷新） |
+| `CheckForUpdate()` | — | `UpdateState` | 联网检查 GitHub Releases（设置页「检查更新」） |
+| `StartUpdate()` | — | `{started:boolean}` | 开始下载并安装更新；立即返回，进度走事件 |
 
 ### 事件（Go → 前端，`window.runtime.EventsOn`）
 
@@ -268,6 +271,25 @@ params：
 | `run:progress` | 同 `run.progress` | |
 | `run:stopping` | 同 `run.stopping` | |
 | `run:finished` | 同 `run.finished` | 前端收到后必须停止计时、恢复按钮 |
+| `update:state` | `UpdateState` | 更新状态变化（检查中 / 有新版本 / 失败 / 安装中 / 完成） |
+| `update:progress` | `{phase, downloaded, total, percent, message}` | 下载与安装进度（低频）；phase ∈ download/verify/install/restart |
+| `update:error` | `{message}` | 更新失败（同时 update:state 里带 error） |
+
+### UpdateState（additive）
+
+```json
+{
+  "supported": true, "current_version": "0.2.0",
+  "available": false, "latest_version": "", "tag": "",
+  "release_url": "", "notes": "", "published_at": "",
+  "asset_name": "", "asset_size": 0, "digest": "",
+  "checked_at": "", "checking": false, "installing": false,
+  "progress": 0, "phase": "", "message": "", "error": ""
+}
+```
+
+更新源：GitHub Releases（仓库 `songoao25/chaoxing`，tag 前缀 `desktop-v`，资源名
+`chaoxing-desktop-macos-arm64.zip`）。安装前校验 asset sha256、bundle id、版本号与代码签名。
 
 ## 6. 前端页面清单（v1，固定）
 

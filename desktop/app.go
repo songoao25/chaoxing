@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	appVersion  = "0.1.0"
 	appProtocol = 1
 	appLicense  = "GPL-3.0"
 )
@@ -68,6 +67,11 @@ type App struct {
 	settingsPath string
 	dataDir      string
 
+	// 自动更新（updater.go / update_app.go）
+	updateState UpdateState
+	updateInfo  UpdateInfo
+	updateBusy  bool
+
 	// mock 模式下的内存状态
 	mockAccounts []Account
 	mockSettings Settings
@@ -88,6 +92,11 @@ func NewApp() *App {
 		dataDir:      dir,
 		mockSettings: DefaultSettings(),
 		mockAccounts: defaultMockAccounts(),
+		updateState: UpdateState{
+			Supported:      runtime.GOOS == "darwin",
+			CurrentVersion: appVersion,
+			Message:        "尚未检查更新",
+		},
 	}
 	if a.mock {
 		a.engine = mockEngineFinding()
@@ -121,6 +130,14 @@ func (a *App) startup(ctx context.Context) {
 		a.emitBridgeState(bridgeStateStarting, "引擎已就绪，等待首次数据请求…")
 	} else {
 		a.emitBridgeState(bridgeStateFailed, finding.Message)
+	}
+
+	// 自动更新：清理上次遗留的备份，并在后台检查一次（失败静默，不打扰使用）。
+	if appPath, err := currentAppBundlePath(); err == nil {
+		cleanupStaleUpdateArtifacts(appPath)
+	}
+	if runtime.GOOS == "darwin" && updateAutoCheckEnabled() {
+		go a.autoCheckForUpdate()
 	}
 }
 

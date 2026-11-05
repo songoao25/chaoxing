@@ -158,6 +158,14 @@
     settings: normalizeSettings(null),
     appInfo: null,
     engine: null,
+    update: {
+      supported: true, current_version: '', available: false, latest_version: '',
+      tag: '', release_url: '', notes: '', checked_at: '', checking: false,
+      installing: false, progress: 0, phase: '', message: '', error: ''
+    },
+    updateNotified: false,
+    updateManual: false,
+    onboarding: { needs: false, open: false, step: 0 },
     overviewError: '',
     overviewRecent: [],
     overviewRecentLoading: true,
@@ -473,6 +481,14 @@
       if (engine && typeof engine.ready === 'boolean') S.engineReady = engine.ready;
     } catch (e) { /* 老版本没有这个接口时忽略 */ }
     try { S.appInfo = await call('GetAppInfo'); } catch (e) { S.appInfo = null; }
+    try {
+      var updateState = await call('GetUpdateState');
+      if (updateState && typeof updateState === 'object') S.update = Object.assign({}, S.update, updateState);
+    } catch (e) { /* 老版本没有更新接口时忽略 */ }
+    try {
+      var onboardingState = await call('GetOnboardingState');
+      if (onboardingState && typeof onboardingState === 'object') S.onboarding.needs = !!onboardingState.needs;
+    } catch (e) { /* 老版本没有教程接口时忽略 */ }
     if (S.status && S.status.engine_ready) S.engineReady = true;
     try {
       var runState = await call('GetRunState');
@@ -493,6 +509,210 @@
       updateSidebar();
       if (S.page === 'overview' || S.page === 'settings') render();
     } catch (e) { /* 静默 */ }
+  }
+
+  /* ---------- 新手教程（零基础引导，结构与雨课助手一致） ---------- */
+  var ONBOARDING_TOTAL = 5;
+  var onboardingIndex = 0;
+  var onboardingShown = false;
+
+  function onboardingSteps() {
+    var engineReady = !!S.engineReady;
+    return [
+      {
+        icon: 'book',
+        title: '这个应用帮你做什么',
+        text: '它帮你在电脑上自动完成学习通的课程任务：按平台真实时长播放视频、阅读文档，并把 AI 写过的文字留一份记录。所有操作都在这个窗口里，不需要懂代码。',
+        note: '第一次用跟着下面几步走一遍即可；随时可以跳过，以后在「设置 → 帮助」重看。'
+      },
+      {
+        icon: 'server',
+        title: '第 1 步 · 确认运行环境',
+        text: engineReady
+          ? '已经检测到本机的刷课引擎，可以继续。'
+          : '还没有找到刷课引擎（本机的运行环境）。点下面的按钮选择目录；如果不确定选哪个，把这一页截图发给帮你安装的人。',
+        note: engineReady ? '换电脑或移动过文件夹时，才需要重新选择目录。' : '',
+        action: engineReady ? null : { label: '选择引擎目录', action: 'choose-engine' }
+      },
+      {
+        icon: 'user',
+        title: '第 2 步 · 添加账号',
+        text: '打开「设置 → 账号 → 添加」，填学习通手机号和密码。密码只保存在本机，不会上传到任何地方。',
+        note: '已经添加过的账号会直接列出来，点一下选中即可。'
+      },
+      {
+        icon: 'play-line',
+        title: '第 3 步 · 选课并开始',
+        text: '打开「刷课」：选账号 → 勾课程 → 选范围 → 点「开始刷课」。运行中可以点「停止」；程序按平台真实时长播放，运行时保持电脑唤醒。',
+        action: { label: '去刷课', action: 'onboarding-goto-run' }
+      },
+      {
+        icon: 'check-circle',
+        title: '第 4 步 · 看复核结果',
+        text: '跑完后打开「复核」，可以回看、复制 AI 生成并提交给平台的文字；提交失败时那里会写原因和处理建议。',
+        note: '以后想再看教程：设置 → 帮助 → 新手教程。'
+      }
+    ];
+  }
+
+  function maybeShowOnboarding() {
+    if (!S.onboarding.needs || S.onboarding.open) return;
+    setTimeout(openOnboarding, 450);
+  }
+
+  function openOnboarding() {
+    S.onboarding.open = true;
+    onboardingIndex = 0;
+    if (isDev) {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        var step = Number(params.get('onboarding_step')) || 0;
+        if (step > 0) onboardingIndex = Math.min(Math.max(step - 1, 0), ONBOARDING_TOTAL - 1);
+      } catch (e) { /* ignore */ }
+    }
+    document.addEventListener('keydown', onboardingKeydown);
+    renderOnboarding();
+  }
+
+  function closeOnboarding() {
+    S.onboarding.open = false;
+    document.removeEventListener('keydown', onboardingKeydown);
+    var host = document.getElementById('onboarding-host');
+    if (host) host.remove();
+  }
+
+  function onboardingKeydown(e) {
+    if (!S.onboarding.open) return;
+    if (e.key === 'Escape') { e.preventDefault(); finishOnboarding(); }
+    else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); onboardingNext(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); onboardingBack(); }
+  }
+
+  function renderOnboarding() {
+    var host = document.getElementById('onboarding-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'onboarding-host';
+      document.body.appendChild(host);
+    }
+    var steps = onboardingSteps();
+    var i = Math.max(0, Math.min(steps.length - 1, onboardingIndex));
+    var step = steps[i];
+    var isLast = i === steps.length - 1;
+    var dots = '';
+    for (var d = 0; d < steps.length; d++) {
+      dots += '<span class="onboarding-dot' + (d === i ? ' is-active' : '') + '"></span>';
+    }
+    var actionHTML = '';
+    if (step.action) {
+      actionHTML = '<button class="btn btn-sm" type="button" data-action="' + step.action.action + '">' +
+        UI.esc(step.action.label) + '</button>';
+    }
+    host.innerHTML =
+      '<div class="onboarding-layer" id="onboarding-layer" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">' +
+      '<div class="onboarding-backdrop" data-action="onboarding-skip"></div>' +
+      '<section class="onboarding">' +
+      '<header class="onboarding-head">' +
+      '<span class="onboarding-kicker mono" id="onboarding-kicker">第 ' + (i + 1) + ' / ' + steps.length + ' 步</span>' +
+      '<button class="link-btn" type="button" data-action="onboarding-skip" aria-label="跳过新手教程">跳过教程</button>' +
+      '</header>' +
+      '<div class="onboarding-body">' +
+      '<span class="onboarding-icon" aria-hidden="true"><svg class="icon"><use id="onboarding-icon-use" href="#i-' + step.icon + '"></use></svg></span>' +
+      '<h2 class="onboarding-title" id="onboarding-title">' + UI.esc(step.title) + '</h2>' +
+      '<p class="onboarding-text" id="onboarding-text">' + UI.esc(step.text) + '</p>' +
+      '<div class="onboarding-actions" id="onboarding-actions">' + actionHTML + '</div>' +
+      '<p class="onboarding-note" id="onboarding-note">' + UI.esc(step.note || '') + '</p>' +
+      '</div>' +
+      '<footer class="onboarding-foot">' +
+      '<div class="onboarding-dots" id="onboarding-dots" aria-hidden="true">' + dots + '</div>' +
+      '<div class="onboarding-nav">' +
+      '<button class="btn" type="button" data-action="onboarding-back" id="onboarding-back"' + (i === 0 ? ' hidden' : '') + '>上一步</button>' +
+      '<button class="btn btn-primary" type="button" data-action="onboarding-next" id="onboarding-next">' +
+      (isLast ? '完成教程' : '下一步') + '</button>' +
+      '</div></footer></section></div>';
+    var next = document.getElementById('onboarding-next');
+    if (next) {
+      window.setTimeout(function () { try { next.focus(); } catch (e) { /* ignore */ } }, 30);
+    }
+  }
+
+  function onboardingNext() {
+    if (onboardingIndex >= ONBOARDING_TOTAL - 1) { finishOnboarding(); return; }
+    onboardingIndex += 1;
+    renderOnboarding();
+  }
+
+  function onboardingBack() {
+    if (onboardingIndex <= 0) return;
+    onboardingIndex -= 1;
+    renderOnboarding();
+  }
+
+  async function finishOnboarding() {
+    try { await call('CompleteOnboarding'); } catch (e) { /* 写不进去也不阻塞使用 */ }
+    S.onboarding.needs = false;
+    closeOnboarding();
+    if (S.page === 'settings') render();
+  }
+
+  /* ---------- 自动更新 ---------- */
+  function patchUpdateRow() {
+    var up = S.update || {};
+    var status = document.getElementById('update-status');
+    var control = document.getElementById('update-control');
+    if (status) {
+      if (up.installing) status.textContent = up.message || '正在更新…';
+      else if (up.error) status.textContent = '检查失败：' + up.error;
+      else if (up.available) status.textContent = '发现新版本 v' + up.latest_version;
+      else if (up.checked_at) status.textContent = '已是最新版本 · 检查于 ' + up.checked_at;
+    }
+    if (control && up.installing) {
+      control.innerHTML = '<span class="row-value mono" id="update-percent">' + (up.progress || 0) + '%</span>';
+    }
+  }
+
+  async function checkForUpdate() {
+    if (S.update.checking || S.update.installing) return;
+    S.update.manual = true;
+    S.update.checking = true;
+    S.update.error = '';
+    S.update.message = '正在检查更新…';
+    if (S.page === 'settings') render();
+    try {
+      var st = await call('CheckForUpdate');
+      if (st && typeof st === 'object') S.update = Object.assign({}, S.update, st);
+    } catch (e) {
+      S.update.error = friendlyError(errText(e));
+      S.update.message = '检查更新失败';
+    }
+    S.update.checking = false;
+    S.update.manual = false;
+    if (S.page === 'settings') render();
+    if (!S.update.error && !S.update.available) UI.toast('已是最新版本');
+  }
+
+  async function installUpdate() {
+    if (S.update.installing) return;
+    if (!S.update.available) { UI.toast('没有可安装的更新，请先检查更新', 'warning'); return; }
+    var ok = await UI.confirm({
+      title: '安装 v' + S.update.latest_version + '？',
+      message: '会下载更新包、校验后替换当前应用并自动重启。安装过程中请不要关闭应用。',
+      confirmLabel: '下载并安装'
+    });
+    if (!ok) return;
+    S.update.installing = true;
+    S.update.progress = 0;
+    S.update.error = '';
+    S.update.message = '准备下载更新…';
+    if (S.page === 'settings') render();
+    try {
+      await call('StartUpdate');
+    } catch (e) {
+      S.update.installing = false;
+      S.update.error = friendlyError(errText(e));
+      if (S.page === 'settings') render();
+      UI.toast(S.update.error, 'error');
+    }
   }
 
   async function refreshOverview() {
@@ -1007,6 +1227,33 @@
       } catch (e) { /* 运行时事件不可用时忽略 */ }
     };
 
+    on('update:state', function (data) {
+      if (!data || typeof data !== 'object') return;
+      S.update = Object.assign({}, S.update, data);
+      if (S.update.available && !S.updateNotified) {
+        S.updateNotified = true;
+        UI.toast('发现新版本 v' + S.update.latest_version + '，可在设置中更新');
+      }
+      if (S.update.error && S.update.manual) UI.toast(S.update.error, 'error');
+      if (S.page === 'settings') render();
+    });
+
+    on('update:progress', function (data) {
+      if (!data || typeof data !== 'object') return;
+      S.update.progress = typeof data.percent === 'number' ? data.percent : S.update.progress;
+      if (data.phase) S.update.phase = data.phase;
+      if (data.message) S.update.message = data.message;
+      S.update.installing = true;
+      if (S.page === 'settings') patchUpdateRow();
+    });
+
+    on('update:error', function (data) {
+      if (!data || !data.message) return;
+      S.update.error = data.message;
+      S.update.installing = false;
+      if (S.page === 'settings') render();
+    });
+
     on('bridge:state', function (data) {
       var prev = S.bridge.state;
       S.bridge = { state: data.state || 'starting', message: data.message || '' };
@@ -1210,6 +1457,16 @@
     'open-data-dir': function () { openDataDir(); },
     'open-config': function () { openConfigFile(); },
     'open-reviews-dir': function () { openDataDir('已打开记录文件夹'); },
+    'check-update': function () { checkForUpdate(); },
+    'install-update': function () { installUpdate(); },
+    'open-onboarding': function () { openOnboarding(); },
+    'onboarding-goto-run': function () {
+      finishOnboarding();
+      setTimeout(function () { navigate('run'); }, 0);
+    },
+    'onboarding-next': function () { onboardingNext(); },
+    'onboarding-back': function () { onboardingBack(); },
+    'onboarding-skip': function () { finishOnboarding(); },
     'add-account': function () { openAddAccountModal(); },
     'toggle-password': function (el) {
       var input = document.getElementById('add-account-password');
@@ -1376,6 +1633,7 @@
       applyPlatformClass();
       mountShell();
       loadOverviewRecent();
+      maybeShowOnboarding();
     }).catch(function (e) {
       clearTimeout(mountedGuard);
       applyPlatformClass();
@@ -1383,6 +1641,7 @@
       S.overviewError = friendlyError(errText(e));
       S.overviewRecentLoading = false;
       render();
+      maybeShowOnboarding();
     });
   }
 

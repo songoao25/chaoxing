@@ -1,0 +1,81 @@
+name: Desktop release (macOS)
+
+# 打 tag（desktop-v0.2.0）即自动构建 .app、打包 zip 并发布 GitHub Release。
+# 已安装的「超星助手」会在启动时检查 Release，用户可在「设置 → 版本更新」一键升级。
+#
+# 发版前先在本地把 desktop/version.go 的 appVersion 与 desktop/wails.json 的
+# info.productVersion 改成同一版本号并提交，再打 tag；版本不一致 CI 会直接失败。
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache-dependency-path: desktop/go.sum
+
+      - name: Verify version matches tag
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#desktop-v}"
+          CONFIG_VERSION="$(python3 -c 'import json;print(json.load(open("desktop/wails.json"))["info"]["productVersion"])')"
+          if [ "$VERSION" != "$CONFIG_VERSION" ]; then
+            echo "tag ${GITHUB_REF_NAME} 与 desktop/wails.json 的 ${CONFIG_VERSION} 不一致"
+            exit 1
+          fi
+          cd desktop && go test -run TestVersionMatchesWailsConfig ./...
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+
+      - name: Build app
+        run: |
+          set -euo pipefail
+          cd desktop
+          "$(go env GOPATH)/bin/wails" build -clean
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ditto -c -k --keepParent \
+            desktop/build/bin/chaoxing-desktop.app \
+            dist/chaoxing-desktop-macos-arm64.zip
+          cd dist
+          shasum -a 256 chaoxing-desktop-macos-arm64.zip > SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: dist
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-macos
+          path: dist
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#desktop-v}"
+          gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/SHA256SUMS.txt \
+            --title "超星助手 ${VERSION}" \
+            --notes "macOS Apple Silicon 桌面端。已安装的用户可在「设置 → 版本更新」一键升级。"

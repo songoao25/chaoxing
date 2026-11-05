@@ -6,3 +6,5 @@ frontend/wailsjs/
 node_modules/
 # 本地编译的验收工具（源码入库，产物不入库）
 tools/bin/
+# go build ./... 可能在 desktop/ 下生成名为 desktop 的可执行文件
+desktop

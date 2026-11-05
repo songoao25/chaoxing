@@ -16,8 +16,9 @@ import (
 
 // desktopSettings 是 ~/.chaoxing/desktop.json 的结构。
 type desktopSettings struct {
-	RepoPath   string `json:"repo_path"`
-	PythonPath string `json:"python_path"`
+	RepoPath       string `json:"repo_path"`
+	PythonPath     string `json:"python_path"`
+	OnboardingDone bool   `json:"onboarding_done,omitempty"`
 }
 
 // userHomeDir 返回当前用户 home 目录（测试可通过注入 ProbeOptions.HomeDir 绕开）。

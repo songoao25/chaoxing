@@ -670,9 +670,33 @@
       '<div class="row-control"><button class="btn btn-sm" data-action="open-data-dir">打开</button></div></div>' +
       row('配置文件', 'config.ini，包含题库与通知设置', '<button class="btn btn-sm" data-action="open-config">打开</button>');
 
+    var up = s.update || {};
+    var updateDesc = '启动时自动检查 GitHub Releases';
+    var updateControl = '<button class="btn btn-sm" data-action="check-update">检查更新</button>';
+    if (up.installing) {
+      updateDesc = esc(up.message || '正在更新…');
+      updateControl = '<span class="row-value mono" id="update-percent">' + (up.progress || 0) + '%</span>';
+    } else if (up.checking) {
+      updateDesc = '正在检查更新…';
+      updateControl = '<span class="row-value">检查中…</span>';
+    } else if (up.available) {
+      updateDesc = '发现新版本 v' + esc(up.latest_version) + '（当前 v' + esc(up.current_version || info.version || '') + '）';
+      updateControl = '<button class="btn btn-sm btn-primary" data-action="install-update">下载并安装</button>';
+    } else if (up.error) {
+      updateDesc = '检查失败：' + esc(up.error);
+      updateControl = '<button class="btn btn-sm" data-action="check-update">重试</button>';
+    } else if (up.checked_at) {
+      updateDesc = '已是最新版本 · 检查于 ' + esc(up.checked_at);
+      updateControl = '<button class="btn btn-sm" data-action="check-update">检查更新</button>';
+    }
+    var updateRow = '<div class="row" id="update-row">' +
+      '<div class="row-copy"><div class="row-title">版本更新</div>' +
+      '<div class="row-desc" id="update-status">' + updateDesc + '</div></div>' +
+      '<div class="row-control" id="update-control">' + updateControl + '</div></div>';
     var aboutBox = '<div class="about-head">' + appMark() +
       '<div class="about-copy"><div class="about-name">超星助手</div>' +
-      '<div class="about-version mono">' + esc(info.version || '0.1.0') + '</div></div></div>' +
+      '<div class="about-version mono">' + esc(info.version || '0.2.0') + '</div></div></div>' +
+      updateRow +
       row('许可证', '', '<span class="row-value">' + esc(info.license || 'GPL-3.0') + '</span>');
 
     return pageHead('设置', '账号、刷课参数与引擎环境', headSide) +
@@ -683,6 +707,8 @@
       '</div><div class="settings-col">' +
       group('引擎与数据', engineBox) +
       group('关于', aboutBox, '账号、配置和复核记录只保存在本机；请遵守学习通平台的使用规则。') +
+      group('帮助', row('新手教程', '分步了解账号、刷课与复核，不需要懂代码',
+        '<button class="btn btn-sm" data-action="open-onboarding">打开教程</button>')) +
       '</div></div>';
   }
 

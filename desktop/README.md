@@ -35,6 +35,27 @@ v1 不支持：讨论区挑帖（仍用 `./cx discuss`）、题库人工答题�
   引擎路径可在「设置 → 引擎」里手动指定。
 - 只读取/复用 `~/.chaoxing/` 下的现有配置、账号和复核记录，GUI 不额外保存密码。
 
+## 安装与自动更新
+
+```bash
+# 构建并安装到 /Applications（构建产物本身不进 git，所以 clone 下来不会自带 .app）
+make desktop-install
+```
+
+- 安装位置：`/Applications/超星助手.app`（Finder/Launchpad/Spotlight 可见）。
+- 首次打开会显示 5 步新手教程（确认运行环境 → 添加账号 → 开始刷课 → 查看复核），
+  零基础可照着点；完成或跳过后不再打扰，之后可在「设置 → 帮助 → 新手教程」重新打开。
+- 自动更新：应用启动时会静默检查 GitHub Releases；发现新版本会在设置页「版本更新」提示，
+  用户点「下载并安装」后自动下载 → sha256 校验 → 校验 bundle id/版本/代码签名 → 替换 → 重启。
+  安装必须由用户点击触发；启动检查失败不会打扰使用。可用 `CX_NO_UPDATE_CHECK=1` 关闭启动检查。
+- 更新源：本仓库 GitHub Releases（tag 前缀 `desktop-v`）。发版流程：
+  1. 把 `desktop/version.go` 的 `appVersion` 与 `wails.json` 的 `info.productVersion` 改成同一版本；
+  2. `go test ./...` 通过后提交；
+  3. `git tag desktop-vX.Y.Z && git push origin desktop-vX.Y.Z`；
+  4. CI（`.github/workflows/desktop-release.yml`）自动构建 `chaoxing-desktop-macos-arm64.zip` 并发 Release。
+- 限制：更新包只覆盖 App 本身（Go/Wails 外壳 + 前端）；Python 引擎与 `~/.chaoxing` 数据不受影响。
+  当前只构建 Apple Silicon（arm64）包，Intel Mac 会提示没有对应安装包。
+
 ## 开发与构建
 
 ```bash
